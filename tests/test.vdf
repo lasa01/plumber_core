@@ -1,0 +1,54 @@
+"key1" "value1"  
+key2    "value2"
+"key3"   value3   
+
+"key4"	 "a	
+b
+// not a comment
+c
+  d
+e
+f	
+"
+key5 ""
+key6 { // this is important
+    key1 // this is not
+    "value1"
+    "key2"    value2
+}
+"key7"  {   }
+// this is key 8
+key8
+
+{
+    key1 value1} // yes
+
+seq1 	hello
+"seq1"  	"this is kind of a hacky seq" // yes
+seq1
+"but hey, whatever works!"
+
+#key9 /value/9 // hard to parse
+$key10
+    "value 10"
+
+%key#11%&! value'11+-0$%!
+key12	
+{
+    key1	 {	
+        #key1 /%/%.
+    }	
+}	
+"unknown key" "unknown value"
+
+"key13" 31254
+
+key14  "1.004"
+
+	"seq2" { key1   -1.02 }
+
+seq2 {
+    "key1" "31"}
+seq2 {	
+    "key1"   "-32"
+}	

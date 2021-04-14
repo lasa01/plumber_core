@@ -1,0 +1,21 @@
+[package]
+name = "valveflow"
+version = "0.1.0"
+authors = ["Lassi Säike"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytecount = "0.6.2"
+nom = "6.1.2"
+serde = "1.0.123"
+serde_derive = "1.0.123"
+thiserror = "1.0.24"
+
+[dev-dependencies]
+maplit = "1.0.2"
+
+[patch.crates-io]
+serde_derive = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
