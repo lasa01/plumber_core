@@ -1,4 +1,4 @@
-use crate::{types::{BracketedVec2, BracketedVec3, Plane, Rgb, UvAxis}, vdf};
+use crate::{types::{BracketedVector2, BracketedVector3, Plane, Rgb, UvAxis}, vdf};
 
 use std::{collections::HashMap, fmt};
 
@@ -12,6 +12,13 @@ pub fn from_str(input: &str) -> vdf::Result<Vmf> {
     vdf::from_str(input)
 }
 
+/// # Errors
+///
+/// Will return `Err` if the serialization fails.
+pub fn to_string(vmf: &Vmf) -> vdf::Result<String> {
+    vdf::to_string(vmf)
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Vmf {
     #[serde(rename = "versioninfo")]
@@ -21,7 +28,7 @@ pub struct Vmf {
     #[serde(rename = "viewsettings")]
     view_settings: ViewSettings,
     world: World,
-    #[serde(default, rename = "entity")]
+    #[serde(default, rename = "entity", skip_serializing_if = "Vec::is_empty")]
     entities: Vec<Entity>,
 }
 
@@ -53,7 +60,7 @@ impl Default for VersionInfo {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct VisGroups {
-    #[serde(default, rename = "visgroup")]
+    #[serde(default, rename = "visgroup", skip_serializing_if = "Vec::is_empty")]
     vis_groups: Vec<VisGroup>,
 }
 
@@ -102,7 +109,7 @@ pub struct World {
     class_name: String,
     #[serde(rename = "skyname")]
     sky_name: String,
-    #[serde(default, rename = "solid")]
+    #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
     solids: Vec<Solid>,
     #[serde(flatten)]
     properties: HashMap<String, String>,
@@ -111,7 +118,7 @@ pub struct World {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Solid {
     id: i32,
-    #[serde(rename = "side")]
+    #[serde(rename = "side", skip_serializing_if = "Vec::is_empty")]
     sides: Vec<Side>,
     editor: Editor,
 }
@@ -129,7 +136,7 @@ pub struct Side {
     #[serde(rename = "lightmapscale")]
     light_map_scale: i32,
     smoothing_groups: i32,
-    #[serde(rename = "dispinfo")]
+    #[serde(rename = "dispinfo", skip_serializing_if = "Option::is_none")]
     disp_info: Option<DispInfo>,
 }
 
@@ -137,7 +144,7 @@ pub struct Side {
 pub struct DispInfo {
     power: u8,
     #[serde(rename = "startposition")]
-    start_position: BracketedVec3,
+    start_position: BracketedVector3,
     elevation: f64,
     subdiv: bool,
     normals: HashMap<String, String>,
@@ -158,9 +165,10 @@ pub struct Editor {
     vis_group_shown: bool,
     #[serde(default, rename = "visgroupautoshown")]
     vis_group_auto_shown: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     comments: Option<String>,
-    #[serde(rename = "logicalpos")]
-    logical_pos: Option<BracketedVec2>,
+    #[serde(rename = "logicalpos", skip_serializing_if = "Option::is_none")]
+    logical_pos: Option<BracketedVector2>,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,8 +181,9 @@ pub struct Entity {
     #[serde(flatten)]
     properties: HashMap<String, String>,
     connections: HashMap<String, String>,
-    #[serde(rename = "solid")]
+    #[serde(rename = "solid", skip_serializing_if = "Vec::is_empty")]
     solids: Vec<Solid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     editor: Option<Editor>,
 }
 

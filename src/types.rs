@@ -4,16 +4,16 @@ use nom::{IResult, bytes::complete::is_not, character::complete::{multispace0, c
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Visitor, de};
 
 fn space_separated(input: &str) -> IResult<&str, &str> {
-    preceded(multispace0, is_not(" \t\r\n])}"))(input)
+    preceded(multispace0, is_not(" \t\r\n[](){}"))(input)
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Vec2 {
+pub struct Vector2 {
     pub x: f64,
     pub y: f64,
 }
 
-impl<'de> Deserialize<'de> for Vec2 {
+impl<'de> Deserialize<'de> for Vector2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>
@@ -21,7 +21,7 @@ impl<'de> Deserialize<'de> for Vec2 {
         struct Vec2Visitor;
 
         impl<'de> Visitor<'de> for Vec2Visitor {
-            type Value = Vec2;
+            type Value = Vector2;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("vec2")
@@ -35,7 +35,7 @@ impl<'de> Deserialize<'de> for Vec2 {
                     Ok((_, (x, y))) => {
                         let x = x.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(x), &"float"))?;
                         let y = y.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(y), &"float"))?;
-                        Ok(Vec2 { x, y})
+                        Ok(Vector2 { x, y})
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self))
                 }
@@ -46,7 +46,7 @@ impl<'de> Deserialize<'de> for Vec2 {
     }
 }
 
-impl Serialize for Vec2 {
+impl Serialize for Vector2 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer
@@ -56,13 +56,13 @@ impl Serialize for Vec2 {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Vec3 {
+pub struct Vector3 {
     pub x: f64,
     pub y: f64,
     pub z: f64,
 }
 
-impl<'de> Deserialize<'de> for Vec3 {
+impl<'de> Deserialize<'de> for Vector3 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>
@@ -70,7 +70,7 @@ impl<'de> Deserialize<'de> for Vec3 {
         struct Vec3Visitor;
 
         impl<'de> Visitor<'de> for Vec3Visitor {
-            type Value = Vec3;
+            type Value = Vector3;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("vec3")
@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for Vec3 {
                         let x = x.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(x), &"float"))?;
                         let y = y.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(y), &"float"))?;
                         let z = z.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(z), &"float"))?;
-                        Ok(Vec3 { x, y, z })
+                        Ok(Vector3 { x, y, z })
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self))
                 }
@@ -96,7 +96,7 @@ impl<'de> Deserialize<'de> for Vec3 {
     }
 }
 
-impl Serialize for Vec3 {
+impl Serialize for Vector3 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer
@@ -110,23 +110,23 @@ fn bracketed<'a, O>(parser: impl FnMut(&'a str) -> IResult<&'a str, O>) -> impl 
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BracketedVec2(Vec2);
+pub struct BracketedVector2(Vector2);
 
-impl Deref for BracketedVec2 {
-    type Target = Vec2;
+impl Deref for BracketedVector2 {
+    type Target = Vector2;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for BracketedVec2 {
+impl DerefMut for BracketedVector2 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<'de> Deserialize<'de> for BracketedVec2 {
+impl<'de> Deserialize<'de> for BracketedVector2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>
@@ -134,7 +134,7 @@ impl<'de> Deserialize<'de> for BracketedVec2 {
         struct SquareBracketedVec2Visitor;
 
         impl<'de> Visitor<'de> for SquareBracketedVec2Visitor {
-            type Value = BracketedVec2;
+            type Value = BracketedVector2;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("square bracketed vec2")
@@ -148,7 +148,7 @@ impl<'de> Deserialize<'de> for BracketedVec2 {
                     Ok((_, (x, y))) => {
                         let x = x.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(x), &"float"))?;
                         let y = y.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(y), &"float"))?;
-                        Ok(BracketedVec2(Vec2 { x, y }))
+                        Ok(BracketedVector2(Vector2 { x, y }))
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self))
                 }
@@ -159,7 +159,7 @@ impl<'de> Deserialize<'de> for BracketedVec2 {
     }
 }
 
-impl Serialize for BracketedVec2 {
+impl Serialize for BracketedVector2 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer
@@ -169,23 +169,23 @@ impl Serialize for BracketedVec2 {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BracketedVec3(Vec3);
+pub struct BracketedVector3(Vector3);
 
-impl Deref for BracketedVec3 {
-    type Target = Vec3;
+impl Deref for BracketedVector3 {
+    type Target = Vector3;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for BracketedVec3 {
+impl DerefMut for BracketedVector3 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<'de> Deserialize<'de> for BracketedVec3 {
+impl<'de> Deserialize<'de> for BracketedVector3 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>
@@ -193,7 +193,7 @@ impl<'de> Deserialize<'de> for BracketedVec3 {
         struct SquareBracketedVec3Visitor;
 
         impl<'de> Visitor<'de> for SquareBracketedVec3Visitor {
-            type Value = BracketedVec3;
+            type Value = BracketedVector3;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("square bracketed vec3")
@@ -208,7 +208,7 @@ impl<'de> Deserialize<'de> for BracketedVec3 {
                         let x = x.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(x), &"float"))?;
                         let y = y.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(y), &"float"))?;
                         let z = z.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(z), &"float"))?;
-                        Ok(BracketedVec3(Vec3 { x, y, z }))
+                        Ok(BracketedVector3(Vector3 { x, y, z }))
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self))
                 }
@@ -219,7 +219,7 @@ impl<'de> Deserialize<'de> for BracketedVec3 {
     }
 }
 
-impl Serialize for BracketedVec3 {
+impl Serialize for BracketedVector3 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer
@@ -283,7 +283,7 @@ fn parenthesed<'a, O>(parser: impl FnMut(&'a str) -> IResult<&'a str, O>) -> imp
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Plane(pub Vec3, pub Vec3, pub Vec3);
+pub struct Plane(pub Vector3, pub Vector3, pub Vector3);
 
 impl<'de> Deserialize<'de> for Plane {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -319,9 +319,9 @@ impl<'de> Deserialize<'de> for Plane {
                         let y2 = y2.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(y2), &"float"))?;
                         let z2 = z2.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(z2), &"float"))?;
                         Ok(Plane(
-                            Vec3 {x: x0, y: y0, z: z0},
-                            Vec3 {x: x1, y: y1, z: z1},
-                            Vec3 {x: x2, y: y2, z: z2},
+                            Vector3 {x: x0, y: y0, z: z0},
+                            Vector3 {x: x1, y: y1, z: z1},
+                            Vector3 {x: x2, y: y2, z: z2},
                         ))
                     },
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
@@ -349,7 +349,7 @@ impl Serialize for Plane {
 
 #[derive(Debug, Clone, Copy)]
 pub struct UvAxis {
-    pub axis: Vec3,
+    pub axis: Vector3,
     pub translation: f64,
     pub scale: f64,
 }
@@ -382,7 +382,7 @@ impl<'de> Deserialize<'de> for UvAxis {
                         let z = z.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(z), &"float"))?;
                         let translation = translation.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(translation), &"float"))?;
                         let scale = scale.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(scale), &"float"))?;
-                        Ok(UvAxis { axis: Vec3 { x, y, z }, translation, scale })
+                        Ok(UvAxis { axis: Vector3 { x, y, z }, translation, scale })
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self))
                 }

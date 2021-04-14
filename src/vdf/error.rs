@@ -1,6 +1,6 @@
 use std::{error, fmt::{self, Display}, result};
 
-use serde::de;
+use serde::{de, ser};
 use thiserror::Error;
 
 use super::{Deserializer, de::DeserializerLevel};
@@ -75,6 +75,15 @@ pub type Result<T> = result::Result<T, Error>;
 
 impl de::Error for Error {
     fn custom<T>(msg: T) -> Self
+    where
+        T: Display,
+    {
+        Self::new(Reason::Custom(msg.to_string()))
+    }
+}
+
+impl ser::Error for Error {
+    fn custom<T>(msg: T)->Self
     where
         T: Display,
     {
