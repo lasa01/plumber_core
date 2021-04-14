@@ -5,6 +5,9 @@ use std::{collections::HashMap, fmt};
 use serde::{Deserialize, de::{self, Visitor, MapAccess}};
 use serde_derive::{Deserialize, Serialize};
 
+/// # Errors
+///
+/// Will return `Err` if the deserialization fails.
 pub fn from_str(input: &str) -> vdf::Result<Vmf> {
     vdf::from_str(input)
 }

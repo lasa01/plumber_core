@@ -1,6 +1,11 @@
 [package]
 name = "valveflow"
+description = "Everything you need to work with Valve's Source Engine files"
 version = "0.1.0"
+repository = "https://github.com/lasa01/valveflow"
+readme = "README.md"
+keywords = ["valve", "source", "vdf", "vmf", "vmt"]
+categories = ["parser-implementations"]
 authors = ["Lassi Säike"]
 edition = "2018"
 license = "MIT OR Apache-2.0"

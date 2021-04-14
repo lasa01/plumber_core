@@ -7,6 +7,9 @@ use serde::{Deserialize, de::{self, EnumAccess, MapAccess, SeqAccess, VariantAcc
 
 use super::{Error, Result, error::{Position, Reason}};
 
+/// # Errors
+///
+/// Will return `Err` if the deserialization fails.
 pub fn from_str<'de, T>(mut input: &'de str) -> Result<T>
 where
     T: Deserialize<'de>,

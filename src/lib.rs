@@ -1,4 +1,5 @@
-#![warn(clippy::all, clippy::pedantic, clippy::cargo)]
+#![deny(clippy::all, clippy::pedantic, clippy::cargo)]
+#![allow(clippy::should_implement_trait)]
 
 pub mod vdf;
 pub mod vmf;
