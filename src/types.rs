@@ -22,7 +22,7 @@ impl<'de> Deserialize<'de> for Vector2 {
             type Value = Vector2;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("vec2")
+                formatter.write_str("vector2")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -71,7 +71,7 @@ impl<'de> Deserialize<'de> for Vector3 {
             type Value = Vector3;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("vec3")
+                formatter.write_str("vector3")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -131,7 +131,7 @@ impl<'de> Deserialize<'de> for BracketedVector2 {
             type Value = BracketedVector2;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("square bracketed vec2")
+                formatter.write_str("square bracketed vector2")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -190,7 +190,7 @@ impl<'de> Deserialize<'de> for BracketedVector3 {
             type Value = BracketedVector3;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("square bracketed vec3")
+                formatter.write_str("square bracketed vector3")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
