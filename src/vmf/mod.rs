@@ -9,14 +9,14 @@ use serde_derive::{Deserialize, Serialize};
 ///
 /// Will return `Err` if the deserialization fails.
 pub fn from_str(input: &str) -> vdf::Result<Vmf> {
-    vdf::from_str(input)
+    Vmf::from_str(input)
 }
 
 /// # Errors
 ///
 /// Will return `Err` if the serialization fails.
 pub fn to_string(vmf: &Vmf) -> vdf::Result<String> {
-    vdf::to_string(vmf)
+    vmf.to_string()
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -30,6 +30,22 @@ pub struct Vmf {
     world: World,
     #[serde(default, rename = "entity", skip_serializing_if = "Vec::is_empty")]
     entities: Vec<Entity>,
+}
+
+impl Vmf {
+    /// # Errors
+    ///
+    /// Will return `Err` if the deserialization fails.
+    pub fn from_str(input: &str) -> vdf::Result<Self> {
+        vdf::from_str(input)
+    }
+
+    /// # Errors
+    ///
+    /// Will return `Err` if the serialization fails.
+    pub fn to_string(&self) -> vdf::Result<String> {
+        vdf::to_string(self)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
