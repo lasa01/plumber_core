@@ -1,9 +1,15 @@
 use std::{result, str::FromStr};
 
 use nom::{IResult, Offset};
-use serde::{Deserialize, de::{self, EnumAccess, MapAccess, SeqAccess, VariantAccess, value::BorrowedStrDeserializer}};
+use serde::{
+    de::{self, value::BorrowedStrDeserializer, EnumAccess, MapAccess, SeqAccess, VariantAccess},
+    Deserialize,
+};
 
-use super::{error::{Error, Result, Position, Reason}, parsers};
+use super::{
+    error::{Error, Position, Reason, Result},
+    parsers,
+};
 
 /// # Errors
 ///
@@ -495,7 +501,8 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
         self.first = false;
         let key = self.wrapper.parse_key()?;
         self.wrapper.last_key = key;
-        seed.deserialize(BorrowedStrDeserializer::new(key)).map(Some)
+        seed.deserialize(BorrowedStrDeserializer::new(key))
+            .map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
@@ -637,7 +644,8 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
         self.first = false;
         let key = self.wrapper.parse_key()?;
         self.wrapper.last_key = key;
-        seed.deserialize(BorrowedStrDeserializer::new(key)).map(Some)
+        seed.deserialize(BorrowedStrDeserializer::new(key))
+            .map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
@@ -698,10 +706,7 @@ struct SeqValueAccess<'wr, 'lvl, 'de> {
 }
 
 impl<'wr, 'lvl, 'de> SeqValueAccess<'wr, 'lvl, 'de> {
-    fn new(
-        wrapper: &'wr mut Deserializer<'lvl, 'de, Value>,
-        element_key: &'de str,
-    ) -> Self {
+    fn new(wrapper: &'wr mut Deserializer<'lvl, 'de, Value>, element_key: &'de str) -> Self {
         Self {
             wrapper,
             first: true,

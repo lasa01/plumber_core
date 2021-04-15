@@ -1,9 +1,16 @@
-use crate::{types::{BracketedVector2, BracketedVector3, Vector3}, parsers::{space_separated, bracketed, parenthesed}, vdf};
+use crate::{
+    parsers::{bracketed, parenthesed, space_separated},
+    types::{BracketedVector2, BracketedVector3, Vector3},
+    vdf,
+};
 
 use std::{collections::HashMap, fmt};
 
 use nom::sequence::tuple;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::{self, Visitor, MapAccess}};
+use serde::{
+    de::{self, MapAccess, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use serde_derive::{Deserialize, Serialize};
 
 /// # Errors
@@ -99,7 +106,7 @@ pub struct Rgb {
 impl<'de> Deserialize<'de> for Rgb {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>
+        D: Deserializer<'de>,
     {
         struct RgbVisitor;
 
@@ -116,12 +123,18 @@ impl<'de> Deserialize<'de> for Rgb {
             {
                 match tuple((space_separated, space_separated, space_separated))(v) {
                     Ok((_, (r, g, b))) => {
-                        let r = r.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(r), &"int (0-255)"))?;
-                        let g = g.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(g), &"int (0-255)"))?;
-                        let b = b.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(b), &"int (0-255)"))?;
+                        let r = r.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(r), &"int (0-255)")
+                        })?;
+                        let g = g.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(g), &"int (0-255)")
+                        })?;
+                        let b = b.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(b), &"int (0-255)")
+                        })?;
                         Ok(Rgb { r, g, b })
                     }
-                    Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self))
+                    Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
                 }
             }
         }
@@ -133,7 +146,7 @@ impl<'de> Deserialize<'de> for Rgb {
 impl Serialize for Rgb {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer
+        S: Serializer,
     {
         serializer.serialize_str(&format!("{} {} {}", self.r, self.g, self.b))
     }
@@ -213,7 +226,7 @@ pub struct Plane(pub Vector3, pub Vector3, pub Vector3);
 impl<'de> Deserialize<'de> for Plane {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>
+        D: Deserializer<'de>,
     {
         struct PlaneVisitor;
 
@@ -232,23 +245,54 @@ impl<'de> Deserialize<'de> for Plane {
                     parenthesed(tuple((space_separated, space_separated, space_separated))),
                     parenthesed(tuple((space_separated, space_separated, space_separated))),
                     parenthesed(tuple((space_separated, space_separated, space_separated))),
-                ))(v) {
+                ))(v)
+                {
                     Ok((_, ((x0, y0, z0), (x1, y1, z1), (x2, y2, z2)))) => {
-                        let x0 = x0.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(x0), &"float"))?;
-                        let y0 = y0.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(y0), &"float"))?;
-                        let z0 = z0.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(z0), &"float"))?;
-                        let x1 = x1.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(x1), &"float"))?;
-                        let y1 = y1.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(y1), &"float"))?;
-                        let z1 = z1.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(z1), &"float"))?;
-                        let x2 = x2.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(x2), &"float"))?;
-                        let y2 = y2.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(y2), &"float"))?;
-                        let z2 = z2.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(z2), &"float"))?;
+                        let x0 = x0.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(x0), &"float")
+                        })?;
+                        let y0 = y0.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(y0), &"float")
+                        })?;
+                        let z0 = z0.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(z0), &"float")
+                        })?;
+                        let x1 = x1.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(x1), &"float")
+                        })?;
+                        let y1 = y1.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(y1), &"float")
+                        })?;
+                        let z1 = z1.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(z1), &"float")
+                        })?;
+                        let x2 = x2.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(x2), &"float")
+                        })?;
+                        let y2 = y2.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(y2), &"float")
+                        })?;
+                        let z2 = z2.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(z2), &"float")
+                        })?;
                         Ok(Plane(
-                            Vector3 {x: x0, y: y0, z: z0},
-                            Vector3 {x: x1, y: y1, z: z1},
-                            Vector3 {x: x2, y: y2, z: z2},
+                            Vector3 {
+                                x: x0,
+                                y: y0,
+                                z: z0,
+                            },
+                            Vector3 {
+                                x: x1,
+                                y: y1,
+                                z: z1,
+                            },
+                            Vector3 {
+                                x: x2,
+                                y: y2,
+                                z: z2,
+                            },
                         ))
-                    },
+                    }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
                 }
             }
@@ -261,13 +305,19 @@ impl<'de> Deserialize<'de> for Plane {
 impl Serialize for Plane {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer
+        S: Serializer,
     {
         serializer.serialize_str(&format!(
             "({} {} {}) ({} {} {}) ({} {} {})",
-            self.0.x, self.0.y, self.0.z,
-            self.1.x, self.1.y, self.1.z,
-            self.2.x, self.2.y, self.2.z,
+            self.0.x,
+            self.0.y,
+            self.0.z,
+            self.1.x,
+            self.1.y,
+            self.1.z,
+            self.2.x,
+            self.2.y,
+            self.2.z,
         ))
     }
 }
@@ -282,7 +332,7 @@ pub struct UvAxis {
 impl<'de> Deserialize<'de> for UvAxis {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>
+        D: Deserializer<'de>,
     {
         struct UvAxisVisitor;
 
@@ -298,18 +348,38 @@ impl<'de> Deserialize<'de> for UvAxis {
                 E: de::Error,
             {
                 match tuple((
-                    bracketed(tuple((space_separated, space_separated, space_separated, space_separated))),
+                    bracketed(tuple((
+                        space_separated,
+                        space_separated,
+                        space_separated,
+                        space_separated,
+                    ))),
                     space_separated,
-                ))(v) {
+                ))(v)
+                {
                     Ok((_, ((x, y, z, translation), scale))) => {
-                        let x = x.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(x), &"float"))?;
-                        let y = y.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(y), &"float"))?;
-                        let z = z.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(z), &"float"))?;
-                        let translation = translation.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(translation), &"float"))?;
-                        let scale = scale.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(scale), &"float"))?;
-                        Ok(UvAxis { axis: Vector3 { x, y, z }, translation, scale })
+                        let x = x.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(x), &"float")
+                        })?;
+                        let y = y.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(y), &"float")
+                        })?;
+                        let z = z.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(z), &"float")
+                        })?;
+                        let translation = translation.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(translation), &"float")
+                        })?;
+                        let scale = scale.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(scale), &"float")
+                        })?;
+                        Ok(UvAxis {
+                            axis: Vector3 { x, y, z },
+                            translation,
+                            scale,
+                        })
                     }
-                    Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self))
+                    Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
                 }
             }
         }
@@ -321,7 +391,7 @@ impl<'de> Deserialize<'de> for UvAxis {
 impl Serialize for UvAxis {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer
+        S: Serializer,
     {
         serializer.serialize_str(&format!(
             "[{} {} {} {}] {}",
@@ -380,10 +450,10 @@ pub struct Entity {
 impl<'de> Deserialize<'de> for Entity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>
+        D: serde::Deserializer<'de>,
     {
         struct EntityVisitor;
-        
+
         impl<'de> Visitor<'de> for EntityVisitor {
             type Value = Entity;
 
@@ -457,11 +527,17 @@ impl<'de> Deserialize<'de> for Entity {
                 let connections = connections.unwrap_or_default();
                 let solids = solids.unwrap_or_default();
                 Ok(Entity {
-                    id, class_name, spawn_flags, properties, connections, solids, editor,
+                    id,
+                    class_name,
+                    spawn_flags,
+                    properties,
+                    connections,
+                    solids,
+                    editor,
                 })
             }
         }
-        
+
         deserializer.deserialize_map(EntityVisitor)
     }
 }

@@ -1,4 +1,4 @@
-use serde::{Serialize, ser};
+use serde::{ser, Serialize};
 
 use super::error::{Error, Result};
 
@@ -109,7 +109,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_some<T: ?Sized>(self, value: &T) -> Result<Self::Ok>
     where
-        T: serde::Serialize
+        T: serde::Serialize,
     {
         value.serialize(self)
     }
@@ -128,18 +128,13 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-    ) -> Result<Self::Ok>
-    {
+    ) -> Result<Self::Ok> {
         self.serialize_str(variant)
     }
 
-    fn serialize_newtype_struct<T: ?Sized>(
-        self,
-        _name: &'static str,
-        value: &T,
-    ) -> Result<Self::Ok>
+    fn serialize_newtype_struct<T: ?Sized>(self, _name: &'static str, value: &T) -> Result<Self::Ok>
     where
-        T: serde::Serialize
+        T: serde::Serialize,
     {
         value.serialize(self)
     }
@@ -152,7 +147,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         value: &T,
     ) -> Result<Self::Ok>
     where
-        T: serde::Serialize
+        T: serde::Serialize,
     {
         self.output += "\n";
         self.indent();
@@ -171,7 +166,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
         match self.last_key {
-            Some(key) => Ok(SerializeSeq { serializer: self, key, first: true } ),
+            Some(key) => Ok(SerializeSeq {
+                serializer: self,
+                key,
+                first: true,
+            }),
             None => panic!("vfd sequence can only be serialized inside a struct"),
         }
     }
@@ -194,7 +193,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _variant_index: u32,
         variant: &'static str,
         _len: usize,
-    ) -> Result<Self::SerializeTupleVariant>{
+    ) -> Result<Self::SerializeTupleVariant> {
         self.output += "\n";
         self.indent();
         self.output += "{\n";
@@ -202,7 +201,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         self.indent();
         self.serialize_str(variant)?;
         self.output += " ";
-        Ok(SerializeSeq { serializer: self, key: variant, first: true })
+        Ok(SerializeSeq {
+            serializer: self,
+            key: variant,
+            first: true,
+        })
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
@@ -214,24 +217,29 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             self.indentation += 1;
             self.indent();
         }
-        Ok(SerializeMap { serializer: self, is_root, first: true })
+        Ok(SerializeMap {
+            serializer: self,
+            is_root,
+            first: true,
+        })
     }
 
-    fn serialize_struct(
-        self,
-        _name: &'static str,
-        _len: usize,
-    ) -> Result<Self::SerializeStruct> {
+    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
         let is_root = self.output.is_empty();
         if !is_root {
             self.output += "\n";
             self.indent();
             self.output += "{\n";
             self.indentation += 1;
-            self.indent();    
+            self.indent();
         }
         let key_before = self.last_key;
-        Ok(SerializeStruct { serializer: self, key_before, is_root, first: true })
+        Ok(SerializeStruct {
+            serializer: self,
+            key_before,
+            is_root,
+            first: true,
+        })
     }
 
     fn serialize_struct_variant(
@@ -256,10 +264,15 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         self.indentation += 1;
         if !is_root {
             self.output += "\n";
-            self.indent();    
+            self.indent();
         }
         let key_before = self.last_key;
-        Ok(SerializeStruct { serializer: self, key_before, is_root, first: true })
+        Ok(SerializeStruct {
+            serializer: self,
+            key_before,
+            is_root,
+            first: true,
+        })
     }
 }
 
@@ -275,7 +288,7 @@ impl<'a> ser::SerializeSeq for SerializeSeq<'a> {
 
     fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
-        T: Serialize
+        T: Serialize,
     {
         if !self.first {
             self.serializer.output += "\n";
@@ -298,7 +311,7 @@ impl<'a> ser::SerializeTuple for SerializeSeq<'a> {
 
     fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
-        T: Serialize
+        T: Serialize,
     {
         if !self.first {
             self.serializer.output += "\n";
@@ -321,7 +334,7 @@ impl<'a> ser::SerializeTupleStruct for SerializeSeq<'a> {
 
     fn serialize_field<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
-        T: Serialize
+        T: Serialize,
     {
         if !self.first {
             self.serializer.output += "\n";
@@ -344,7 +357,7 @@ impl<'a> ser::SerializeTupleVariant for SerializeSeq<'a> {
 
     fn serialize_field<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
-        T: Serialize
+        T: Serialize,
     {
         if !self.first {
             self.serializer.output += "\n";
@@ -377,11 +390,11 @@ impl<'a> ser::SerializeMap for SerializeMap<'a> {
 
     fn serialize_key<T: ?Sized>(&mut self, key: &T) -> Result<()>
     where
-        T: Serialize
+        T: Serialize,
     {
         if !self.first {
             self.serializer.output += "\n";
-            self.serializer.indent();    
+            self.serializer.indent();
         }
         self.first = false;
         key.serialize(&mut *self.serializer)
@@ -389,7 +402,7 @@ impl<'a> ser::SerializeMap for SerializeMap<'a> {
 
     fn serialize_value<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
-        T: Serialize
+        T: Serialize,
     {
         self.serializer.output += " ";
         value.serialize(&mut *self.serializer)
@@ -417,17 +430,13 @@ impl<'a> ser::SerializeStruct for SerializeStruct<'a> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T: ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<()>
+    fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
-        T: Serialize
+        T: Serialize,
     {
         if !self.first {
             self.serializer.output += "\n";
-            self.serializer.indent();    
+            self.serializer.indent();
         }
         self.first = false;
         ser::Serializer::serialize_str(&mut *self.serializer, key)?;
@@ -452,17 +461,13 @@ impl<'a> ser::SerializeStructVariant for SerializeStruct<'a> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T: ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<()>
+    fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
-        T: Serialize
+        T: Serialize,
     {
         if !self.first {
             self.serializer.output += "\n";
-            self.serializer.indent();    
+            self.serializer.indent();
         }
         self.first = false;
         ser::Serializer::serialize_str(&mut *self.serializer, key)?;

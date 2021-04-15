@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use serde_derive::Deserialize;
 use maplit::hashmap;
+use serde_derive::Deserialize;
 
 use valveflow::vdf;
 
@@ -71,7 +71,11 @@ fn test_parse() {
             key8: Key8 {
                 key1: "value1".into()
             },
-            seq1: vec!["hello".into(), "this is kind of a hacky seq".into(), "but hey, whatever works!".into()],
+            seq1: vec![
+                "hello".into(),
+                "this is kind of a hacky seq".into(),
+                "but hey, whatever works!".into()
+            ],
             key9: "/value/9".into(),
             key10: "value 10".into(),
             key11: "value'11+-0$%!".into(),
@@ -83,15 +87,9 @@ fn test_parse() {
             key13: 31254,
             key14: 1.004,
             seq2: vec![
-                Element {
-                    key1: -1.02,
-                },
-                Element {
-                    key1: 31.0,
-                },
-                Element {
-                    key1: -32.0,
-                }
+                Element { key1: -1.02 },
+                Element { key1: 31.0 },
+                Element { key1: -32.0 }
             ],
         }
     );

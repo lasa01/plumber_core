@@ -1,9 +1,13 @@
-use std::{error, fmt::{self, Display}, result};
+use std::{
+    error,
+    fmt::{self, Display},
+    result,
+};
 
 use serde::{de, ser};
 use thiserror::Error;
 
-use super::{Deserializer, de::DeserializerLevel};
+use super::{de::DeserializerLevel, Deserializer};
 
 #[derive(Error, Debug)]
 pub enum Reason {
@@ -37,7 +41,7 @@ pub struct Position {
 
 impl Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-       write!(f, "line {}, colum {}", self.line, self.column)
+        write!(f, "line {}, colum {}", self.line, self.column)
     }
 }
 
@@ -61,11 +65,15 @@ impl error::Error for Error {}
 impl Error {
     pub(crate) fn new(reason: Reason) -> Self {
         Self {
-            reason, position: None,
+            reason,
+            position: None,
         }
     }
 
-    pub fn with_position<'lvl, 'de, T: DeserializerLevel<'lvl, 'de>>(mut self, deserializer: &Deserializer<'lvl, 'de, T>) -> Self {
+    pub fn with_position<'lvl, 'de, T: DeserializerLevel<'lvl, 'de>>(
+        mut self,
+        deserializer: &Deserializer<'lvl, 'de, T>,
+    ) -> Self {
         self.position = Some(deserializer.get_position());
         self
     }
@@ -83,7 +91,7 @@ impl de::Error for Error {
 }
 
 impl ser::Error for Error {
-    fn custom<T>(msg: T)->Self
+    fn custom<T>(msg: T) -> Self
     where
         T: Display,
     {

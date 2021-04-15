@@ -1,8 +1,8 @@
-mod parsers;
 mod de;
-mod ser;
 mod error;
+mod parsers;
+mod ser;
 
-pub use de::{Deserializer, from_str};
-pub use ser::{Serializer, to_string};
+pub use de::{from_str, Deserializer};
 pub use error::{Error, Result};
+pub use ser::{to_string, Serializer};
