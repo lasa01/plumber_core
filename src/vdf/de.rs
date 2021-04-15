@@ -1,11 +1,9 @@
-mod parsers;
-
 use std::{result, str::FromStr};
 
 use nom::{IResult, Offset};
 use serde::{Deserialize, de::{self, EnumAccess, MapAccess, SeqAccess, VariantAccess, value::BorrowedStrDeserializer}};
 
-use super::{Error, Result, error::{Position, Reason}};
+use super::{error::{Error, Result, Position, Reason}, parsers};
 
 /// # Errors
 ///
