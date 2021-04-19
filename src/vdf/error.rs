@@ -29,6 +29,8 @@ pub enum Reason {
     InvalidFloat,
     #[error("invalid bool")]
     InvalidBool,
+    #[error("key must be a string")]
+    KeyMustBeString,
     #[error("{0}")]
     Custom(String),
 }

@@ -1,14 +1,14 @@
 use crate::parsers::{bracketed, space_separated};
 
 use std::{
-    fmt,
+    fmt::{self, Display},
     ops::{Deref, DerefMut},
 };
 
 use nom::sequence::tuple;
 use serde::{de, de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Vector2 {
     pub x: f64,
     pub y: f64,
@@ -56,11 +56,17 @@ impl Serialize for Vector2 {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!("{} {}", self.x, self.y))
+        serializer.collect_str(self)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+impl Display for Vector2 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.x, self.y)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Vector3 {
     pub x: f64,
     pub y: f64,
@@ -112,11 +118,17 @@ impl Serialize for Vector3 {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!("{} {} {}", self.x, self.y, self.z))
+        serializer.collect_str(self)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+impl Display for Vector3 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {} {}", self.x, self.y, self.z)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BracketedVector2(Vector2);
 
 impl Deref for BracketedVector2 {
@@ -175,11 +187,17 @@ impl Serialize for BracketedVector2 {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!("[{} {}]", self.x, self.y))
+        serializer.collect_str(self)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+impl Display for BracketedVector2 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{} {}]", self.x, self.y)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BracketedVector3(Vector3);
 
 impl Deref for BracketedVector3 {
@@ -241,6 +259,12 @@ impl Serialize for BracketedVector3 {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!("[{} {} {}]", self.x, self.y, self.z))
+        serializer.collect_str(self)
+    }
+}
+
+impl Display for BracketedVector3 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{} {} {}]", self.x, self.y, self.z)
     }
 }

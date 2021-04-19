@@ -4,11 +4,18 @@ use crate::{
     vdf,
 };
 
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::HashMap,
+    fmt::{self, Display, Write},
+    str::FromStr,
+};
 
+use itertools::Itertools;
+use ndarray::Array2;
 use nom::sequence::tuple;
 use serde::{
-    de::{self, MapAccess, Visitor},
+    de::{self, DeserializeSeed, MapAccess, Visitor},
+    ser::SerializeMap,
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use serde_derive::{Deserialize, Serialize};
@@ -124,13 +131,22 @@ impl<'de> Deserialize<'de> for Rgb {
                 match tuple((space_separated, space_separated, space_separated))(v) {
                     Ok((_, (r, g, b))) => {
                         let r = r.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(r), &"int (0-255)")
+                            de::Error::invalid_value(
+                                de::Unexpected::Str(r),
+                                &"an int between 0 and 255",
+                            )
                         })?;
                         let g = g.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(g), &"int (0-255)")
+                            de::Error::invalid_value(
+                                de::Unexpected::Str(g),
+                                &"an int between 0 and 255",
+                            )
                         })?;
                         let b = b.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(b), &"int (0-255)")
+                            de::Error::invalid_value(
+                                de::Unexpected::Str(b),
+                                &"an int between 0 and 255",
+                            )
                         })?;
                         Ok(Rgb { r, g, b })
                     }
@@ -148,7 +164,13 @@ impl Serialize for Rgb {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!("{} {} {}", self.r, self.g, self.b))
+        serializer.collect_str(self)
+    }
+}
+
+impl Display for Rgb {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {} {}", self.r, self.g, self.b)
     }
 }
 
@@ -189,10 +211,10 @@ pub struct World {
     class_name: String,
     #[serde(rename = "skyname")]
     sky_name: String,
-    #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
-    solids: Vec<Solid>,
     #[serde(flatten)]
     properties: HashMap<String, String>,
+    #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
+    solids: Vec<Solid>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -234,7 +256,7 @@ impl<'de> Deserialize<'de> for Plane {
             type Value = Plane;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("plane")
+                formatter.write_str("a plane")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -249,31 +271,31 @@ impl<'de> Deserialize<'de> for Plane {
                 {
                     Ok((_, ((x0, y0, z0), (x1, y1, z1), (x2, y2, z2)))) => {
                         let x0 = x0.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(x0), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(x0), &"a float")
                         })?;
                         let y0 = y0.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(y0), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(y0), &"a float")
                         })?;
                         let z0 = z0.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(z0), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(z0), &"a float")
                         })?;
                         let x1 = x1.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(x1), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(x1), &"a float")
                         })?;
                         let y1 = y1.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(y1), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(y1), &"a float")
                         })?;
                         let z1 = z1.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(z1), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(z1), &"a float")
                         })?;
                         let x2 = x2.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(x2), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(x2), &"a float")
                         })?;
                         let y2 = y2.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(y2), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(y2), &"a float")
                         })?;
                         let z2 = z2.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(z2), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(z2), &"a float")
                         })?;
                         Ok(Plane(
                             Vector3 {
@@ -307,7 +329,14 @@ impl Serialize for Plane {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!(
+        serializer.collect_str(self)
+    }
+}
+
+impl Display for Plane {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
             "({} {} {}) ({} {} {}) ({} {} {})",
             self.0.x,
             self.0.y,
@@ -318,7 +347,7 @@ impl Serialize for Plane {
             self.2.x,
             self.2.y,
             self.2.z,
-        ))
+        )
     }
 }
 
@@ -340,7 +369,7 @@ impl<'de> Deserialize<'de> for UvAxis {
             type Value = UvAxis;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("uv axis")
+                formatter.write_str("an uv axis")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -359,19 +388,19 @@ impl<'de> Deserialize<'de> for UvAxis {
                 {
                     Ok((_, ((x, y, z, translation), scale))) => {
                         let x = x.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(x), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(x), &"a float")
                         })?;
                         let y = y.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(y), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(y), &"a float")
                         })?;
                         let z = z.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(z), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(z), &"a float")
                         })?;
                         let translation = translation.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(translation), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(translation), &"a float")
                         })?;
                         let scale = scale.parse().map_err(|_| {
-                            de::Error::invalid_value(de::Unexpected::Str(scale), &"float")
+                            de::Error::invalid_value(de::Unexpected::Str(scale), &"a float")
                         })?;
                         Ok(UvAxis {
                             axis: Vector3 { x, y, z },
@@ -393,27 +422,457 @@ impl Serialize for UvAxis {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!(
-            "[{} {} {} {}] {}",
-            self.axis.x, self.axis.y, self.axis.z, self.translation, self.scale,
-        ))
+        serializer.collect_str(self)
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+impl Display for UvAxis {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[{} {} {} {}] {}",
+            self.axis.x, self.axis.y, self.axis.z, self.translation, self.scale,
+        )
+    }
+}
+
+#[derive(Debug, Serialize)]
 pub struct DispInfo {
     power: u8,
     #[serde(rename = "startposition")]
     start_position: BracketedVector3,
     elevation: f64,
     subdiv: bool,
-    normals: HashMap<String, String>,
-    distances: HashMap<String, String>,
-    offsets: HashMap<String, String>,
-    offset_normals: HashMap<String, String>,
-    alphas: HashMap<String, String>,
-    triangle_tags: HashMap<String, String>,
+    normals: Vector3DispData,
+    distances: NumDispData<f64>,
+    offsets: Vector3DispData,
+    offset_normals: Vector3DispData,
+    alphas: NumDispData<u8>,
+    triangle_tags: NumDispData<u8>,
     //TODO: allowed_verts
+}
+
+impl DispInfo {
+    fn calculate_dimension(power: u8) -> usize {
+        2_usize.pow(power.into()) + 1
+    }
+
+    #[must_use]
+    pub fn dimension(&self) -> usize {
+        Self::calculate_dimension(self.power)
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+impl<'de> Deserialize<'de> for DispInfo {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "lowercase")]
+        enum Field {
+            Power,
+            StartPosition,
+            Elevation,
+            Subdiv,
+            Normals,
+            Distances,
+            Offsets,
+            #[serde(rename = "offset_normals")]
+            OffsetNormals,
+            Alphas,
+            #[serde(rename = "triangle_tags")]
+            TriangleTags,
+            #[serde(other)]
+            Other,
+        }
+
+        struct DispInfoVisitor;
+
+        impl<'de> Visitor<'de> for DispInfoVisitor {
+            type Value = DispInfo;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("dispinfo")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut power = None;
+                let mut dimension = None;
+                let mut start_position = None;
+                let mut elevation = None;
+                let mut subdiv = None;
+                let mut normals = None;
+                let mut distances = None;
+                let mut offsets = None;
+                let mut offset_normals = None;
+                let mut alphas = None;
+                let mut triangle_tags = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Power => {
+                            if power.is_some() {
+                                return Err(de::Error::duplicate_field("power"));
+                            }
+                            let value = map.next_value()?;
+                            power = Some(value);
+                            dimension = Some(DispInfo::calculate_dimension(value));
+                        }
+                        Field::StartPosition => {
+                            if start_position.is_some() {
+                                return Err(de::Error::duplicate_field("startposition"));
+                            }
+                            start_position = Some(map.next_value()?);
+                        }
+                        Field::Elevation => {
+                            if elevation.is_some() {
+                                return Err(de::Error::duplicate_field("elevation"));
+                            }
+                            elevation = Some(map.next_value()?);
+                        }
+                        Field::Subdiv => {
+                            if subdiv.is_some() {
+                                return Err(de::Error::duplicate_field("subdiv"));
+                            }
+                            subdiv = Some(map.next_value()?);
+                        }
+                        Field::Normals => {
+                            if normals.is_some() {
+                                return Err(de::Error::duplicate_field("normals"));
+                            }
+                            match dimension {
+                                Some(dimension) => {
+                                    normals =
+                                        Some(map.next_value_seed(Vector3DispData::new(dimension))?);
+                                }
+                                None => return Err(de::Error::missing_field("power")),
+                            }
+                        }
+                        Field::Distances => {
+                            if distances.is_some() {
+                                return Err(de::Error::duplicate_field("distances"));
+                            }
+                            match dimension {
+                                Some(dimension) => {
+                                    distances = Some(map.next_value_seed(NumDispData::new((
+                                        dimension, dimension,
+                                    )))?);
+                                }
+                                None => return Err(de::Error::missing_field("power")),
+                            }
+                        }
+                        Field::Offsets => {
+                            if offsets.is_some() {
+                                return Err(de::Error::duplicate_field("offsets"));
+                            }
+                            match dimension {
+                                Some(dimension) => {
+                                    offsets =
+                                        Some(map.next_value_seed(Vector3DispData::new(dimension))?);
+                                }
+                                None => return Err(de::Error::missing_field("power")),
+                            }
+                        }
+                        Field::OffsetNormals => {
+                            if offset_normals.is_some() {
+                                return Err(de::Error::duplicate_field("offset_normals"));
+                            }
+                            match dimension {
+                                Some(dimension) => {
+                                    offset_normals =
+                                        Some(map.next_value_seed(Vector3DispData::new(dimension))?);
+                                }
+                                None => return Err(de::Error::missing_field("power")),
+                            }
+                        }
+                        Field::Alphas => {
+                            if alphas.is_some() {
+                                return Err(de::Error::duplicate_field("alphas"));
+                            }
+                            match dimension {
+                                Some(dimension) => {
+                                    alphas = Some(map.next_value_seed(NumDispData::new((
+                                        dimension, dimension,
+                                    )))?);
+                                }
+                                None => return Err(de::Error::missing_field("power")),
+                            }
+                        }
+                        Field::TriangleTags => {
+                            if triangle_tags.is_some() {
+                                return Err(de::Error::duplicate_field("triangle_tags"));
+                            }
+                            match power {
+                                Some(power) => {
+                                    let dimension = 2_usize.pow(power.into());
+                                    triangle_tags = Some(map.next_value_seed(NumDispData::new(
+                                        (dimension, 2 * dimension),
+                                    ))?);
+                                }
+                                None => return Err(de::Error::missing_field("power")),
+                            }
+                        }
+                        Field::Other => {
+                            map.next_value::<de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let power = power.ok_or_else(|| de::Error::missing_field("power"))?;
+                let start_position =
+                    start_position.ok_or_else(|| de::Error::missing_field("startposition"))?;
+                let elevation = elevation.ok_or_else(|| de::Error::missing_field("elevation"))?;
+                let subdiv = subdiv.ok_or_else(|| de::Error::missing_field("subdiv"))?;
+                let normals = normals.ok_or_else(|| de::Error::missing_field("normals"))?;
+                let distances = distances.ok_or_else(|| de::Error::missing_field("distances"))?;
+                let offsets = offsets.ok_or_else(|| de::Error::missing_field("offsets"))?;
+                let offset_normals =
+                    offset_normals.ok_or_else(|| de::Error::missing_field("offset_normals"))?;
+                let alphas = alphas.ok_or_else(|| de::Error::missing_field("alphas"))?;
+                let triangle_tags =
+                    triangle_tags.ok_or_else(|| de::Error::missing_field("triangle_tags"))?;
+                Ok(DispInfo {
+                    power,
+                    start_position,
+                    elevation,
+                    subdiv,
+                    normals,
+                    distances,
+                    offsets,
+                    offset_normals,
+                    alphas,
+                    triangle_tags,
+                })
+            }
+        }
+
+        deserializer.deserialize_struct(
+            "DispInfo",
+            &[
+                "power",
+                "startposition",
+                "elevation",
+                "subdiv",
+                "normals",
+                "distances",
+                "offsets",
+                "offset_normals",
+                "alphas",
+                "triangle_tags",
+            ],
+            DispInfoVisitor,
+        )
+    }
+}
+
+struct RowKey(usize);
+
+impl Display for RowKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "row{}", self.0)
+    }
+}
+
+impl Serialize for RowKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+#[derive(Debug)]
+pub struct Vector3DispData {
+    data: Array2<Vector3>,
+}
+
+impl Vector3DispData {
+    #[must_use]
+    pub fn new(dimension: usize) -> Self {
+        Self {
+            data: Array2::default((dimension, dimension)),
+        }
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for Vector3DispData {
+    type Value = Vector3DispData;
+
+    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct DispDataVisitor<'a>(&'a mut Vector3DispData);
+
+        impl<'de, 'a> Visitor<'de> for DispDataVisitor<'a> {
+            type Value = ();
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("dispinfo data")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let dimension = self.0.data.dim();
+                while let Some(key) = map.next_key::<&str>()? {
+                    if !key.starts_with("row") {
+                        return Err(de::Error::unknown_field(key, &["row[n]"]));
+                    }
+                    let row_index: usize = key[3..]
+                        .parse()
+                        .map_err(|_| de::Error::unknown_field(key, &["row[n]"]))?;
+                    if row_index >= dimension.0 {
+                        return Err(de::Error::custom("row out of bounds"));
+                    }
+                    let value: &str = map.next_value()?;
+                    for (column_index, (x, y, z)) in
+                        value.split_ascii_whitespace().tuples().enumerate()
+                    {
+                        if column_index >= dimension.1 {
+                            return Err(de::Error::custom("column out of bounds"));
+                        }
+                        let item = &mut self.0.data[(row_index, column_index)];
+                        item.x = x.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(x), &"a float")
+                        })?;
+                        item.y = y.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(y), &"a float")
+                        })?;
+                        item.z = z.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(z), &"a float")
+                        })?;
+                    }
+                }
+                Ok(())
+            }
+        }
+
+        deserializer.deserialize_map(DispDataVisitor(&mut self))?;
+        Ok(self)
+    }
+}
+
+impl Serialize for Vector3DispData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let dimension = self.data.dim();
+        let mut map = serializer.serialize_map(Some(dimension.0))?;
+        for (index, row) in self.data.outer_iter().enumerate() {
+            let mut value = String::new();
+            for vec in row.iter() {
+                write!(value, "{} {} {} ", vec.x, vec.y, vec.z).unwrap();
+            }
+            map.serialize_entry(&RowKey(index), &value)?;
+        }
+        map.end()
+    }
+}
+
+#[derive(Debug)]
+pub struct NumDispData<T>
+where
+    T: Default + FromStr + Display,
+{
+    data: Array2<T>,
+}
+
+impl<T> NumDispData<T>
+where
+    T: Default + FromStr + Display,
+{
+    #[must_use]
+    pub fn new(shape: (usize, usize)) -> Self {
+        Self {
+            data: Array2::default(shape),
+        }
+    }
+}
+
+impl<'de, T> DeserializeSeed<'de> for NumDispData<T>
+where
+    T: Default + FromStr + Display,
+{
+    type Value = NumDispData<T>;
+
+    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct DispDataVisitor<'a, T>(&'a mut NumDispData<T>)
+        where
+            T: Default + FromStr + Display;
+
+        impl<'de, 'a, T> Visitor<'de> for DispDataVisitor<'a, T>
+        where
+            T: Default + FromStr + Display,
+        {
+            type Value = ();
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("dispinfo data")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let dimension = self.0.data.dim();
+                while let Some(key) = map.next_key::<&str>()? {
+                    if !key.starts_with("row") {
+                        return Err(de::Error::unknown_field(key, &["row[n]"]));
+                    }
+                    let row_index: usize = key[3..]
+                        .parse()
+                        .map_err(|_| de::Error::unknown_field(key, &["row[n]"]))?;
+                    if row_index >= dimension.0 {
+                        return Err(de::Error::custom("row out of bounds"));
+                    }
+                    let value: &str = map.next_value()?;
+                    for (column_index, num) in value.split_ascii_whitespace().enumerate() {
+                        if column_index >= dimension.1 {
+                            return Err(de::Error::custom("column out of bounds"));
+                        }
+                        self.0.data[(row_index, column_index)] = num.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(num), &"a number")
+                        })?;
+                    }
+                }
+                Ok(())
+            }
+        }
+
+        deserializer.deserialize_map(DispDataVisitor(&mut self))?;
+        Ok(self)
+    }
+}
+
+impl<T> Serialize for NumDispData<T>
+where
+    T: Default + FromStr + Display,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let dimension = self.data.dim();
+        let mut map = serializer.serialize_map(Some(dimension.0))?;
+        for (index, row) in self.data.outer_iter().enumerate() {
+            let mut value = String::new();
+            for num in row.iter() {
+                write!(value, "{} ", num).unwrap();
+            }
+            map.serialize_entry(&RowKey(index), &value)?;
+        }
+        map.end()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -458,7 +917,7 @@ impl<'de> Deserialize<'de> for Entity {
             type Value = Entity;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("struct Entity")
+                formatter.write_str("an entity")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
