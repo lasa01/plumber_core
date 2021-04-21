@@ -12,6 +12,7 @@ use std::{
 
 use itertools::Itertools;
 use ndarray::Array2;
+use uncased::Uncased;
 use nom::sequence::tuple;
 use serde::{
     de::{self, DeserializeSeed, MapAccess, Visitor},
@@ -34,7 +35,7 @@ pub fn to_string(vmf: &Vmf) -> vdf::Result<String> {
     vmf.to_string()
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Vmf {
     #[serde(rename = "versioninfo")]
     version_info: VersionInfo,
@@ -63,7 +64,7 @@ impl Vmf {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(default)]
 pub struct VersionInfo {
     #[serde(rename = "editorversion")]
@@ -89,13 +90,13 @@ impl Default for VersionInfo {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct VisGroups {
     #[serde(default, rename = "visgroup", skip_serializing_if = "Vec::is_empty")]
     vis_groups: Vec<VisGroup>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct VisGroup {
     name: String,
     #[serde(rename = "visgroupid")]
@@ -103,7 +104,7 @@ pub struct VisGroup {
     color: Rgb,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rgb {
     pub r: u8,
     pub g: u8,
@@ -175,7 +176,7 @@ impl Display for Rgb {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(default)]
 pub struct ViewSettings {
     #[serde(rename = "bSnapToGrid")]
@@ -202,7 +203,7 @@ impl Default for ViewSettings {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct World {
     id: i32,
     #[serde(rename = "mapversion")]
@@ -212,12 +213,12 @@ pub struct World {
     #[serde(rename = "skyname")]
     sky_name: String,
     #[serde(flatten)]
-    properties: HashMap<String, String>,
+    properties: HashMap<Uncased<'static>, String>,
     #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
     solids: Vec<Solid>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Solid {
     id: i32,
     #[serde(rename = "side", skip_serializing_if = "Vec::is_empty")]
@@ -225,7 +226,7 @@ pub struct Solid {
     editor: Editor,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Side {
     id: i32,
     plane: Plane,
@@ -242,7 +243,7 @@ pub struct Side {
     disp_info: Option<DispInfo>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Plane(pub Vector3, pub Vector3, pub Vector3);
 
 impl<'de> Deserialize<'de> for Plane {
@@ -351,7 +352,7 @@ impl Display for Plane {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UvAxis {
     pub axis: Vector3,
     pub translation: f64,
@@ -436,7 +437,7 @@ impl Display for UvAxis {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq)]
 pub struct DispInfo {
     power: u8,
     #[serde(rename = "startposition")]
@@ -685,7 +686,7 @@ impl Serialize for RowKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Vector3DispData {
     data: Array2<Vector3>,
 }
@@ -776,7 +777,7 @@ impl Serialize for Vector3DispData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct NumDispData<T>
 where
     T: Default + FromStr + Display,
@@ -875,7 +876,7 @@ where
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Editor {
     color: Rgb,
     #[serde(default, rename = "groupid")]
@@ -890,7 +891,7 @@ pub struct Editor {
     logical_pos: Option<BracketedVector2>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq)]
 pub struct Entity {
     id: i32,
     #[serde(rename = "classname")]
@@ -898,8 +899,8 @@ pub struct Entity {
     #[serde(rename = "spawnflags")]
     spawn_flags: i32,
     #[serde(flatten)]
-    properties: HashMap<String, String>,
-    connections: HashMap<String, String>,
+    properties: HashMap<Uncased<'static>, String>,
+    connections: HashMap<Uncased<'static>, String>,
     #[serde(rename = "solid", skip_serializing_if = "Vec::is_empty")]
     solids: Vec<Solid>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -975,7 +976,7 @@ impl<'de> Deserialize<'de> for Entity {
                             }
                         }
                         other => {
-                            properties.insert(other.into(), map.next_value()?);
+                            properties.insert(other.to_owned().into(), map.next_value()?);
                         }
                     }
                 }

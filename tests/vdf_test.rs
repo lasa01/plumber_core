@@ -53,7 +53,7 @@ struct Test {
 }
 
 #[test]
-fn test_parse() {
+fn test_vdf_parse() {
     let input = include_str!("test.vdf");
     assert_eq!(
         vdf::from_str::<Test>(input).unwrap(),

@@ -8,7 +8,7 @@ use std::{
 use nom::sequence::tuple;
 use serde::{de, de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Vector2 {
     pub x: f64,
     pub y: f64,
@@ -66,7 +66,7 @@ impl Display for Vector2 {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Vector3 {
     pub x: f64,
     pub y: f64,
@@ -128,7 +128,7 @@ impl Display for Vector3 {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct BracketedVector2(Vector2);
 
 impl Deref for BracketedVector2 {
@@ -197,7 +197,7 @@ impl Display for BracketedVector2 {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct BracketedVector3(Vector3);
 
 impl Deref for BracketedVector3 {
