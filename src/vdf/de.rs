@@ -143,21 +143,21 @@ where
 pub trait DeserializerLevel<'lvl, 'de>: Sized {
     fn deserialize_any<V>(
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>;
 
     fn deserialize_seq<V>(
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>;
 
     fn deserialize_map<V>(
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>;
@@ -166,7 +166,7 @@ pub trait DeserializerLevel<'lvl, 'de>: Sized {
         name: &'static str,
         variants: &'static [&'static str],
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>;
@@ -411,56 +411,56 @@ pub struct Root;
 impl<'lvl, 'de> DeserializerLevel<'lvl, 'de> for Root {
     fn deserialize_any<V>(
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        Self::deserialize_map(visitor, wrapper)
+        Self::deserialize_map(visitor, deserializer)
     }
 
     fn deserialize_seq<V>(
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_seq(RootAccess::new(&mut wrapper.inner_level(Value)))
+        visitor.visit_seq(RootAccess::new(&mut deserializer.inner_level(Value)))
     }
 
     fn deserialize_map<V>(
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_map(RootAccess::new(&mut wrapper.inner_level(Value)))
+        visitor.visit_map(RootAccess::new(&mut deserializer.inner_level(Value)))
     }
 
     fn deserialize_enum<V>(
         _name: &'static str,
         _variants: &'static [&'static str],
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_enum(RootAccess::new(&mut wrapper.inner_level(Value)))
+        visitor.visit_enum(RootAccess::new(&mut deserializer.inner_level(Value)))
     }
 }
 
 struct RootAccess<'wr, 'lvl, 'de> {
-    wrapper: &'wr mut Deserializer<'lvl, 'de, Value>,
+    deserializer: &'wr mut Deserializer<'lvl, 'de, Value>,
     first: bool,
 }
 
 impl<'wr, 'lvl, 'de> RootAccess<'wr, 'lvl, 'de> {
-    fn new(wrapper: &'wr mut Deserializer<'lvl, 'de, Value>) -> Self {
+    fn new(deserializer: &'wr mut Deserializer<'lvl, 'de, Value>) -> Self {
         Self {
-            wrapper,
+            deserializer,
             first: true,
         }
     }
@@ -473,15 +473,15 @@ impl<'wr, 'lvl, 'de> SeqAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
     where
         S: de::DeserializeSeed<'de>,
     {
-        if self.wrapper.parsed_eof() {
+        if self.deserializer.parsed_eof() {
             return Ok(None);
         }
         if !self.first {
-            self.wrapper.parse_block_sep()?;
+            self.deserializer.parse_block_sep()?;
         }
         self.first = false;
-        self.wrapper.parse_key()?;
-        seed.deserialize(&mut *self.wrapper).map(Some)
+        self.deserializer.parse_key()?;
+        seed.deserialize(&mut *self.deserializer).map(Some)
     }
 }
 
@@ -492,15 +492,15 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
     where
         K: de::DeserializeSeed<'de>,
     {
-        if self.wrapper.parsed_eof() {
+        if self.deserializer.parsed_eof() {
             return Ok(None);
         }
         if !self.first {
-            self.wrapper.parse_block_sep()?;
+            self.deserializer.parse_block_sep()?;
         }
         self.first = false;
-        let key = self.wrapper.parse_key()?;
-        self.wrapper.last_key = key;
+        let key = self.deserializer.parse_key()?;
+        self.deserializer.last_key = key;
         seed.deserialize(BorrowedStrDeserializer::new(key))
             .map(Some)
     }
@@ -509,7 +509,7 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        seed.deserialize(&mut *self.wrapper)
+        seed.deserialize(&mut *self.deserializer)
     }
 }
 
@@ -521,8 +521,8 @@ impl<'wr, 'lvl, 'de> EnumAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        let key = self.wrapper.parse_key()?;
-        self.wrapper.last_key = key;
+        let key = self.deserializer.parse_key()?;
+        self.deserializer.last_key = key;
         Ok((seed.deserialize(BorrowedStrDeserializer::new(key))?, self))
     }
 }
@@ -531,28 +531,28 @@ impl<'wr, 'lvl, 'de> VariantAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
-        self.wrapper.parse_empty_token()
+        self.deserializer.parse_empty_token()
     }
 
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
     where
         T: de::DeserializeSeed<'de>,
     {
-        seed.deserialize(self.wrapper)
+        seed.deserialize(self.deserializer)
     }
 
     fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        de::Deserializer::deserialize_seq(self.wrapper, visitor)
+        de::Deserializer::deserialize_seq(self.deserializer, visitor)
     }
 
     fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        de::Deserializer::deserialize_map(self.wrapper, visitor)
+        de::Deserializer::deserialize_map(self.deserializer, visitor)
     }
 }
 
@@ -561,68 +561,68 @@ struct Value;
 impl<'lvl, 'de> DeserializerLevel<'lvl, 'de> for Value {
     fn deserialize_any<V>(
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        match wrapper.peek_char()? {
-            '{' => Self::deserialize_map(visitor, wrapper),
-            _ => de::Deserializer::deserialize_str(wrapper, visitor),
+        match deserializer.peek_char()? {
+            '{' => Self::deserialize_map(visitor, deserializer),
+            _ => de::Deserializer::deserialize_str(deserializer, visitor),
         }
     }
 
     fn deserialize_seq<V>(
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_seq(SeqValueAccess::new(wrapper, wrapper.last_key))
+        visitor.visit_seq(SeqValueAccess::new(deserializer, deserializer.last_key))
     }
 
     fn deserialize_map<V>(
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        wrapper.parse_block_start()?;
-        visitor.visit_map(ValueAccess::new(wrapper))
+        deserializer.parse_block_start()?;
+        visitor.visit_map(ValueAccess::new(deserializer))
     }
 
     fn deserialize_enum<V>(
         _name: &'static str,
         _variants: &'static [&'static str],
         visitor: V,
-        wrapper: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut Deserializer<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        match wrapper.peek_char()? {
+        match deserializer.peek_char()? {
             '{' => {
-                wrapper.parse_block_start()?;
-                let value = visitor.visit_enum(ValueAccess::new(wrapper))?;
-                wrapper.parse_block_end()?;
+                deserializer.parse_block_start()?;
+                let value = visitor.visit_enum(ValueAccess::new(deserializer))?;
+                deserializer.parse_block_end()?;
                 Ok(value)
             }
-            _ => visitor.visit_enum(BorrowedStrDeserializer::new(wrapper.parse_value()?)),
+            _ => visitor.visit_enum(BorrowedStrDeserializer::new(deserializer.parse_value()?)),
         }
     }
 }
 
 struct ValueAccess<'wr, 'lvl, 'de> {
-    wrapper: &'wr mut Deserializer<'lvl, 'de, Value>,
+    deserializer: &'wr mut Deserializer<'lvl, 'de, Value>,
     first: bool,
 }
 
 impl<'wr, 'lvl, 'de> ValueAccess<'wr, 'lvl, 'de> {
-    fn new(wrapper: &'wr mut Deserializer<'lvl, 'de, Value>) -> Self {
+    fn new(deserializer: &'wr mut Deserializer<'lvl, 'de, Value>) -> Self {
         Self {
-            wrapper,
+            deserializer,
             first: true,
         }
     }
@@ -635,15 +635,15 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
     where
         K: de::DeserializeSeed<'de>,
     {
-        if let Ok(..) = self.wrapper.parse_block_end() {
+        if let Ok(..) = self.deserializer.parse_block_end() {
             return Ok(None);
         }
         if !self.first {
-            self.wrapper.parse_block_sep()?;
+            self.deserializer.parse_block_sep()?;
         }
         self.first = false;
-        let key = self.wrapper.parse_key()?;
-        self.wrapper.last_key = key;
+        let key = self.deserializer.parse_key()?;
+        self.deserializer.last_key = key;
         seed.deserialize(BorrowedStrDeserializer::new(key))
             .map(Some)
     }
@@ -652,7 +652,7 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        seed.deserialize(&mut *self.wrapper)
+        seed.deserialize(&mut *self.deserializer)
     }
 }
 
@@ -664,8 +664,8 @@ impl<'wr, 'lvl, 'de> EnumAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        let key = self.wrapper.parse_key()?;
-        self.wrapper.last_key = key;
+        let key = self.deserializer.parse_key()?;
+        self.deserializer.last_key = key;
         Ok((seed.deserialize(BorrowedStrDeserializer::new(key))?, self))
     }
 }
@@ -674,41 +674,41 @@ impl<'wr, 'lvl, 'de> VariantAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
-        self.wrapper.parse_empty_token()
+        self.deserializer.parse_empty_token()
     }
 
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
     where
         T: de::DeserializeSeed<'de>,
     {
-        seed.deserialize(self.wrapper)
+        seed.deserialize(self.deserializer)
     }
 
     fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        de::Deserializer::deserialize_seq(self.wrapper, visitor)
+        de::Deserializer::deserialize_seq(self.deserializer, visitor)
     }
 
     fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        de::Deserializer::deserialize_map(self.wrapper, visitor)
+        de::Deserializer::deserialize_map(self.deserializer, visitor)
     }
 }
 
 struct SeqValueAccess<'wr, 'lvl, 'de> {
-    wrapper: &'wr mut Deserializer<'lvl, 'de, Value>,
+    deserializer: &'wr mut Deserializer<'lvl, 'de, Value>,
     first: bool,
     element_key: &'de str,
 }
 
 impl<'wr, 'lvl, 'de> SeqValueAccess<'wr, 'lvl, 'de> {
-    fn new(wrapper: &'wr mut Deserializer<'lvl, 'de, Value>, element_key: &'de str) -> Self {
+    fn new(deserializer: &'wr mut Deserializer<'lvl, 'de, Value>, element_key: &'de str) -> Self {
         Self {
-            wrapper,
+            deserializer,
             first: true,
             element_key,
         }
@@ -722,13 +722,13 @@ impl<'wr, 'lvl, 'de> SeqAccess<'de> for SeqValueAccess<'wr, 'lvl, 'de> {
     where
         T: de::DeserializeSeed<'de>,
     {
-        if self.wrapper.peeked_seq_end() {
+        if self.deserializer.peeked_seq_end() {
             return Ok(None);
         }
-        if !self.first && !self.wrapper.parsed_block_sep_and_token(self.element_key) {
+        if !self.first && !self.deserializer.parsed_block_sep_and_token(self.element_key) {
             return Ok(None);
         }
         self.first = false;
-        seed.deserialize(&mut *self.wrapper).map(Some)
+        seed.deserialize(&mut *self.deserializer).map(Some)
     }
 }
