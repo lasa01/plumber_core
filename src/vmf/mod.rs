@@ -4,11 +4,7 @@ use crate::{
     vdf,
 };
 
-use std::{
-    collections::HashMap,
-    fmt::{self, Display, Write},
-    str::FromStr,
-};
+use std::{collections::BTreeMap, fmt::{self, Display, Write}, str::FromStr};
 
 use itertools::Itertools;
 use ndarray::Array2;
@@ -213,7 +209,7 @@ pub struct World {
     #[serde(rename = "skyname")]
     sky_name: String,
     #[serde(flatten)]
-    properties: HashMap<Uncased<'static>, String>,
+    properties: BTreeMap<Uncased<'static>, String>,
     #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
     solids: Vec<Solid>,
 }
@@ -899,8 +895,8 @@ pub struct Entity {
     #[serde(rename = "spawnflags")]
     spawn_flags: i32,
     #[serde(flatten)]
-    properties: HashMap<Uncased<'static>, String>,
-    connections: HashMap<Uncased<'static>, String>,
+    properties: BTreeMap<Uncased<'static>, String>,
+    connections: BTreeMap<Uncased<'static>, String>,
     #[serde(rename = "solid", skip_serializing_if = "Vec::is_empty")]
     solids: Vec<Solid>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -928,7 +924,7 @@ impl<'de> Deserialize<'de> for Entity {
                 let mut id = None;
                 let mut class_name = None;
                 let mut spawn_flags = None;
-                let mut properties = HashMap::new();
+                let mut properties = BTreeMap::new();
                 let mut connections = None;
                 let mut solids = None;
                 let mut editor = None;

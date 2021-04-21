@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-use maplit::hashmap;
+use maplit::btreemap;
 use serde_derive::Deserialize;
 
 use valveflow::vdf;
@@ -36,7 +36,7 @@ struct Test {
     key3: String,
     key4: String,
     key5: (),
-    key6: HashMap<String, String>,
+    key6: BTreeMap<String, String>,
     key7: Key7,
     key8: Key8,
     seq1: Vec<String>,
@@ -63,7 +63,7 @@ fn test_vdf_parse() {
             key3: "value3".into(),
             key4: ("a\t\r\nb\r\n// not a comment\r\nc\r\n  d\r\ne\r\nf\t\r\n").into(),
             key5: (),
-            key6: hashmap! {
+            key6: btreemap! {
                 "key1".into() => "value1".into(),
                 "key2".into() => "value2".into(),
             },
