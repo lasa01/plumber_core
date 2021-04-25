@@ -725,7 +725,11 @@ impl<'wr, 'lvl, 'de> SeqAccess<'de> for SeqValueAccess<'wr, 'lvl, 'de> {
         if self.deserializer.peeked_seq_end() {
             return Ok(None);
         }
-        if !self.first && !self.deserializer.parsed_block_sep_and_token(self.element_key) {
+        if !self.first
+            && !self
+                .deserializer
+                .parsed_block_sep_and_token(self.element_key)
+        {
             return Ok(None);
         }
         self.first = false;

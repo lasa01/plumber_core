@@ -4,11 +4,14 @@ use crate::{
     vdf,
 };
 
-use std::{collections::BTreeMap, fmt::{self, Display, Write}, str::FromStr};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display, Write},
+    str::FromStr,
+};
 
 use itertools::Itertools;
 use ndarray::Array2;
-use uncased::Uncased;
 use nom::sequence::tuple;
 use serde::{
     de::{self, DeserializeSeed, MapAccess, Visitor},
@@ -16,6 +19,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use serde_derive::{Deserialize, Serialize};
+use uncased::Uncased;
 
 /// # Errors
 ///
