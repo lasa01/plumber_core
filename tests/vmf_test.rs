@@ -1,3 +1,4 @@
+#![cfg(feature = "vmf")]
 use valveflow::vmf::Vmf;
 
 #[test]
