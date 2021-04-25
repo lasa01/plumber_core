@@ -64,7 +64,7 @@ impl Vmf {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(default, expecting = "class versioninfo")]
 pub struct VersionInfo {
     #[serde(rename = "editorversion")]
@@ -90,14 +90,14 @@ impl Default for VersionInfo {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class visgroups")]
 pub struct VisGroups {
     #[serde(default, rename = "visgroup", skip_serializing_if = "Vec::is_empty")]
     vis_groups: Vec<VisGroup>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class visgroup")]
 pub struct VisGroup {
     name: String,
@@ -178,7 +178,7 @@ impl Display for Rgb {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(default, expecting = "class viewsettings")]
 pub struct ViewSettings {
     #[serde(rename = "bSnapToGrid")]
@@ -205,7 +205,7 @@ impl Default for ViewSettings {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class world")]
 pub struct World {
     id: i32,
@@ -221,7 +221,7 @@ pub struct World {
     solids: Vec<Solid>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class solid")]
 pub struct Solid {
     id: i32,
@@ -230,7 +230,7 @@ pub struct Solid {
     editor: Editor,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class side")]
 pub struct Side {
     id: i32,
@@ -442,7 +442,7 @@ impl Display for UvAxis {
     }
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct DispInfo {
     power: u8,
     #[serde(rename = "startposition")]
@@ -703,7 +703,7 @@ impl Serialize for RowKey {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Vector3DispData {
     data: Array2<Vector3>,
 }
@@ -794,7 +794,7 @@ impl Serialize for Vector3DispData {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NumDispData<T>
 where
     T: Default + FromStr + Display,
@@ -923,7 +923,7 @@ impl Serialize for AllowedVertsInner {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AllowedVerts([i32; 10]);
 
 impl<'de> Deserialize<'de> for AllowedVerts {
@@ -997,7 +997,7 @@ impl Default for AllowedVerts {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class editor")]
 pub struct Editor {
     color: Rgb,
@@ -1013,7 +1013,7 @@ pub struct Editor {
     logical_pos: Option<BracketedVector2>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct Entity {
     id: i32,
     #[serde(rename = "classname")]
