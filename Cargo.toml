@@ -18,9 +18,12 @@ vmf = []
 
 [dependencies]
 bytecount = "0.6.2"
+derive_more = "0.99.13"
 itertools = "0.10.0"
-ndarray = "0.15.1"
+nalgebra = "0.24.1"
+ndarray = "0.14.0"
 nom = "6.1.2"
+rgb = "0.8.27"
 serde = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
 serde_derive = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
 thiserror = "1.0.24"
