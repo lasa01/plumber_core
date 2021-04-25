@@ -318,6 +318,9 @@ impl<'a> ser::SerializeSeq for SerializeSeq<'a> {
     }
 
     fn end(self) -> Result<Self::Ok> {
+        if self.first {
+            return Err(Error::new(Reason::EmptySequence));
+        }
         self.serializer.last_key = Some(self.key);
         Ok(())
     }
@@ -342,6 +345,9 @@ impl<'a> ser::SerializeTuple for SerializeSeq<'a> {
     }
 
     fn end(self) -> Result<Self::Ok> {
+        if self.first {
+            return Err(Error::new(Reason::EmptySequence));
+        }
         self.serializer.last_key = Some(self.key);
         Ok(())
     }
@@ -366,6 +372,9 @@ impl<'a> ser::SerializeTupleStruct for SerializeSeq<'a> {
     }
 
     fn end(self) -> Result<Self::Ok> {
+        if self.first {
+            return Err(Error::new(Reason::EmptySequence));
+        }
         self.serializer.last_key = Some(self.key);
         Ok(())
     }
@@ -390,6 +399,9 @@ impl<'a> ser::SerializeTupleVariant for SerializeSeq<'a> {
     }
 
     fn end(self) -> Result<Self::Ok> {
+        if self.first {
+            return Err(Error::new(Reason::EmptySequence));
+        }
         self.serializer.output += "\n";
         self.serializer.indentation -= 1;
         self.serializer.indent();

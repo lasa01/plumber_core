@@ -31,6 +31,8 @@ pub enum Reason {
     InvalidBool,
     #[error("key must be a string")]
     KeyMustBeString,
+    #[error("sequence must have at least 1 element")]
+    EmptySequence,
     #[error("{0}")]
     Custom(String),
 }
