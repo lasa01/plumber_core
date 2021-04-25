@@ -80,7 +80,7 @@ impl Display for Rgb {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut)]
-pub struct Vector2(nalgebra::Vector2<f32>);
+pub struct Vector2(nalgebra::Vector2<f64>);
 
 impl<'de> Deserialize<'de> for Vector2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -135,7 +135,7 @@ impl Display for Vector2 {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut)]
-pub struct Vector3(nalgebra::Vector3<f32>);
+pub struct Vector3(nalgebra::Vector3<f64>);
 
 impl<'de> Deserialize<'de> for Vector3 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -193,7 +193,7 @@ impl Display for Vector3 {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut)]
-pub struct BracketedVector2(nalgebra::Vector2<f32>);
+pub struct BracketedVector2(nalgebra::Vector2<f64>);
 
 impl<'de> Deserialize<'de> for BracketedVector2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -248,7 +248,7 @@ impl Display for BracketedVector2 {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut)]
-pub struct BracketedVector3(nalgebra::Vector3<f32>);
+pub struct BracketedVector3(nalgebra::Vector3<f64>);
 
 impl<'de> Deserialize<'de> for BracketedVector3 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -306,7 +306,7 @@ impl Display for BracketedVector3 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Plane(pub nalgebra::Vector3<f32>, pub nalgebra::Vector3<f32>, pub nalgebra::Vector3<f32>);
+pub struct Plane(pub nalgebra::Vector3<f64>, pub nalgebra::Vector3<f64>, pub nalgebra::Vector3<f64>);
 
 impl<'de> Deserialize<'de> for Plane {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -404,7 +404,7 @@ impl Display for Plane {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UvAxis {
-    pub axis: nalgebra::Vector3<f32>,
+    pub axis: nalgebra::Vector3<f64>,
     pub translation: f64,
     pub scale: f64,
 }
