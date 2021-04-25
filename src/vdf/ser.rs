@@ -47,9 +47,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeTuple = SerializeSeq<'a>;
     type SerializeTupleStruct = SerializeSeq<'a>;
     type SerializeTupleVariant = SerializeSeq<'a>;
-    type SerializeMap = SerializeStruct<'a>;
-    type SerializeStruct = SerializeStruct<'a>;
-    type SerializeStructVariant = SerializeStruct<'a>;
+    type SerializeMap = SerializeClass<'a>;
+    type SerializeStruct = SerializeClass<'a>;
+    type SerializeStructVariant = SerializeClass<'a>;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok> {
         self.serialize_str(if v { "1" } else { "0" })
@@ -224,7 +224,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             self.indent();
         }
         let key_before = self.last_key.take();
-        Ok(SerializeStruct {
+        Ok(SerializeClass {
             serializer: self,
             key_before,
             is_root,
@@ -242,7 +242,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             self.indent();
         }
         let key_before = self.last_key.take();
-        Ok(SerializeStruct {
+        Ok(SerializeClass {
             serializer: self,
             key_before,
             is_root,
@@ -275,7 +275,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             self.indent();
         }
         let key_before = self.last_key.take();
-        Ok(SerializeStruct {
+        Ok(SerializeClass {
             serializer: self,
             key_before,
             is_root,
@@ -584,14 +584,14 @@ impl<'a> ser::Serializer for KeySerializer<'a> {
     }
 }
 
-pub struct SerializeStruct<'a> {
+pub struct SerializeClass<'a> {
     serializer: &'a mut Serializer,
     key_before: Option<String>,
     is_root: bool,
     first: bool,
 }
 
-impl<'a> ser::SerializeStruct for SerializeStruct<'a> {
+impl<'a> ser::SerializeStruct for SerializeClass<'a> {
     type Ok = ();
     type Error = Error;
 
@@ -626,7 +626,7 @@ impl<'a> ser::SerializeStruct for SerializeStruct<'a> {
     }
 }
 
-impl<'a> ser::SerializeStructVariant for SerializeStruct<'a> {
+impl<'a> ser::SerializeStructVariant for SerializeClass<'a> {
     type Ok = ();
     type Error = Error;
 
@@ -664,7 +664,7 @@ impl<'a> ser::SerializeStructVariant for SerializeStruct<'a> {
     }
 }
 
-impl<'a> ser::SerializeMap for SerializeStruct<'a> {
+impl<'a> ser::SerializeMap for SerializeClass<'a> {
     type Ok = ();
     type Error = Error;
 
