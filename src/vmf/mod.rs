@@ -61,7 +61,7 @@ impl Vmf {
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
-#[serde(default)]
+#[serde(default, expecting = "class versioninfo")]
 pub struct VersionInfo {
     #[serde(rename = "editorversion")]
     editor_version: i32,
@@ -87,12 +87,14 @@ impl Default for VersionInfo {
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(expecting = "class visgroups")]
 pub struct VisGroups {
     #[serde(default, rename = "visgroup", skip_serializing_if = "Vec::is_empty")]
     vis_groups: Vec<VisGroup>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(expecting = "class visgroup")]
 pub struct VisGroup {
     name: String,
     #[serde(rename = "visgroupid")]
@@ -118,7 +120,7 @@ impl<'de> Deserialize<'de> for Rgb {
             type Value = Rgb;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("rgb")
+                formatter.write_str("an rgb string")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -173,7 +175,7 @@ impl Display for Rgb {
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
-#[serde(default)]
+#[serde(default, expecting = "class viewsettings")]
 pub struct ViewSettings {
     #[serde(rename = "bSnapToGrid")]
     snap_to_grid: bool,
@@ -200,6 +202,7 @@ impl Default for ViewSettings {
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(expecting = "class world")]
 pub struct World {
     id: i32,
     #[serde(rename = "mapversion")]
@@ -215,6 +218,7 @@ pub struct World {
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(expecting = "class solid")]
 pub struct Solid {
     id: i32,
     #[serde(rename = "side", skip_serializing_if = "Vec::is_empty")]
@@ -223,6 +227,7 @@ pub struct Solid {
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(expecting = "class side")]
 pub struct Side {
     id: i32,
     plane: Plane,
@@ -253,7 +258,7 @@ impl<'de> Deserialize<'de> for Plane {
             type Value = Plane;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a plane")
+                formatter.write_str("a plane string")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -366,7 +371,7 @@ impl<'de> Deserialize<'de> for UvAxis {
             type Value = UvAxis;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("an uv axis")
+                formatter.write_str("an uv axis string")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -491,7 +496,7 @@ impl<'de> Deserialize<'de> for DispInfo {
             type Value = DispInfo;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("dispinfo")
+                formatter.write_str("class dispinfo")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -709,7 +714,7 @@ impl<'de> DeserializeSeed<'de> for Vector3DispData {
             type Value = ();
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("dispinfo data")
+                formatter.write_str("a dispinfo data class")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -814,7 +819,7 @@ where
             type Value = ();
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("dispinfo data")
+                formatter.write_str("a dispinfo data class")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -873,6 +878,7 @@ where
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(expecting = "class editor")]
 pub struct Editor {
     color: Rgb,
     #[serde(default, rename = "groupid")]
@@ -914,7 +920,7 @@ impl<'de> Deserialize<'de> for Entity {
             type Value = Entity;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("an entity")
+                formatter.write_str("class entity")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
