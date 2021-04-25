@@ -12,7 +12,7 @@ use uncased::Uncased;
 use nom::sequence::tuple;
 use serde::{
     de::{self, DeserializeSeed, MapAccess, Visitor},
-    ser::SerializeMap,
+    ser::{SerializeMap, SerializeStruct},
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use serde_derive::{Deserialize, Serialize};
@@ -451,7 +451,7 @@ pub struct DispInfo {
     offset_normals: Vector3DispData,
     alphas: NumDispData<u8>,
     triangle_tags: NumDispData<u8>,
-    //TODO: allowed_verts
+    allowed_verts: AllowedVerts,
 }
 
 impl DispInfo {
@@ -486,6 +486,8 @@ impl<'de> Deserialize<'de> for DispInfo {
             Alphas,
             #[serde(rename = "triangle_tags")]
             TriangleTags,
+            #[serde(rename = "allowed_verts")]
+            AllowedVerts,
             #[serde(other)]
             Other,
         }
@@ -514,6 +516,7 @@ impl<'de> Deserialize<'de> for DispInfo {
                 let mut offset_normals = None;
                 let mut alphas = None;
                 let mut triangle_tags = None;
+                let mut allowed_verts = None;
                 while let Some(key) = map.next_key()? {
                     match key {
                         Field::Power => {
@@ -618,6 +621,12 @@ impl<'de> Deserialize<'de> for DispInfo {
                                 None => return Err(de::Error::missing_field("power")),
                             }
                         }
+                        Field::AllowedVerts => {
+                            if allowed_verts.is_some() {
+                                return Err(de::Error::duplicate_field("allowed_verts"));
+                            }
+                            allowed_verts = Some(map.next_value()?);
+                        }
                         Field::Other => {
                             map.next_value::<de::IgnoredAny>()?;
                         }
@@ -636,6 +645,8 @@ impl<'de> Deserialize<'de> for DispInfo {
                 let alphas = alphas.ok_or_else(|| de::Error::missing_field("alphas"))?;
                 let triangle_tags =
                     triangle_tags.ok_or_else(|| de::Error::missing_field("triangle_tags"))?;
+                let allowed_verts =
+                    allowed_verts.ok_or_else(|| de::Error::missing_field("allowed_verts"))?;
                 Ok(DispInfo {
                     power,
                     start_position,
@@ -647,6 +658,7 @@ impl<'de> Deserialize<'de> for DispInfo {
                     offset_normals,
                     alphas,
                     triangle_tags,
+                    allowed_verts,
                 })
             }
         }
@@ -874,6 +886,110 @@ where
             map.serialize_entry(&RowKey(index), &value)?;
         }
         map.end()
+    }
+}
+
+struct AllowedVertsInner([i32; 10]);
+
+impl Display for AllowedVertsInner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {} {} {} {} {} {} {} {} {}",
+            self.0[0],
+            self.0[1],
+            self.0[2],
+            self.0[3],
+            self.0[4],
+            self.0[5],
+            self.0[6],
+            self.0[7],
+            self.0[8],
+            self.0[9],
+        )
+    }
+}
+
+impl Serialize for AllowedVertsInner {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct AllowedVerts([i32; 10]);
+
+impl<'de> Deserialize<'de> for AllowedVerts {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier)]
+        enum Field {
+            #[serde(rename = "10")]
+            Field,
+        }
+
+        struct AllowedVertsVisitor;
+
+        impl<'de> Visitor<'de> for AllowedVertsVisitor {
+            type Value = AllowedVerts;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("class allowed_verts")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut field: Option<[i32; 10]> = None;
+                while map.next_key::<Field>()?.is_some() {
+                    if field.is_some() {
+                        return Err(de::Error::duplicate_field("10"));
+                    }
+                    let value: &str = map.next_value()?;
+                    let mut data = [0; 10];
+                    for (idx, num) in value.split_ascii_whitespace().enumerate() {
+                        if idx > 9 {
+                            return Err(de::Error::invalid_value(
+                                de::Unexpected::Str(value),
+                                &"10 numbers",
+                            ));
+                        }
+                        data[idx] = num.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(num), &"an int")
+                        })?;
+                    }
+                    field = Some(data);
+                }
+                let field = field.ok_or_else(|| de::Error::missing_field("10"))?;
+                Ok(AllowedVerts(field))
+            }
+        }
+
+        deserializer.deserialize_struct("AllowedVerts", &["10"], AllowedVertsVisitor)
+    }
+}
+
+impl Serialize for AllowedVerts {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut str = serializer.serialize_struct("AllowedVerts", 1)?;
+        str.serialize_field("10", &AllowedVertsInner(self.0))?;
+        str.end()
+    }
+}
+
+impl Default for AllowedVerts {
+    fn default() -> Self {
+        Self([-1; 10])
     }
 }
 
