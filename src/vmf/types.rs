@@ -1,16 +1,14 @@
-use crate::{
-    parsers::{bracketed, parenthesed, space_separated},
-};
+use crate::parsers::{bracketed, parenthesed, space_separated};
 
-use std::{fmt::{self, Display}};
+use std::fmt::{self, Display};
 
+use derive_more::{Deref, DerefMut};
 use nom::sequence::tuple;
+use rgb::RGB8;
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use rgb::RGB8;
-use derive_more::{Deref, DerefMut};
 
 #[derive(Debug, Clone, Copy, PartialEq, Deref, DerefMut)]
 pub struct Rgb(RGB8);
@@ -306,7 +304,11 @@ impl Display for BracketedVector3 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Plane(pub nalgebra::Vector3<f64>, pub nalgebra::Vector3<f64>, pub nalgebra::Vector3<f64>);
+pub struct Plane(
+    pub nalgebra::Point3<f64>,
+    pub nalgebra::Point3<f64>,
+    pub nalgebra::Point3<f64>,
+);
 
 impl<'de> Deserialize<'de> for Plane {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -361,9 +363,9 @@ impl<'de> Deserialize<'de> for Plane {
                             de::Error::invalid_value(de::Unexpected::Str(z2), &"a float")
                         })?;
                         Ok(Plane(
-                            nalgebra::Vector3::new(x0, y0, z0),
-                            nalgebra::Vector3::new(x1, y1, z1),
-                            nalgebra::Vector3::new(x2, y2, z2),
+                            nalgebra::Point3::new(x0, y0, z0),
+                            nalgebra::Point3::new(x1, y1, z1),
+                            nalgebra::Point3::new(x2, y2, z2),
                         ))
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),

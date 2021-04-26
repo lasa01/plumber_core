@@ -1,10 +1,14 @@
 mod types;
 
-use types::{Rgb, Vector3, BracketedVector2, BracketedVector3, Plane, UvAxis};
+use types::{BracketedVector2, BracketedVector3, Plane, Rgb, UvAxis, Vector3};
 
 use crate::vdf;
 
-use std::{collections::BTreeMap, fmt::{self, Display, Write}, str::FromStr};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display, Write},
+    str::FromStr,
+};
 
 use itertools::Itertools;
 use ndarray::Array2;
