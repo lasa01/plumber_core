@@ -6,7 +6,11 @@
 // this is intentional
 #![allow(clippy::clippy::cast_precision_loss)]
 
+#[cfg(feature = "fs")]
+pub mod fs;
 mod parsers;
+#[cfg(feature = "steam")]
+pub mod steam;
 pub mod vdf;
 #[cfg(feature = "vmf")]
 pub mod vmf;

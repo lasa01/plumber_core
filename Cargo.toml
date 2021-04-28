@@ -13,7 +13,9 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["vmf"]
+default = ["fs", "steam", "vmf"]
+fs = []
+steam = ["winreg", "home"]
 vmf = []
 
 [dependencies]
@@ -30,6 +32,12 @@ serde = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-at
 serde_derive = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
 thiserror = "1.0.24"
 uncased = { version = "0.9.6", features = ["with-serde-alloc"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = { version = "0.8", optional = true }
+
+[target.'cfg(not(windows))'.dependencies]
+home = { version = "0.5.3", optional = true }
 
 [dev-dependencies]
 maplit = "1.0.2"
