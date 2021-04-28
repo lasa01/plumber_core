@@ -1,3 +1,4 @@
+mod builder;
 mod types;
 
 use types::{BracketedVector2, BracketedVector3, Plane, Rgb, UvAxis, Vector3};
