@@ -50,7 +50,7 @@ pub struct AppManifest {
 #[serde(case_insensitive)]
 pub struct AppState {
     #[serde(rename = "appid")]
-    pub app_id: i32,
+    pub app_id: u32,
     pub name: String,
     #[serde(rename = "installdir")]
     pub install_dir: PathBuf,
@@ -72,7 +72,7 @@ impl AppState {
 /// A steam app. Unlike [`AppState`], `install_dir` is absolute.
 #[derive(Debug, PartialEq)]
 pub struct App {
-    pub app_id: i32,
+    pub app_id: u32,
     pub name: String,
     pub install_dir: PathBuf,
 }
