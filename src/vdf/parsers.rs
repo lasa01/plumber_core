@@ -1,6 +1,6 @@
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, tag, take_till},
+    bytes::complete::{tag, take_till},
     character::complete::{anychar, char, line_ending, multispace1, none_of, space0, space1},
     combinator::{all_consuming, cut, not, opt, peek, recognize},
     error::{ErrorKind, ParseError},
@@ -76,7 +76,7 @@ where
 }
 
 fn comment<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
-    preceded(tag("//"), is_not("\r\n"))(i)
+    preceded(tag("//"), take_till(|c| c == '\r' || c == '\n'))(i)
 }
 
 fn multispace_comment0<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, (), E> {
@@ -218,6 +218,14 @@ mod tests {
         assert_eq!(
             any_key::<VerboseError<&str>>("\t//this is a comment\r\n\tNotComment A Value"),
             IResult::Ok((" A Value", "NotComment"))
+        )
+    }
+
+    #[test]
+    fn empty_comment() {
+        assert_eq!(
+            multispace_comment0::<VerboseError<&str>>("\r\n\t//\r\n"),
+            IResult::Ok(("", ()))
         )
     }
 }
