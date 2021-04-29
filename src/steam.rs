@@ -42,7 +42,7 @@ fn is_acf_file(filename: &str) -> bool {
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct AppManifest {
     #[serde(rename = "AppState")]
-    app_state: AppState,
+    pub app_state: AppState,
 }
 
 /// A steam app state. `install_dir` is relative to a library.
@@ -50,10 +50,10 @@ pub struct AppManifest {
 #[serde(case_insensitive)]
 pub struct AppState {
     #[serde(rename = "appid")]
-    app_id: i32,
-    name: String,
+    pub app_id: i32,
+    pub name: String,
     #[serde(rename = "installdir")]
-    install_dir: PathBuf,
+    pub install_dir: PathBuf,
 }
 
 impl AppState {
@@ -81,13 +81,13 @@ pub struct App {
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct LibraryFoldersFile {
     #[serde(rename = "LibraryFolders")]
-    library_folders: LibraryFolders,
+    pub library_folders: LibraryFolders,
 }
 
 /// A list of steam's libraries.
 #[derive(Debug, PartialEq)]
 pub struct LibraryFolders {
-    paths: Vec<PathBuf>,
+    pub paths: Vec<PathBuf>,
 }
 
 impl LibraryFolders {
