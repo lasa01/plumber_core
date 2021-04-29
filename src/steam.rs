@@ -1,5 +1,4 @@
 use std::{
-    ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -70,20 +69,22 @@ impl AppState {
     }
 }
 
-#[derive(Debug, PartialEq)]
 /// A steam app. Unlike [`AppState`], `install_dir` is absolute.
+#[derive(Debug, PartialEq)]
 pub struct App {
     pub app_id: i32,
     pub name: String,
     pub install_dir: PathBuf,
 }
 
+/// A library folders file holding [`LibraryFolders`].
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct LibraryFoldersFile {
     #[serde(rename = "LibraryFolders")]
     library_folders: LibraryFolders,
 }
 
+/// A list of steam's libraries.
 #[derive(Debug, PartialEq)]
 pub struct LibraryFolders {
     paths: Vec<PathBuf>,
@@ -92,14 +93,22 @@ pub struct LibraryFolders {
 impl LibraryFolders {
     #[must_use]
     pub fn new(library_folders: Vec<PathBuf>) -> Self {
-        Self { paths: library_folders }
+        Self {
+            paths: library_folders,
+        }
+    }
+
+    /// # Errors
+    ///
+    /// Returns `Err` if the libraryfolders.vdf read fails or the deserialization fails.
+    /// On Windows, also returns `Err` if Steam's registry entries can't be read.
+    /// On other platforms, also returns `Err` if the home directroy can't be determined.
+    pub fn discover() -> Result<Self, LibraryDiscoveryError> {
+        Self::discover_impl()
     }
 
     #[cfg(windows)]
-    /// # Errors
-    ///
-    /// Returns `Err` if the registry read fails, the libraryfolders.vdf read fails or the deserialization fails.
-    pub fn discover() -> Result<Self, LibraryDiscoveryError> {
+    fn discover_impl() -> Result<Self, LibraryDiscoveryError> {
         use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
@@ -109,34 +118,38 @@ impl LibraryFolders {
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
-    /// # Errors
-    ///
-    /// Returns `Err` if the home directory is unknown, steam is not found, the libraryfolders.vdf read fails or the deserialization fails.
-    pub fn discover() -> Result<Self, LibraryDiscoveryError> {
+    fn discover_impl() -> Result<Self, LibraryDiscoveryError> {
         use home::home_dir;
 
-        let steam_path = home_dir().ok_or(LibraryDiscoveryError::NoHome)?.join(".steam").join("root");
+        let steam_path = home_dir()
+            .ok_or(LibraryDiscoveryError::NoHome)?
+            .join(".steam")
+            .join("root");
         let steam_path = fs::read_link(steam_path)?;
         Self::discover_from_steam_path(steam_path)
     }
 
     #[cfg(target_os = "macos")]
-    /// # Errors
-    ///
-    /// Returns `Err` if the home directory is unknown, the libraryfolders.vdf read fails or the deserialization fails.
-    pub fn discover() -> Result<Self, LibraryDiscoveryError> {
+    fn discover_impl() -> Result<Self, LibraryDiscoveryError> {
         use home::home_dir;
 
-        let steam_path = home_dir().ok_or(LibraryDiscoveryError::NoHome)?.join("Library").join("Application Support").join("Steam");
+        let steam_path = home_dir()
+            .ok_or(LibraryDiscoveryError::NoHome)?
+            .join("Library")
+            .join("Application Support")
+            .join("Steam");
         Self::discover_from_steam_path(steam_path)
     }
 
-    fn discover_from_steam_path<P: AsRef<Path>>(steam_path: P) -> Result<Self, LibraryDiscoveryError> {
+    fn discover_from_steam_path<P: AsRef<Path>>(
+        steam_path: P,
+    ) -> Result<Self, LibraryDiscoveryError> {
         let steam_path = steam_path.as_ref();
         let libraryfolders_path = steam_path.join("steamapps").join("libraryfolders.vdf");
 
         let mut libraryfolders =
-            vdf::from_str::<LibraryFoldersFile>(&fs::read_to_string(libraryfolders_path)?)?.library_folders;
+            vdf::from_str::<LibraryFoldersFile>(&fs::read_to_string(libraryfolders_path)?)?
+                .library_folders;
         libraryfolders.paths.push(steam_path.to_path_buf());
 
         Ok(libraryfolders)
@@ -150,16 +163,16 @@ impl LibraryFolders {
         for library_folder in &self.paths {
             let steamapps_path = library_folder.join("steamapps");
             for entry in fs::read_dir(&steamapps_path)? {
-                let path = entry?.path();
-                if !path.is_file() {
+                let entry = entry?;
+                if !entry.file_type()?.is_file() {
                     continue;
                 }
-                if let Some(Some(filename)) = path.file_name().map(OsStr::to_str) {
+                if let Some(filename) = entry.file_name().to_str() {
                     if !filename.starts_with("appmanifest_") || !is_acf_file(filename) {
                         continue;
                     }
                     apps.push(
-                        vdf::from_str::<AppManifest>(&fs::read_to_string(path)?)?
+                        vdf::from_str::<AppManifest>(&fs::read_to_string(entry.path())?)?
                             .app_state
                             .into_app(&steamapps_path),
                     );
@@ -198,7 +211,9 @@ impl<'de> Deserialize<'de> for LibraryFolders {
                     }
                 }
 
-                Ok(LibraryFolders { paths: library_folders })
+                Ok(LibraryFolders {
+                    paths: library_folders,
+                })
             }
         }
 
@@ -212,7 +227,8 @@ mod tests {
 
     #[test]
     fn test_app_manifest_deserialization() {
-        let app_state = vdf::from_str::<AppManifest>(r#"
+        let app_state = vdf::from_str::<AppManifest>(
+            r#"
         "AppState"
         {
             "appid"		"440"
@@ -261,18 +277,25 @@ mod tests {
                 "betakey"		""
             }
         }
-        "#).unwrap().app_state;
+        "#,
+        )
+        .unwrap()
+        .app_state;
 
-        assert_eq!(app_state, AppState {
-            app_id: 440,
-            name: "Team Fortress 2".to_string(),
-            install_dir: "Team Fortress 2".into(),
-        });
+        assert_eq!(
+            app_state,
+            AppState {
+                app_id: 440,
+                name: "Team Fortress 2".to_string(),
+                install_dir: "Team Fortress 2".into(),
+            }
+        );
     }
 
     #[test]
     fn test_libraryfolders_deserialization() {
-        let libraryfolders = vdf::from_str::<LibraryFoldersFile>(r#"
+        let libraryfolders = vdf::from_str::<LibraryFoldersFile>(
+            r#"
         "LibraryFolders"
         {
         	"TimeNextStatsReport"		"1619642796"
@@ -281,13 +304,25 @@ mod tests {
         	"2"		"E:\\Games\\Steam"
         	"3"		"F:\\Games\\Steam"
         }
-        "#).unwrap().library_folders;
+        "#,
+        )
+        .unwrap()
+        .library_folders;
 
-        assert_eq!(libraryfolders, LibraryFolders {
-            paths: vec!["D:\\\\Games\\\\Steam".into(), "E:\\\\Games\\\\Steam".into(), "F:\\\\Games\\\\Steam".into()],
-        })
+        // TODO: the double `\` doesn't matter here but we should support escapes in deserializer
+        assert_eq!(
+            libraryfolders,
+            LibraryFolders {
+                paths: vec![
+                    "D:\\\\Games\\\\Steam".into(),
+                    "E:\\\\Games\\\\Steam".into(),
+                    "F:\\\\Games\\\\Steam".into()
+                ],
+            }
+        )
     }
 
+    /// Fails if steam is not installed
     #[test]
     #[ignore]
     fn test_library_discovery() {
