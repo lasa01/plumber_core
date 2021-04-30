@@ -14,3 +14,5 @@ pub mod steam;
 pub mod vdf;
 #[cfg(feature = "vmf")]
 pub mod vmf;
+#[cfg(feature = "vpk")]
+pub mod vpk;
