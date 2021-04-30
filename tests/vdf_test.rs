@@ -34,7 +34,6 @@ struct Test {
     key1: String,
     key2: String,
     key3: String,
-    key4: String,
     key5: (),
     key6: BTreeMap<String, String>,
     key7: Key7,
@@ -61,7 +60,6 @@ fn test_vdf_parse() {
             key1: "value1".into(),
             key2: "value2".into(),
             key3: "value3".into(),
-            key4: ("a\t\r\nb\r\n// not a comment\r\nc\r\n  d\r\ne\r\nf\t\r\n").into(),
             key5: (),
             key6: btreemap! {
                 "key1".into() => "value1".into(),
