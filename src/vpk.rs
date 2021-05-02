@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str};
+use std::{collections::HashMap, convert::TryInto, fs::{File, self}, io::{self, Read, Seek, SeekFrom, Write}, path::{Path, PathBuf}, str};
 
 use byteorder::LE;
 use thiserror::Error;
@@ -62,11 +62,11 @@ struct TreeEntry {
 }
 
 impl TreeEntry {
-    fn parse(bytes: &mut &[u8]) -> Result<Self, ParseError> {
-        let entry: LayoutVerified<_, DirectoryEntry> = parse(bytes).ok_or(ParseError::EntryEof)?;
+    fn parse(bytes: &mut &[u8]) -> Result<Self, ReadError> {
+        let entry: LayoutVerified<_, DirectoryEntry> = parse(bytes).ok_or(ReadError::EntryEof)?;
         let preload = entry.preload_bytes.get().into();
         if preload > bytes.len() {
-            return Err(ParseError::PreloadEof);
+            return Err(ReadError::PreloadEof);
         }
         let preload_data = {
             let (data, remaining) = bytes.split_at(preload);
@@ -85,7 +85,9 @@ impl TreeEntry {
 }
 
 #[derive(Debug, Error)]
-pub enum ParseError {
+pub enum ReadError {
+    #[error("io error: {0}")]
+    Io(#[from] io::Error),
     #[error("encountered eof reading header")]
     HeaderEof,
     #[error("not a vpk (invalid signature)")]
@@ -125,35 +127,40 @@ fn parse<'a, T: Unaligned>(bytes: &mut &'a [u8]) -> Option<LayoutVerified<&'a [u
 }
 
 pub struct Directory {
+    path: PathBuf,
     tree: HashMap<String, TreeEntry>,
+    header_size: usize,
     tree_size: usize,
 }
 
 impl Directory {
     /// # Errors
     ///
-    /// Returns `Err` if `bytes` is not a valid vpk directory.
-    pub fn parse(mut bytes: &[u8]) -> Result<Self, ParseError> {
+    /// Returns `Err` if `path` can't be read or is not a valid vpk directory.
+    pub fn read<P: AsRef<Path>>(path: P) -> Result<Self, ReadError> {
+        let path = path.as_ref().to_owned();
+        let file_content = fs::read(&path)?;
+        let mut bytes = file_content.as_slice();
         let header: LayoutVerified<_, HeaderV1> =
-            parse(&mut bytes).ok_or(ParseError::HeaderEof)?;
+            parse(&mut bytes).ok_or(ReadError::HeaderEof)?;
         if header.signature.get() != 0x55aa_1234 {
-            return Err(ParseError::InvalidSignature);
+            return Err(ReadError::InvalidSignature);
         }
         let header_v2: Option<LayoutVerified<_, HeaderV2Ext>> = match header.version.get() {
             1 => None,
-            2 => Some(parse(&mut bytes).ok_or(ParseError::HeaderEof)?),
-            other => return Err(ParseError::UnsupportedVersion(other)),
+            2 => Some(parse(&mut bytes).ok_or(ReadError::HeaderEof)?),
+            other => return Err(ReadError::UnsupportedVersion(other)),
         };
         let tree_len = header.tree_size.get() as usize;
         if bytes.len() < tree_len {
-            return Err(ParseError::TreeTooSmall);
+            return Err(ReadError::TreeTooSmall);
         }
         let before_tree = <&[u8]>::clone(&bytes);
 
         let mut tree = HashMap::new();
 
         loop {
-            let extension = parse_nul_str(&mut bytes).ok_or(ParseError::InvalidString)?;
+            let extension = parse_nul_str(&mut bytes).ok_or(ReadError::InvalidString)?;
             if extension.is_empty() {
                 break;
             }
@@ -163,7 +170,7 @@ impl Directory {
                 (".", extension)
             };
             loop {
-                let path = parse_nul_str(&mut bytes).ok_or(ParseError::InvalidString)?;
+                let path = parse_nul_str(&mut bytes).ok_or(ReadError::InvalidString)?;
                 if path.is_empty() {
                     break;
                 }
@@ -173,7 +180,7 @@ impl Directory {
                     (path, "/")
                 };
                 loop {
-                    let mut filename = parse_nul_str(&mut bytes).ok_or(ParseError::InvalidString)?;
+                    let mut filename = parse_nul_str(&mut bytes).ok_or(ReadError::InvalidString)?;
                     if filename.is_empty() {
                         break;
                     }
@@ -186,12 +193,12 @@ impl Directory {
             }
         }
 
-        if let Some(header_v2) = header_v2 {
+        if let Some(header_v2) = &header_v2 {
             // verify checksums
             let skip_to_checksums = header_v2.file_data_section_size.get() as usize;
             let archive_md5_len = header_v2.file_data_section_size.get() as usize;
             if bytes.len() < skip_to_checksums + archive_md5_len {
-                return Err(ParseError::ChecksumEof)
+                return Err(ReadError::ChecksumEof)
             }
             bytes = &bytes[..skip_to_checksums];
             let archive_md5_bytes = {
@@ -199,19 +206,123 @@ impl Directory {
                 bytes = remaining;
                 data
             };
-            let other_md5: LayoutVerified<_, OtherMd5Section> = parse(&mut bytes).ok_or(ParseError::ChecksumEof)?;
+            let other_md5: LayoutVerified<_, OtherMd5Section> = parse(&mut bytes).ok_or(ReadError::ChecksumEof)?;
 
             let tree_bytes = &before_tree[..tree_len];
 
             if *md5::compute(archive_md5_bytes) != other_md5.archive_md5_section_checksum {
-                return Err(ParseError::ChecksumMismatch);
+                return Err(ReadError::ChecksumMismatch);
             }
             if *md5::compute(tree_bytes) != other_md5.tree_checksum {
-                return Err(ParseError::ChecksumMismatch);
+                return Err(ReadError::ChecksumMismatch);
             }
         }
 
-        Ok(Self { tree, tree_size: tree_len })
+        let header_size = if header_v2.is_none() {
+            12
+        } else {
+            28
+        };
+
+        Ok(Self { path, tree, header_size, tree_size: tree_len })
+    }
+
+    pub fn open_file(&self, filename: String) -> io::Result<VpkFile> {
+        let entry = self.tree.get(&filename).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, filename))?;
+        let file = if entry.entry_length == 0 {
+            None
+        } else {
+            let mut file = match entry.archive_index {
+                0x7fff => File::open(&self.path)?,
+                index => {
+                    let file_stem = self.path
+                        .file_stem()
+                        .unwrap()
+                        .to_str()
+                        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "vpk directory filename is not utf8"))?;
+                    let file_base = file_stem.strip_suffix("_dir").unwrap_or(file_stem);
+                    File::open(self.path.with_file_name(format!("{}{:03}.vpk", file_base, index)))?
+                }
+            };
+            if entry.archive_index == 0x7fff {
+                file.seek(SeekFrom::Start((self.header_size + self.tree_size + entry.entry_offset as usize) as u64))?;
+            } else {
+                file.seek(SeekFrom::Start(entry.entry_offset as u64))?;
+            };
+            Some(file)
+        };
+        
+        Ok(VpkFile {
+            entry,
+            file,
+            cursor: 0,
+        })
+    }
+}
+
+pub struct VpkFile<'a> {
+    entry: &'a TreeEntry,
+    file: Option<File>,
+    cursor: u64,
+}
+
+impl<'a> Read for VpkFile<'a> {
+    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
+        let preload_remaining = self.entry.preload_bytes.len() - self.cursor as usize - 1;
+        if preload_remaining > 0 {
+            let read_amount = buf.write(&self.entry.preload_bytes[self.cursor as usize..])?;
+            self.cursor += read_amount as u64;
+            return Ok(read_amount);
+        } else {
+            if let Some(file) = &mut self.file {
+                let remaining = buf.len().min(self.entry.entry_length as usize - (self.cursor as usize - self.entry.preload_bytes.len() - 1));
+                let read_amount = file.read(&mut buf[..remaining])?;
+                self.cursor += read_amount as u64;
+                return Ok(read_amount);
+            } else {
+                return Ok(0);
+            }
+        }
+    }
+}
+
+impl<'a> Seek for VpkFile<'a> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match pos {
+            SeekFrom::Start(seek) => {
+                if seek < self.entry.preload_bytes.len() as u64 {
+                    self.cursor = seek;
+                } else {
+                    if let Some(file) = &mut self.file {
+                        self.cursor = file.seek(SeekFrom::Start(seek - (self.entry.preload_bytes.len() as u64 - 1)))? + self.entry.preload_bytes.len() as u64 - 1;
+                    } else {
+                        self.cursor = self.entry.preload_bytes.len() as u64 - 1;
+                    }
+                }
+            }
+            SeekFrom::End(seek) => {
+                
+            }
+            SeekFrom::Current(seek) => {
+                let new_cursor = self.cursor as i64 + seek;
+                let new_cursor = new_cursor.try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "tried to seek before start of file"))?;
+                if new_cursor < self.entry.preload_bytes.len() as u64 {
+                    if self.cursor > self.entry.preload_bytes.len() as u64 - 1 {
+                        if let Some(file) = &mut self.file {
+                            file.seek(SeekFrom::Start(0))?;
+                        }
+                    }
+                    self.cursor = new_cursor;
+                } else {
+                    if let Some(file) = &mut self.file {
+                        self.cursor = file.seek(SeekFrom::Start(new_cursor - (self.entry.preload_bytes.len() as u64 - 1)))? + self.entry.preload_bytes.len() as u64 - 1;
+                    } else {
+                        self.cursor = self.entry.preload_bytes.len() as u64 - 1;
+                    }
+                }
+            }
+        }
+        Ok(self.cursor)
     }
 }
 
