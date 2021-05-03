@@ -1,5 +1,6 @@
 use std::{
     collections::{hash_map::Keys, HashMap},
+    convert::TryInto,
     ffi::OsStr,
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
@@ -380,7 +381,7 @@ impl<'a> Iterator for DirectoryContents<'a> {
 pub struct File<'a> {
     entry: &'a Entry,
     file: Option<fs::File>,
-    cursor: i64,
+    cursor: u64,
 }
 
 impl<'a> File<'a> {
@@ -422,7 +423,7 @@ impl<'a> Read for File<'a> {
         let preload_remaining = preload_len.saturating_sub(cursor);
         if preload_remaining > 0 {
             let read_amount = buf.write(&self.entry.preload_bytes[cursor..])?;
-            self.cursor += read_amount as i64;
+            self.cursor += read_amount as u64;
             return Ok(read_amount);
         }
         if let Some(file) = &mut self.file {
@@ -430,7 +431,7 @@ impl<'a> Read for File<'a> {
                 .len()
                 .min((self.entry.entry_length as usize).saturating_sub(cursor - preload_len));
             let read_amount = file.read(&mut buf[..remaining])?;
-            self.cursor += read_amount as i64;
+            self.cursor += read_amount as u64;
             return Ok(read_amount);
         }
         Ok(0)
@@ -439,20 +440,17 @@ impl<'a> Read for File<'a> {
 
 impl<'a> Seek for File<'a> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let preload_len = self.entry.preload_bytes.len() as i64;
-        let delta_cursor = match pos {
-            SeekFrom::Start(seek) => seek as i64 - self.cursor,
-            SeekFrom::End(seek) => (self.size() as i64 + seek - self.cursor),
-            SeekFrom::Current(seek) => seek,
+        let preload_len = self.entry.preload_bytes.len() as u64;
+        let new_cursor = match pos {
+            SeekFrom::Start(seek) => seek,
+            SeekFrom::End(seek) => (self.size() as i64 + seek)
+                .try_into()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?,
+            SeekFrom::Current(seek) => (self.cursor as i64 + seek)
+                .try_into()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?,
         };
-        let new_cursor = self.cursor + delta_cursor;
         if new_cursor <= preload_len {
-            if new_cursor < 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "seeked before 0",
-                ));
-            }
             if self.cursor > preload_len {
                 if let Some(file) = &mut self.file {
                     file.seek(SeekFrom::Start(self.entry.total_offset))?;
@@ -460,8 +458,10 @@ impl<'a> Seek for File<'a> {
             }
             self.cursor = new_cursor;
         } else if let Some(file) = &mut self.file {
-            let seeked = file.seek(SeekFrom::Current(delta_cursor))?;
-            self.cursor = seeked as i64 - self.entry.total_offset as i64 + preload_len;
+            let seeked = file.seek(SeekFrom::Start(
+                self.entry.total_offset + new_cursor - preload_len,
+            ))?;
+            self.cursor = seeked + preload_len - self.entry.total_offset;
         } else {
             self.cursor = preload_len;
         }
