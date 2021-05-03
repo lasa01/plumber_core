@@ -1,13 +1,8 @@
-use std::{
-    collections::HashMap,
-    fs,
-    io::{self, Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
-    str,
-};
+use std::{collections::{hash_map::Keys, HashMap}, ffi::OsStr, fs, io::{self, Read, Seek, SeekFrom, Write}, path::{Path, PathBuf}, slice::Iter, str};
 
 use byteorder::LE;
 use crc::crc32;
+use itertools::Itertools;
 use thiserror::Error;
 use zerocopy::{
     byteorder::{U16, U32},
@@ -59,46 +54,7 @@ struct OtherMd5Section {
     unknown: [u8; 16],
 }
 
-struct TreeEntry {
-    crc: u32,
-    archive_index: u16,
-    total_offset: u64,
-    entry_length: u32,
-    preload_bytes: Vec<u8>,
-}
-
-impl TreeEntry {
-    fn parse(bytes: &mut &[u8], base_offset: u64) -> Result<Self, DirectoryReadError> {
-        let entry: LayoutVerified<_, DirectoryEntry> =
-            parse(bytes).ok_or(DirectoryReadError::EntryEof)?;
-        let preload = entry.preload_bytes.get().into();
-        if preload > bytes.len() {
-            return Err(DirectoryReadError::PreloadEof);
-        }
-        let preload_data = {
-            let (data, remaining) = bytes.split_at(preload);
-            *bytes = remaining;
-            data
-        };
-
-        let archive_index = entry.archive_index.get();
-        let entry_offset = entry.entry_offset.get().into();
-        let total_offset = if archive_index == IN_DIRECTORY {
-            base_offset + entry_offset
-        } else {
-            entry_offset
-        };
-
-        Ok(Self {
-            crc: entry.crc.get(),
-            archive_index,
-            total_offset,
-            entry_length: entry.entry_length.get(),
-            preload_bytes: preload_data.to_vec(),
-        })
-    }
-}
-
+/// An error that can happen during reading a [`Directory`].
 #[derive(Debug, Error)]
 pub enum DirectoryReadError {
     #[error("io error: {0}")]
@@ -109,8 +65,6 @@ pub enum DirectoryReadError {
     InvalidSignature,
     #[error("unsupported version {0}")]
     UnsupportedVersion(u32),
-    #[error("tree size smaller than expected")]
-    TreeTooSmall,
     #[error("invalid string in tree")]
     InvalidString,
     #[error("encountered eof reading a tree entry")]
@@ -142,16 +96,71 @@ fn parse<'a, T: Unaligned>(bytes: &mut &'a [u8]) -> Option<LayoutVerified<&'a [u
 
 const IN_DIRECTORY: u16 = 0x7fff;
 
+#[derive(Debug)]
+struct Entry {
+    crc: u32,
+    archive_index: u16,
+    total_offset: u64,
+    entry_length: u32,
+    preload_bytes: Vec<u8>,
+}
+
+impl Entry {
+    fn parse(bytes: &mut &[u8], base_offset: u64) -> Result<Self, DirectoryReadError> {
+        let entry: LayoutVerified<_, DirectoryEntry> =
+            parse(bytes).ok_or(DirectoryReadError::EntryEof)?;
+        let preload = entry.preload_bytes.get().into();
+        if preload > bytes.len() {
+            return Err(DirectoryReadError::PreloadEof);
+        }
+        let preload_data = {
+            let (data, remaining) = bytes.split_at(preload);
+            *bytes = remaining;
+            data
+        };
+
+        let archive_index = entry.archive_index.get();
+        let entry_offset = entry.entry_offset.get().into();
+        let total_offset = if archive_index == IN_DIRECTORY {
+            base_offset + entry_offset
+        } else {
+            entry_offset
+        };
+
+        Ok(Self {
+            crc: entry.crc.get(),
+            archive_index,
+            total_offset,
+            entry_length: entry.entry_length.get(),
+            preload_bytes: preload_data.to_vec(),
+        })
+    }
+}
+
+/// A directory or file inside a vpk archive.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DirectoryContent {
+    Directory(String),
+    File(String),
+}
+
+/// A vpk archive directory.
+/// Actual file data can be stored inside the directory
+/// or separately in accompanying archive files.
+#[derive(Debug)]
 pub struct Directory {
     path: PathBuf,
     file_base: String,
-    tree: HashMap<String, TreeEntry>,
+    files: HashMap<String, Entry>,
+    directory_contents: HashMap<String, Vec<DirectoryContent>>,
 }
 
 impl Directory {
+    /// Read a [`Directory`] from a file path.
+    ///
     /// # Errors
     ///
-    /// Returns `Err` if `path` doesn't have an utf8 filename, can't be read or is not a valid vpk directory file.
+    /// Returns `Err` if `file_path` doesn't have an utf8 filename, can't be read or is not a valid vpk directory file.
     pub fn read<P: AsRef<Path>>(file_path: P) -> Result<Self, DirectoryReadError> {
         let file_path = file_path.as_ref().to_owned();
         let file_content = fs::read(&file_path)?;
@@ -159,22 +168,22 @@ impl Directory {
         Self::parse(file_path, bytes)
     }
 
+    /// Parse a [`Directory`] from a byte slice.
+    /// `file_path` is required to open possible accompanying archive files.
+    ///
     /// # Errors
     ///
-    /// Returns `Err` if `path` doesn't have an utf8 filename or `bytes` is not a valid vpk directory file.
-    pub fn parse(file_path: PathBuf, mut bytes: &[u8]) -> Result<Self, DirectoryReadError> {
-        let file_stem = file_path
+    /// Returns `Err` if `vpk_path` doesn't have an utf8 filename or `bytes` is not a valid vpk directory file.
+    pub fn parse(vpk_path: PathBuf, mut bytes: &[u8]) -> Result<Self, DirectoryReadError> {
+        let vpk_stem = vpk_path
             .file_stem()
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidInput, "path doesn't have a file name")
-            })?
-            .to_str()
+            .and_then(OsStr::to_str)
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidInput, "file name is not valid utf8")
             })?;
-        let file_base = file_stem
+        let vpk_base = vpk_stem
             .strip_suffix("_dir")
-            .unwrap_or(file_stem)
+            .unwrap_or(vpk_stem)
             .to_string();
         let header: LayoutVerified<_, HeaderV1> =
             parse(&mut bytes).ok_or(DirectoryReadError::HeaderEof)?;
@@ -187,14 +196,13 @@ impl Directory {
             other => return Err(DirectoryReadError::UnsupportedVersion(other)),
         };
         let tree_len = header.tree_size.get() as usize;
-        if bytes.len() < tree_len {
-            return Err(DirectoryReadError::TreeTooSmall);
-        }
         let before_tree = <&[u8]>::clone(&bytes);
 
         let header_size = if header_v2.is_none() { 12 } else { 28 };
         let base_offset = header_size + tree_len as u64;
-        let mut tree = HashMap::new();
+
+        let mut files = HashMap::new();
+        let mut directory_contents: HashMap<String, Vec<DirectoryContent>> = HashMap::new();
 
         loop {
             let extension = parse_nul_str(&mut bytes).ok_or(DirectoryReadError::InvalidString)?;
@@ -212,20 +220,35 @@ impl Directory {
                     break;
                 }
                 let (path, separator) = if path == " " { ("", "") } else { (path, "/") };
+                if !path.is_empty() {
+                    for (parent, child) in path.split('/').filter(|s| !s.is_empty()).tuple_windows()
+                    {
+                        directory_contents
+                            .entry(parent.to_string())
+                            .or_default()
+                            .push(DirectoryContent::Directory(child.to_string()));
+                    }
+                }
                 loop {
-                    let mut filename =
+                    let mut file_stem =
                         parse_nul_str(&mut bytes).ok_or(DirectoryReadError::InvalidString)?;
-                    if filename.is_empty() {
+                    if file_stem.is_empty() {
                         break;
                     }
-                    if filename == " " {
-                        filename = "";
+                    if file_stem == " " {
+                        file_stem = "";
                     }
 
-                    tree.insert(
-                        format!("{}{}{}{}{}", path, separator, filename, dot, extension),
-                        TreeEntry::parse(&mut bytes, base_offset)?,
+                    let file_name = format!("{}{}{}", file_stem, dot, extension);
+
+                    files.insert(
+                        format!("{}{}{}", path, separator, &file_name),
+                        Entry::parse(&mut bytes, base_offset)?,
                     );
+                    directory_contents
+                        .entry(path.to_string())
+                        .or_default()
+                        .push(DirectoryContent::File(file_name));
                 }
             }
         }
@@ -257,20 +280,23 @@ impl Directory {
         }
 
         Ok(Self {
-            path: file_path,
-            file_base,
-            tree,
+            path: vpk_path,
+            file_base: vpk_base,
+            files,
+            directory_contents,
         })
     }
 
+    /// Opens the specified file if it exists.
+    ///
     /// # Errors
     ///
-    /// Returns `Err` if `file_name` is not in the directory or if the file can't be opened.
-    pub fn open_file(&self, file_name: &str) -> io::Result<File> {
+    /// Returns `Err` if `file_path` is not in the directory or if the file can't be opened.
+    pub fn open_file(&self, file_path: &str) -> io::Result<File> {
         let entry = self
-            .tree
-            .get(file_name)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, file_name))?;
+            .files
+            .get(file_path)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, file_path))?;
         let file = if entry.entry_length == 0 {
             None
         } else {
@@ -293,37 +319,83 @@ impl Directory {
             cursor: 0,
         })
     }
+
+    /// Returns an iterator over files in the archive.
+    #[must_use]
+    pub fn files(&self) -> Files {
+        Files {
+            files: self.files.keys(),
+        }
+    }
+
+    /// Returns an iterator over contents of the specified directory if the directory exists.
+    #[must_use]
+    pub fn directory_contents(&self, directory: &str) -> Option<DirectoryContents> {
+        self.directory_contents
+            .get(directory.trim_end_matches('/'))
+            .map(|c| DirectoryContents {
+                contents: c.as_slice().iter(),
+            })
+    }
 }
 
+/// An iterator over files in a vpk archive.
+#[derive(Debug, Clone)]
+pub struct Files<'a> {
+    files: Keys<'a, String, Entry>,
+}
+
+impl<'a> Iterator for Files<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.files.next().map(String::as_str)
+    }
+}
+
+/// An iterator over directory contents in a vpk archive.
+#[derive(Debug, Clone)]
+pub struct DirectoryContents<'a> {
+    contents: Iter<'a, DirectoryContent>,
+}
+
+impl<'a> Iterator for DirectoryContents<'a> {
+    type Item = &'a DirectoryContent;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.contents.next()
+    }
+}
+
+/// An open file inside a vpk archive.
+#[derive(Debug)]
 pub struct File<'a> {
-    entry: &'a TreeEntry,
+    entry: &'a Entry,
     file: Option<fs::File>,
     cursor: i64,
 }
 
 impl<'a> File<'a> {
+    /// Returns the size of the file in bytes.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.entry.preload_bytes.len() + self.entry.entry_length as usize
     }
 
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
+    /// Returns the CRC cheksum of the file.
     #[must_use]
     pub fn crc32(&self) -> u32 {
         self.entry.crc
     }
 
     /// Reads the file to a `Vec<u8>` and verifies the CRC checksum.
+    /// Returns the contents of the file.
     ///
     /// # Errors
     ///
     /// Returns `Err` if the file read fails or the CRC checksums don't match.
-    pub fn verified_read(&mut self) -> io::Result<Vec<u8>> {
-        let mut buf = Vec::with_capacity(self.len());
+    pub fn verify_contents(&mut self) -> io::Result<Vec<u8>> {
+        let mut buf = Vec::with_capacity(self.size());
         self.read_to_end(&mut buf)?;
         if crc32::checksum_ieee(buf.as_slice()) != self.crc32() {
             return Err(io::Error::new(
@@ -362,7 +434,7 @@ impl<'a> Seek for File<'a> {
         let preload_len = self.entry.preload_bytes.len() as i64;
         let delta_cursor = match pos {
             SeekFrom::Start(seek) => seek as i64 - self.cursor,
-            SeekFrom::End(seek) => (self.len() as i64 + seek - self.cursor),
+            SeekFrom::End(seek) => (self.size() as i64 + seek - self.cursor),
             SeekFrom::Current(seek) => seek,
         };
         let new_cursor = self.cursor + delta_cursor;
@@ -458,7 +530,7 @@ mod tests {
 
     #[test]
     fn file_preload() {
-        let entry = TreeEntry {
+        let entry = Entry {
             crc: 0x627E_60A3,
             archive_index: IN_DIRECTORY,
             total_offset: 0,
@@ -492,7 +564,7 @@ mod tests {
         assert_eq!(&buf, "");
 
         file.seek(SeekFrom::Start(0)).unwrap();
-        file.verified_read().unwrap();
+        file.verify_contents().unwrap();
     }
 
     #[test]
@@ -501,7 +573,7 @@ mod tests {
             .join("tests")
             .join("test.txt");
 
-        let entry = TreeEntry {
+        let entry = Entry {
             crc: 0x38CB_F779,
             archive_index: IN_DIRECTORY,
             total_offset: 2,
@@ -537,6 +609,6 @@ mod tests {
         assert_eq!(&buf, "reloadst1test2");
 
         file.seek(SeekFrom::Start(0)).unwrap();
-        file.verified_read().unwrap();
+        file.verify_contents().unwrap();
     }
 }
