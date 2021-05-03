@@ -12,24 +12,6 @@ use serde::{
 use serde_derive::Deserialize;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum LibraryDiscoveryError {
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
-    #[error("error deserializing libraryfolders.vdf: {0}")]
-    Deserialization(#[from] vdf::Error),
-    #[error("home directory is unknown")]
-    NoHome,
-}
-
-#[derive(Debug, Error)]
-pub enum AppDiscoveryError {
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
-    #[error("error deserializing appmanifest: {0}")]
-    Deserialization(#[from] vdf::Error),
-}
-
 fn is_acf_file(filename: &str) -> bool {
     filename
         .rsplit('.')
@@ -38,17 +20,15 @@ fn is_acf_file(filename: &str) -> bool {
         == Some(true)
 }
 
-/// A steam app manifest holding a [`AppState`].
 #[derive(Debug, PartialEq, Deserialize)]
-pub struct AppManifest {
+struct AppManifest {
     #[serde(rename = "AppState")]
     pub app_state: AppState,
 }
 
-/// A steam app state. `install_dir` is relative to a library.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(case_insensitive)]
-pub struct AppState {
+struct AppState {
     #[serde(rename = "appid")]
     pub app_id: u32,
     pub name: String,
@@ -69,6 +49,71 @@ impl AppState {
     }
 }
 
+#[derive(Debug, PartialEq, Deserialize)]
+struct LibraryFoldersFile {
+    #[serde(rename = "LibraryFolders")]
+    pub library_folders: LibraryFolders,
+}
+
+#[derive(Debug, PartialEq)]
+struct LibraryFolders(Libraries);
+
+impl<'de> Deserialize<'de> for LibraryFolders {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct LibraryFoldersVisitor;
+
+        impl<'de> Visitor<'de> for LibraryFoldersVisitor {
+            type Value = LibraryFolders;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("class LibraryFolders")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut library_folders = Vec::new();
+
+                while let Some(key) = map.next_key::<&str>()? {
+                    if key.parse::<u64>().is_ok() {
+                        library_folders.push(map.next_value()?);
+                    } else {
+                        map.next_value::<IgnoredAny>()?;
+                    }
+                }
+
+                Ok(LibraryFolders(Libraries {
+                    paths: library_folders,
+                }))
+            }
+        }
+
+        deserializer.deserialize_map(LibraryFoldersVisitor)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum LibraryDiscoveryError {
+    #[error("io error: {0}")]
+    Io(#[from] io::Error),
+    #[error("error deserializing libraryfolders.vdf: {0}")]
+    Deserialization(#[from] vdf::Error),
+    #[error("home directory is unknown")]
+    NoHome,
+}
+
+#[derive(Debug, Error)]
+pub enum AppDiscoveryError {
+    #[error("io error: {0}")]
+    Io(#[from] io::Error),
+    #[error("error deserializing appmanifest: {0}")]
+    Deserialization(#[from] vdf::Error),
+}
+
 /// A steam app. Unlike [`AppState`], `install_dir` is absolute.
 #[derive(Debug, PartialEq)]
 pub struct App {
@@ -77,20 +122,13 @@ pub struct App {
     pub install_dir: PathBuf,
 }
 
-/// A library folders file holding [`LibraryFolders`].
-#[derive(Debug, PartialEq, Deserialize)]
-pub struct LibraryFoldersFile {
-    #[serde(rename = "LibraryFolders")]
-    pub library_folders: LibraryFolders,
-}
-
 /// A list of steam's libraries.
 #[derive(Debug, PartialEq)]
-pub struct LibraryFolders {
+pub struct Libraries {
     pub paths: Vec<PathBuf>,
 }
 
-impl LibraryFolders {
+impl Libraries {
     #[must_use]
     pub fn new(library_folders: Vec<PathBuf>) -> Self {
         Self {
@@ -147,12 +185,13 @@ impl LibraryFolders {
         let steam_path = steam_path.as_ref();
         let libraryfolders_path = steam_path.join("steamapps").join("libraryfolders.vdf");
 
-        let mut libraryfolders =
+        let mut libraries =
             vdf::from_str::<LibraryFoldersFile>(&fs::read_to_string(libraryfolders_path)?)?
-                .library_folders;
-        libraryfolders.paths.push(steam_path.to_path_buf());
+                .library_folders
+                .0;
+        libraries.paths.push(steam_path.to_path_buf());
 
-        Ok(libraryfolders)
+        Ok(libraries)
     }
 
     /// # Errors
@@ -180,44 +219,6 @@ impl LibraryFolders {
             }
         }
         Ok(apps)
-    }
-}
-
-impl<'de> Deserialize<'de> for LibraryFolders {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct LibraryFoldersVisitor;
-
-        impl<'de> Visitor<'de> for LibraryFoldersVisitor {
-            type Value = LibraryFolders;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("class LibraryFolders")
-            }
-
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: MapAccess<'de>,
-            {
-                let mut library_folders = Vec::new();
-
-                while let Some(key) = map.next_key::<&str>()? {
-                    if key.parse::<u64>().is_ok() {
-                        library_folders.push(map.next_value()?);
-                    } else {
-                        map.next_value::<IgnoredAny>()?;
-                    }
-                }
-
-                Ok(LibraryFolders {
-                    paths: library_folders,
-                })
-            }
-        }
-
-        deserializer.deserialize_map(LibraryFoldersVisitor)
     }
 }
 
@@ -312,13 +313,13 @@ mod tests {
         // TODO: the double `\` doesn't matter here but we should support escapes in deserializer
         assert_eq!(
             libraryfolders,
-            LibraryFolders {
+            LibraryFolders(Libraries {
                 paths: vec![
                     "D:\\\\Games\\\\Steam".into(),
                     "E:\\\\Games\\\\Steam".into(),
                     "F:\\\\Games\\\\Steam".into()
                 ],
-            }
+            })
         )
     }
 
@@ -326,9 +327,9 @@ mod tests {
     #[test]
     #[ignore]
     fn test_library_discovery() {
-        let library_folders = LibraryFolders::discover().unwrap();
-        eprintln!("discovered libraries: {:?}", library_folders.paths);
-        let apps = library_folders.discover_apps().unwrap();
+        let libraries = Libraries::discover().unwrap();
+        eprintln!("discovered libraries: {:?}", libraries.paths);
+        let apps = libraries.discover_apps().unwrap();
         eprintln!("discovered apps: {:?}", apps);
     }
 }

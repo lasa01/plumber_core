@@ -1,4 +1,6 @@
 use std::{
+    ffi::OsStr,
+    fmt::Formatter,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -37,13 +39,19 @@ pub enum GameReadError {
     Deserialization(#[from] vdf::Error),
 }
 
+/// A search path in a [`Game`].
+#[derive(Debug, PartialEq)]
+pub enum SearchPath {
+    Vpk(PathBuf),
+    Directory(PathBuf),
+    Wildcard(PathBuf),
+}
+
 /// Represents a Source game's filesystem
 #[derive(Debug, PartialEq)]
 pub struct Game {
     pub name: String,
-    pub vpk_files: Vec<PathBuf>,
-    pub directories: Vec<PathBuf>,
-    pub wildcard_directories: Vec<PathBuf>,
+    pub search_paths: Vec<SearchPath>,
 }
 
 impl Game {
@@ -72,16 +80,8 @@ impl Game {
         ))
     }
 
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn from_game_info(
-        game_info: GameInfo,
-        game_info_directory: &Path,
-        root_path: &Path,
-    ) -> Self {
-        let mut vpk_files = Vec::new();
-        let mut directories = Vec::new();
-        let mut wildcard_directories = Vec::new();
+    fn from_game_info(game_info: GameInfo, game_info_directory: &Path, root_path: &Path) -> Self {
+        let mut search_paths = Vec::new();
 
         for path in &game_info.file_system.search_paths.game_search_paths {
             let path = UncasedStr::new(path);
@@ -99,41 +99,35 @@ impl Game {
                 path.as_str().into()
             };
 
-            if let Some(file_name) = path.file_name() {
-                if let Some(file_name) = file_name.to_str() {
-                    if is_vpk_file(file_name) {
-                        vpk_files.push(path);
-                    } else if file_name == "*" {
-                        // unwrap cannot panic since path with a filename also has a parent
-                        wildcard_directories.push(path.parent().unwrap().into());
-                    } else {
-                        directories.push(path);
-                    }
+            if let Some(file_name) = path.file_name().and_then(OsStr::to_str) {
+                if is_vpk_file(file_name) {
+                    search_paths.push(SearchPath::Vpk(path));
+                } else if file_name == "*" {
+                    // unwrap cannot panic since path with a filename also has a parent
+                    search_paths.push(SearchPath::Wildcard(path.parent().unwrap().into()));
+                } else {
+                    search_paths.push(SearchPath::Directory(path))
                 }
-            } else {
-                directories.push(path);
             }
         }
 
         Self {
             name: game_info.game,
-            vpk_files,
-            directories,
-            wildcard_directories,
+            search_paths,
         }
     }
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(case_insensitive)]
-pub struct GameInfoFile {
+struct GameInfoFile {
     #[serde(rename = "gameinfo")]
     pub game_info: GameInfo,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(case_insensitive)]
-pub struct GameInfo {
+struct GameInfo {
     pub game: String,
     #[serde(rename = "filesystem")]
     pub file_system: GameInfoFileSystem,
@@ -141,7 +135,7 @@ pub struct GameInfo {
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(case_insensitive)]
-pub struct GameInfoFileSystem {
+struct GameInfoFileSystem {
     #[serde(rename = "steamappid")]
     pub steam_app_id: u32,
     #[serde(rename = "toolsappid")]
@@ -151,7 +145,7 @@ pub struct GameInfoFileSystem {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct GameInfoSearchPaths {
+struct GameInfoSearchPaths {
     pub game_search_paths: Vec<String>,
 }
 
@@ -165,7 +159,7 @@ impl<'de> Deserialize<'de> for GameInfoSearchPaths {
         impl<'de> Visitor<'de> for SearchPathsVisitor {
             type Value = GameInfoSearchPaths;
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter.write_str("class SearchPaths")
             }
 

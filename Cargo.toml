@@ -16,7 +16,7 @@ license = "MIT OR Apache-2.0"
 default = ["fs", "steam", "vmf", "vpk"]
 steam = ["winreg", "home"]
 vpk = ["zerocopy", "byteorder", "crc", "md5"]
-fs = []
+fs = ["vpk"]
 vmf = []
 
 [dependencies]

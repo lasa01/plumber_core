@@ -1,4 +1,12 @@
-use std::{collections::{hash_map::Keys, HashMap}, ffi::OsStr, fs, io::{self, Read, Seek, SeekFrom, Write}, path::{Path, PathBuf}, slice::Iter, str};
+use std::{
+    collections::{hash_map::Keys, HashMap},
+    ffi::OsStr,
+    fs,
+    io::{self, Read, Seek, SeekFrom, Write},
+    path::{Path, PathBuf},
+    slice::Iter,
+    str,
+};
 
 use byteorder::LE;
 use crc::crc32;
