@@ -1,6 +1,16 @@
 use std::borrow::Cow;
 
-use nom::{Err, IResult, Parser, branch::alt, bytes::complete::{escaped, is_not, tag, take_till}, character::complete::{anychar, char, line_ending, multispace1, none_of, one_of, space0, space1}, combinator::{all_consuming, cut, not, opt, peek, recognize, value}, error::{ErrorKind, ParseError}, sequence::{delimited, preceded, terminated}};
+use nom::{
+    branch::alt,
+    bytes::complete::{escaped, is_not, tag, take_till},
+    character::complete::{
+        anychar, char, line_ending, multispace1, none_of, one_of, space0, space1,
+    },
+    combinator::{all_consuming, cut, not, opt, peek, recognize, value},
+    error::{ErrorKind, ParseError},
+    sequence::{delimited, preceded, terminated},
+    Err, IResult, Parser,
+};
 
 fn ignore<I, O, E, F>(mut parser: F) -> impl FnMut(I) -> IResult<I, (), E>
 where
@@ -86,7 +96,14 @@ fn quoted_token<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a 
 }
 
 fn escaped_quoted_token<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
-    alt((delimited(char('"'), escaped(is_not("\"\\"), '\\', one_of("nt\\\"")), char('"')), value("", tag("\"\""))))(i)
+    alt((
+        delimited(
+            char('"'),
+            escaped(is_not("\"\\"), '\\', one_of("nt\\\"")),
+            char('"'),
+        ),
+        value("", tag("\"\"")),
+    ))(i)
 }
 
 fn unquoted_char_nonspace<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, char, E> {
@@ -123,8 +140,13 @@ pub(crate) fn any_key<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str
     preceded(multispace_comment0, alt((quoted_token, unquoted_key)))(i)
 }
 
-pub(crate) fn any_escaped_key<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
-    preceded(multispace_comment0, alt((escaped_quoted_token, unquoted_key)))(i)
+pub(crate) fn any_escaped_key<'a, E: ParseError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, &'a str, E> {
+    preceded(
+        multispace_comment0,
+        alt((escaped_quoted_token, unquoted_key)),
+    )(i)
 }
 
 pub(crate) fn empty_token<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
@@ -135,8 +157,13 @@ pub(crate) fn any_value<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a s
     preceded(multispace_comment0, alt((quoted_token, unquoted_value)))(i)
 }
 
-pub(crate) fn any_escaped_value<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
-    preceded(multispace_comment0, alt((escaped_quoted_token, unquoted_value)))(i)
+pub(crate) fn any_escaped_value<'a, E: ParseError<&'a str>>(
+    i: &'a str,
+) -> IResult<&'a str, &'a str, E> {
+    preceded(
+        multispace_comment0,
+        alt((escaped_quoted_token, unquoted_value)),
+    )(i)
 }
 
 pub(crate) fn block_start<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, (), E> {
@@ -299,11 +326,8 @@ mod tests {
             Cow::Borrowed("not escaped"),
         );
 
-        assert_eq!(
-            maybe_escape_str("escaped \\\" value"),
-            "escaped \" value",
-        );
-    
+        assert_eq!(maybe_escape_str("escaped \\\" value"), "escaped \" value",);
+
         assert_eq!(
             maybe_escape_str("escaped \\\" value more escapes \\\\ here"),
             "escaped \" value more escapes \\ here",

@@ -77,10 +77,7 @@ impl Error {
     }
 
     #[must_use]
-    pub fn with_position(
-        mut self,
-        deserializer: &Deserializer,
-    ) -> Self {
+    pub fn with_position(mut self, deserializer: &Deserializer) -> Self {
         self.position = Some(deserializer.get_position());
         self
     }

@@ -1,7 +1,13 @@
 use std::{borrow::Cow, marker::PhantomData, result, str::FromStr};
 
 use nom::{IResult, Offset};
-use serde::{Deserialize, de::{self, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess, value::BorrowedStrDeserializer}};
+use serde::{
+    de::{
+        self, value::BorrowedStrDeserializer, EnumAccess, IntoDeserializer, MapAccess, SeqAccess,
+        VariantAccess,
+    },
+    Deserialize,
+};
 
 use super::{
     error::{Error, Position, Reason, Result},
@@ -60,169 +66,161 @@ impl<'de_ref, 'a, 'de> serde::Deserializer<'de> for &'de_ref mut Deserializer<'a
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_any(visitor)
     }
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_bool(visitor)
     }
 
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_i8(visitor)
     }
 
     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_i16(visitor)
     }
 
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_i32(visitor)
     }
 
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_i64(visitor)
     }
 
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_u8(visitor)
     }
 
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_u16(visitor)
     }
 
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_u32(visitor)
     }
 
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_u64(visitor)
     }
 
     fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_f32(visitor)
     }
 
     fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_f64(visitor)
     }
 
     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_char(visitor)
     }
 
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_str(visitor)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_string(visitor)
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_bytes(visitor)
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_byte_buf(visitor)
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_option(visitor)
     }
 
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_unit(visitor)
     }
 
-    fn deserialize_unit_struct<V>(
-        self,
-        name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value>
+    fn deserialize_unit_struct<V>(self, name: &'static str, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de> 
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_unit_struct(name, visitor)
     }
 
-    fn deserialize_newtype_struct<V>(
-        self,
-        name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(self, name: &'static str, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_newtype_struct(name, visitor)
     }
 
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_seq(visitor)
     }
 
     fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_tuple(len, visitor)
     }
@@ -234,14 +232,14 @@ impl<'de_ref, 'a, 'de> serde::Deserializer<'de> for &'de_ref mut Deserializer<'a
         visitor: V,
     ) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_tuple_struct(name, len, visitor)
     }
 
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_map(visitor)
     }
@@ -253,7 +251,7 @@ impl<'de_ref, 'a, 'de> serde::Deserializer<'de> for &'de_ref mut Deserializer<'a
         visitor: V,
     ) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_struct(name, fields, visitor)
     }
@@ -265,21 +263,21 @@ impl<'de_ref, 'a, 'de> serde::Deserializer<'de> for &'de_ref mut Deserializer<'a
         visitor: V,
     ) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_enum(name, variants, visitor)
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_identifier(visitor)
     }
 
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value>
     where
-        V: de::Visitor<'de>
+        V: de::Visitor<'de>,
     {
         self.inner.deserialize_ignored_any(visitor)
     }
@@ -351,8 +349,9 @@ where
     }
 
     fn parse_escaped_value(&mut self) -> Result<Cow<'de, str>> {
-        let value = self.parse(parsers::any_escaped_value)
-        .map_err(|_| Error::new(Reason::ExpectedValue))?;
+        let value = self
+            .parse(parsers::any_escaped_value)
+            .map_err(|_| Error::new(Reason::ExpectedValue))?;
         Ok(parsers::maybe_escape_str(value))
     }
 
@@ -384,7 +383,8 @@ where
     }
 
     fn parse_escaped_key(&mut self) -> Result<Cow<'de, str>> {
-        let key = self.parse(parsers::any_escaped_key)
+        let key = self
+            .parse(parsers::any_escaped_key)
             .map_err(|_| Error::new(Reason::ExpectedValue))?;
         Ok(parsers::maybe_escape_str(key))
     }
@@ -793,7 +793,10 @@ impl<'de_ref, 'lvl, 'de> MapAccess<'de> for RootAccess<'de_ref, 'lvl, 'de> {
             (key, value)
         } else {
             let key = self.deserializer.parse_key()?;
-            (Cow::Borrowed(key), seed.deserialize(BorrowedStrDeserializer::new(key))?)
+            (
+                Cow::Borrowed(key),
+                seed.deserialize(BorrowedStrDeserializer::new(key))?,
+            )
         };
         self.deserializer.last_key = Some(key);
         Ok(Some(value))
@@ -821,7 +824,10 @@ impl<'de_ref, 'lvl, 'de> EnumAccess<'de> for RootAccess<'de_ref, 'lvl, 'de> {
             (key, value)
         } else {
             let key = self.deserializer.parse_key()?;
-            (Cow::Borrowed(key), seed.deserialize(BorrowedStrDeserializer::new(key))?)
+            (
+                Cow::Borrowed(key),
+                seed.deserialize(BorrowedStrDeserializer::new(key))?,
+            )
         };
         self.deserializer.last_key = Some(key);
         Ok((value, self))
@@ -880,7 +886,10 @@ impl<'lvl, 'de> DeserializerLevel<'lvl, 'de> for Value {
     where
         V: de::Visitor<'de>,
     {
-        let element_key = deserializer.last_key.take().ok_or_else(|| Error::new(Reason::SequenceUnknownKey))?;
+        let element_key = deserializer
+            .last_key
+            .take()
+            .ok_or_else(|| Error::new(Reason::SequenceUnknownKey))?;
         visitor.visit_seq(SeqValueAccess::new(deserializer, element_key))
     }
 
@@ -950,7 +959,10 @@ impl<'de_ref, 'lvl, 'de> MapAccess<'de> for ValueAccess<'de_ref, 'lvl, 'de> {
             (key, value)
         } else {
             let key = self.deserializer.parse_key()?;
-            (Cow::Borrowed(key), seed.deserialize(BorrowedStrDeserializer::new(key))?)
+            (
+                Cow::Borrowed(key),
+                seed.deserialize(BorrowedStrDeserializer::new(key))?,
+            )
         };
         self.deserializer.last_key = Some(key);
         Ok(Some(value))
@@ -978,7 +990,10 @@ impl<'de_ref, 'lvl, 'de> EnumAccess<'de> for ValueAccess<'de_ref, 'lvl, 'de> {
             (key, value)
         } else {
             let key = self.deserializer.parse_key()?;
-            (Cow::Borrowed(key), seed.deserialize(BorrowedStrDeserializer::new(key))?)
+            (
+                Cow::Borrowed(key),
+                seed.deserialize(BorrowedStrDeserializer::new(key))?,
+            )
         };
         self.deserializer.last_key = Some(key);
         Ok((value, self))
@@ -1021,7 +1036,10 @@ struct SeqValueAccess<'de_ref, 'lvl, 'de> {
 }
 
 impl<'de_ref, 'lvl, 'de> SeqValueAccess<'de_ref, 'lvl, 'de> {
-    fn new(deserializer: &'de_ref mut DeserializerImpl<'lvl, 'de, Value>, element_key: Cow<'de, str>) -> Self {
+    fn new(
+        deserializer: &'de_ref mut DeserializerImpl<'lvl, 'de, Value>,
+        element_key: Cow<'de, str>,
+    ) -> Self {
         Self {
             deserializer,
             first: true,

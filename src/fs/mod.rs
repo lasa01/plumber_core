@@ -1,4 +1,10 @@
-use std::{ffi::OsStr, fmt::Formatter, fs, io::{self, Read, Seek}, path::{Path, PathBuf}};
+use std::{
+    ffi::OsStr,
+    fmt::Formatter,
+    fs,
+    io::{self, Read, Seek},
+    path::{Path, PathBuf},
+};
 
 use crate::{vdf, vpk};
 
@@ -190,7 +196,7 @@ impl Game {
 
     /// Opens the game's filesystem.
     /// Opens all vpk archives, verifies that search directories exist and reads wildcard directories' contents.
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns `Err` if a search path doesn't exist or a vpk archive can't be opened.
@@ -203,7 +209,10 @@ impl Game {
                 }
                 SearchPath::Directory(path) => {
                     if !path.is_dir() {
-                        return Err(GameOpenError::Io(io::Error::new(io::ErrorKind::NotFound, path.to_string_lossy())));
+                        return Err(GameOpenError::Io(io::Error::new(
+                            io::ErrorKind::NotFound,
+                            path.to_string_lossy(),
+                        )));
                     }
                     open_search_paths.push(OpenSearchPath::Directory(path.clone()));
                 }
@@ -237,29 +246,25 @@ enum OpenSearchPath {
 impl OpenSearchPath {
     fn try_open_file(&self, file_path: &str) -> io::Result<Option<GameFile>> {
         match self {
-            OpenSearchPath::Vpk(vpk) => {
-                vpk
-                    .open_file(file_path)
-                    .map(|f| Some(GameFile::Vpk(f)))
-                    .or_else(|e| 
-                        if e.kind() == io::ErrorKind::NotFound {
-                            Ok(None)
-                        } else {
-                            Err(e)
-                        }
-                    )
-            }
-            OpenSearchPath::Directory(path) => {
-                fs::File::open(path.join(file_path))
-                    .map(|f| Some(GameFile::Fs(f)))
-                    .or_else(|e| 
-                        if e.kind() == io::ErrorKind::NotFound {
-                            Ok(None)
-                        } else {
-                            Err(e)
-                        }
-                    )
-            }
+            OpenSearchPath::Vpk(vpk) => vpk
+                .open_file(file_path)
+                .map(|f| Some(GameFile::Vpk(f)))
+                .or_else(|e| {
+                    if e.kind() == io::ErrorKind::NotFound {
+                        Ok(None)
+                    } else {
+                        Err(e)
+                    }
+                }),
+            OpenSearchPath::Directory(path) => fs::File::open(path.join(file_path))
+                .map(|f| Some(GameFile::Fs(f)))
+                .or_else(|e| {
+                    if e.kind() == io::ErrorKind::NotFound {
+                        Ok(None)
+                    } else {
+                        Err(e)
+                    }
+                }),
         }
     }
 }
@@ -267,7 +272,7 @@ impl OpenSearchPath {
 /// An open Source game's filesystem, ready to be read.
 #[derive(Debug)]
 pub struct OpenGame {
-    search_paths: Vec<OpenSearchPath>
+    search_paths: Vec<OpenSearchPath>,
 }
 
 impl OpenGame {

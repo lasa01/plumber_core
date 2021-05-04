@@ -1,4 +1,8 @@
-use std::{fs, io, path::{Path, PathBuf}, slice::Iter};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+    slice::Iter,
+};
 
 use crate::vdf;
 
@@ -62,10 +66,10 @@ impl<'de> Deserialize<'de> for LibraryFolders {
     {
         struct LibraryFoldersKey;
 
-        impl<'de> Deserialize<'de> for LibraryFoldersKey {            
+        impl<'de> Deserialize<'de> for LibraryFoldersKey {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
-                D: serde::Deserializer<'de>
+                D: serde::Deserializer<'de>,
             {
                 struct LibraryFoldersKeyVisitor;
 
@@ -80,10 +84,18 @@ impl<'de> Deserialize<'de> for LibraryFolders {
                     where
                         E: serde::de::Error,
                     {
-                        v.parse::<u64>().map_or_else(|_| Err(serde::de::Error::invalid_type(serde::de::Unexpected::Str(v), &Self)), |_| Ok(LibraryFoldersKey))
+                        v.parse::<u64>().map_or_else(
+                            |_| {
+                                Err(serde::de::Error::invalid_type(
+                                    serde::de::Unexpected::Str(v),
+                                    &Self,
+                                ))
+                            },
+                            |_| Ok(LibraryFoldersKey),
+                        )
                     }
                 }
-                
+
                 deserializer.deserialize_str(LibraryFoldersKeyVisitor)
             }
         }
@@ -160,9 +172,7 @@ pub struct Libraries {
 impl Libraries {
     #[must_use]
     pub fn new(paths: Vec<PathBuf>) -> Self {
-        Self {
-            paths,
-        }
+        Self { paths }
     }
 
     /// Discover local Steam libraries.
@@ -265,10 +275,14 @@ impl<'a> Iterator for Apps<'a> {
                         if !filename.starts_with("appmanifest_") || !is_acf_file(filename) {
                             continue;
                         }
-                        return Some(fs::read_to_string(entry.path())
-                            .map_err(AppError::from)
-                            .and_then(|s| vdf::from_str::<AppManifest>(&s).map_err(AppError::from))
-                            .map(|m| m.app_state.into_app(&current_path)));
+                        return Some(
+                            fs::read_to_string(entry.path())
+                                .map_err(AppError::from)
+                                .and_then(|s| {
+                                    vdf::from_str::<AppManifest>(&s).map_err(AppError::from)
+                                })
+                                .map(|m| m.app_state.into_app(&current_path)),
+                        );
                     }
                 }
             }
@@ -276,7 +290,7 @@ impl<'a> Iterator for Apps<'a> {
             match fs::read_dir(&steamapps_path) {
                 Ok(iter) => {
                     self.current_path = Some((steamapps_path, iter));
-                },
+                }
                 Err(e) => return Some(Err(e.into())),
             }
         }

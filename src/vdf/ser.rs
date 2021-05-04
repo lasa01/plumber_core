@@ -199,11 +199,16 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        self.last_key.take().map_or_else(|| Err(Error::new(Reason::SequenceUnknownKey)), move |key| Ok(SerializeSeq {
-            serializer: self,
-            key,
-            first: true,
-        }))
+        self.last_key.take().map_or_else(
+            || Err(Error::new(Reason::SequenceUnknownKey)),
+            move |key| {
+                Ok(SerializeSeq {
+                    serializer: self,
+                    key,
+                    first: true,
+                })
+            },
+        )
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
