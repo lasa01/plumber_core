@@ -7,7 +7,7 @@ use std::{
 use serde::{de, ser};
 use thiserror::Error;
 
-use super::{de::DeserializerLevel, Deserializer};
+use super::Deserializer;
 
 #[derive(Error, Debug)]
 pub enum Reason {
@@ -33,6 +33,8 @@ pub enum Reason {
     KeyMustBeString,
     #[error("sequence must have at least 1 element")]
     EmptySequence,
+    #[error("sequence must be inside a class")]
+    SequenceUnknownKey,
     #[error("{0}")]
     Custom(String),
 }
@@ -45,7 +47,7 @@ pub struct Position {
 
 impl Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "line {}, colum {}", self.line, self.column)
+        write!(f, "line {}, column {}", self.line, self.column)
     }
 }
 
@@ -56,7 +58,7 @@ pub struct Error {
 }
 
 impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.position {
             Some(position) => write!(f, "{} at {}", self.reason, position),
             None => self.reason.fmt(f),
@@ -74,9 +76,10 @@ impl Error {
         }
     }
 
-    pub fn with_position<'lvl, 'de, T: DeserializerLevel<'lvl, 'de>>(
+    #[must_use]
+    pub fn with_position(
         mut self,
-        deserializer: &Deserializer<'lvl, 'de, T>,
+        deserializer: &Deserializer,
     ) -> Self {
         self.position = Some(deserializer.get_position());
         self

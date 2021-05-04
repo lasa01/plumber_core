@@ -199,14 +199,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        match self.last_key.take() {
-            Some(key) => Ok(SerializeSeq {
-                serializer: self,
-                key,
-                first: true,
-            }),
-            None => panic!("vfd sequence can only be serialized inside a class"),
-        }
+        self.last_key.take().map_or_else(|| Err(Error::new(Reason::SequenceUnknownKey)), move |key| Ok(SerializeSeq {
+            serializer: self,
+            key,
+            first: true,
+        }))
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {

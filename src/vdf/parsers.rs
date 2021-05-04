@@ -1,12 +1,6 @@
-use nom::{
-    branch::alt,
-    bytes::complete::{tag, take_till},
-    character::complete::{anychar, char, line_ending, multispace1, none_of, space0, space1},
-    combinator::{all_consuming, cut, not, opt, peek, recognize},
-    error::{ErrorKind, ParseError},
-    sequence::{delimited, preceded, terminated},
-    Err, IResult, Parser,
-};
+use std::borrow::Cow;
+
+use nom::{Err, IResult, Parser, branch::alt, bytes::complete::{escaped, is_not, tag, take_till}, character::complete::{anychar, char, line_ending, multispace1, none_of, one_of, space0, space1}, combinator::{all_consuming, cut, not, opt, peek, recognize, value}, error::{ErrorKind, ParseError}, sequence::{delimited, preceded, terminated}};
 
 fn ignore<I, O, E, F>(mut parser: F) -> impl FnMut(I) -> IResult<I, (), E>
 where
@@ -91,6 +85,10 @@ fn quoted_token<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a 
     delimited(char('"'), take_till(|c| c == '"'), char('"'))(i)
 }
 
+fn escaped_quoted_token<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
+    alt((delimited(char('"'), escaped(is_not("\"\\"), '\\', one_of("nt\\\"")), char('"')), value("", tag("\"\""))))(i)
+}
+
 fn unquoted_char_nonspace<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, char, E> {
     alt((
         none_of("{}\"\r\n/ \t"),
@@ -109,9 +107,9 @@ fn unquoted_value<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'
     ))))(i)
 }
 
-fn specific_token<'a, E: ParseError<&'a str> + 'a>(
-    key: &'a str,
-) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E> + 'a {
+fn specific_token<'a: 'b, 'b, E: ParseError<&'a str> + 'a>(
+    key: &'b str,
+) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E> + 'b {
     preceded(
         multispace_comment0,
         alt((
@@ -125,12 +123,20 @@ pub(crate) fn any_key<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str
     preceded(multispace_comment0, alt((quoted_token, unquoted_key)))(i)
 }
 
+pub(crate) fn any_escaped_key<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
+    preceded(multispace_comment0, alt((escaped_quoted_token, unquoted_key)))(i)
+}
+
 pub(crate) fn empty_token<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
     preceded(multispace_comment0, tag("\"\""))(i)
 }
 
 pub(crate) fn any_value<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
     preceded(multispace_comment0, alt((quoted_token, unquoted_value)))(i)
+}
+
+pub(crate) fn any_escaped_value<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, &'a str, E> {
+    preceded(multispace_comment0, alt((escaped_quoted_token, unquoted_value)))(i)
 }
 
 pub(crate) fn block_start<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<&'a str, (), E> {
@@ -160,10 +166,54 @@ pub(crate) fn peeked_seq_end<'a, E: ParseError<&'a str>>(i: &'a str) -> IResult<
     ))(i)
 }
 
-pub(crate) fn block_sep_and_token<'a, E: ParseError<&'a str> + 'a>(
-    token: &'a str,
-) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E> {
+pub(crate) fn block_sep_and_token<'a: 'b, 'b, E: ParseError<&'a str> + 'a>(
+    token: &'b str,
+) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E> + 'b {
     preceded(block_sep, specific_token(token))
+}
+
+fn escape(char: char) -> Option<char> {
+    match char {
+        't' => Some('\t'),
+        'n' => Some('\n'),
+        '\\' => Some('\\'),
+        '"' => Some('"'),
+        _ => None,
+    }
+}
+
+pub(crate) fn maybe_escape_str(input: &str) -> Cow<str> {
+    let mut char_iter = input.chars().enumerate();
+    while let Some((i, ch)) = char_iter.next() {
+        if ch == '\\' {
+            if let Some((next_i, next_ch)) = char_iter.next() {
+                if let Some(escaped) = escape(next_ch) {
+                    let mut escaped_string = String::with_capacity(input.len() + 1);
+                    escaped_string.push_str(&input[..i]);
+                    escaped_string.push(escaped);
+                    let mut char_iter = input[next_i + 1..].chars();
+                    while let Some(ch) = char_iter.next() {
+                        if ch == '\\' {
+                            if let Some(next_ch) = char_iter.next() {
+                                if let Some(escaped) = escape(next_ch) {
+                                    escaped_string.push(escaped);
+                                } else {
+                                    escaped_string.push('\\');
+                                    escaped_string.push(next_ch);
+                                }
+                            } else {
+                                escaped_string.push('\\');
+                            }
+                        } else {
+                            escaped_string.push(ch);
+                        }
+                    }
+                    return Cow::Owned(escaped_string);
+                }
+            }
+        }
+    }
+    Cow::Borrowed(input)
 }
 
 #[cfg(test)]
@@ -227,5 +277,36 @@ mod tests {
             multispace_comment0::<VerboseError<&str>>("\r\n\t//\r\n"),
             IResult::Ok(("", ()))
         )
+    }
+
+    #[test]
+    fn escaped() {
+        assert_eq!(
+            any_escaped_value::<VerboseError<&str>>(" \"escaped \\\" value\""),
+            IResult::Ok(("", "escaped \\\" value"))
+        );
+
+        assert_eq!(
+            any_escaped_key::<VerboseError<&str>>("\"\""),
+            IResult::Ok(("", ""))
+        );
+    }
+
+    #[test]
+    fn escaping() {
+        assert_eq!(
+            maybe_escape_str("not escaped"),
+            Cow::Borrowed("not escaped"),
+        );
+
+        assert_eq!(
+            maybe_escape_str("escaped \\\" value"),
+            "escaped \" value",
+        );
+    
+        assert_eq!(
+            maybe_escape_str("escaped \\\" value more escapes \\\\ here"),
+            "escaped \" value more escapes \\ here",
+        );
     }
 }

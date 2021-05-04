@@ -1,10 +1,7 @@
-use std::{result, str::FromStr};
+use std::{borrow::Cow, marker::PhantomData, result, str::FromStr};
 
 use nom::{IResult, Offset};
-use serde::{
-    de::{self, value::BorrowedStrDeserializer, EnumAccess, MapAccess, SeqAccess, VariantAccess},
-    Deserialize,
-};
+use serde::{Deserialize, de::{self, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess, value::BorrowedStrDeserializer}};
 
 use super::{
     error::{Error, Position, Reason, Result},
@@ -18,44 +15,312 @@ pub fn from_str<'de, T>(mut input: &'de str) -> Result<T>
 where
     T: Deserialize<'de>,
 {
-    let mut deserializer = Deserializer::<'_, 'de, Root>::from_str(&mut input);
+    let mut deserializer = Deserializer::from_str(&mut input);
     let t = T::deserialize(&mut deserializer).map_err(|err| err.with_position(&deserializer))?;
     Ok(t)
 }
 
-pub struct Deserializer<'lvl, 'de: 'lvl, T: DeserializerLevel<'lvl, 'de>> {
-    original_input: &'de str,
-    input: &'lvl mut &'de str,
-    pub level: T,
-    last_key: &'de str,
+/// # Errors
+///
+/// Will return `Err` if the deserialization fails.
+pub fn escaped_from_str<'de, T>(mut input: &'de str) -> Result<T>
+where
+    T: Deserialize<'de>,
+{
+    let mut deserializer = Deserializer::escaped_from_str(&mut input);
+    let t = T::deserialize(&mut deserializer).map_err(|err| err.with_position(&deserializer))?;
+    Ok(t)
 }
 
-impl<'lvl, 'de, T> Deserializer<'lvl, 'de, T>
+pub struct Deserializer<'a, 'de> {
+    inner: DeserializerImpl<'a, 'de, Root>,
+}
+
+impl<'a, 'de> Deserializer<'a, 'de> {
+    pub fn from_str(input: &'a mut &'de str) -> Self {
+        Self {
+            inner: DeserializerImpl::<'_, '_, Root>::new(input, false),
+        }
+    }
+
+    pub fn escaped_from_str(input: &'a mut &'de str) -> Self {
+        Self {
+            inner: DeserializerImpl::<'_, '_, Root>::new(input, true),
+        }
+    }
+
+    #[must_use]
+    pub fn get_position(&self) -> Position {
+        self.inner.get_position()
+    }
+}
+
+impl<'de_ref, 'a, 'de> serde::Deserializer<'de> for &'de_ref mut Deserializer<'a, 'de> {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_any(visitor)
+    }
+
+    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_bool(visitor)
+    }
+
+    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_i8(visitor)
+    }
+
+    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_i16(visitor)
+    }
+
+    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_i32(visitor)
+    }
+
+    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_i64(visitor)
+    }
+
+    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_u8(visitor)
+    }
+
+    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_u16(visitor)
+    }
+
+    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_u32(visitor)
+    }
+
+    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_u64(visitor)
+    }
+
+    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_f32(visitor)
+    }
+
+    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_f64(visitor)
+    }
+
+    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_char(visitor)
+    }
+
+    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_str(visitor)
+    }
+
+    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_string(visitor)
+    }
+
+    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_bytes(visitor)
+    }
+
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_byte_buf(visitor)
+    }
+
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_option(visitor)
+    }
+
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_unit(visitor)
+    }
+
+    fn deserialize_unit_struct<V>(
+        self,
+        name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: de::Visitor<'de> 
+    {
+        self.inner.deserialize_unit_struct(name, visitor)
+    }
+
+    fn deserialize_newtype_struct<V>(
+        self,
+        name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_newtype_struct(name, visitor)
+    }
+
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_seq(visitor)
+    }
+
+    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_tuple(len, visitor)
+    }
+
+    fn deserialize_tuple_struct<V>(
+        self,
+        name: &'static str,
+        len: usize,
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_tuple_struct(name, len, visitor)
+    }
+
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_map(visitor)
+    }
+
+    fn deserialize_struct<V>(
+        self,
+        name: &'static str,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_struct(name, fields, visitor)
+    }
+
+    fn deserialize_enum<V>(
+        self,
+        name: &'static str,
+        variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_enum(name, variants, visitor)
+    }
+
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_identifier(visitor)
+    }
+
+    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>
+    {
+        self.inner.deserialize_ignored_any(visitor)
+    }
+}
+
+struct DeserializerImpl<'lvl, 'de: 'lvl, T: DeserializerLevel<'lvl, 'de>> {
+    original_input: &'de str,
+    input: &'lvl mut &'de str,
+    last_key: Option<Cow<'de, str>>,
+    escaped: bool,
+    marker: PhantomData<T>,
+}
+
+impl<'lvl, 'de, T> DeserializerImpl<'lvl, 'de, T>
 where
     T: DeserializerLevel<'lvl, 'de>,
 {
-    pub fn from_str(input: &'lvl mut &'de str) -> Deserializer<'lvl, 'de, Root> {
-        Deserializer {
+    fn new(input: &'lvl mut &'de str, escaped: bool) -> Self {
+        Self {
             original_input: <&str>::clone(input),
             input,
-            level: Root,
-            last_key: "",
+            last_key: None,
+            marker: PhantomData,
+            escaped,
         }
     }
 
-    fn inner_level<'a, L>(&'a mut self, level: L) -> Deserializer<'a, 'de, L>
+    fn inner_level<'a, L>(&'a mut self) -> DeserializerImpl<'a, 'de, L>
     where
         L: DeserializerLevel<'a, 'de>,
     {
-        Deserializer {
+        DeserializerImpl {
             original_input: self.original_input,
             input: self.input,
-            level,
-            last_key: "",
+            last_key: None,
+            marker: PhantomData,
+            escaped: self.escaped,
         }
     }
 
-    pub(crate) fn get_position(&self) -> Position {
+    fn get_position(&self) -> Position {
         let offset = self.original_input.offset(self.input);
         let prefix = &self.original_input.as_bytes()[..offset];
         let line = bytecount::count(prefix, b'\n') + 1;
@@ -85,6 +350,12 @@ where
             .map_err(|_| Error::new(Reason::ExpectedValue))
     }
 
+    fn parse_escaped_value(&mut self) -> Result<Cow<'de, str>> {
+        let value = self.parse(parsers::any_escaped_value)
+        .map_err(|_| Error::new(Reason::ExpectedValue))?;
+        Ok(parsers::maybe_escape_str(value))
+    }
+
     fn parse_empty_token(&mut self) -> Result<()> {
         self.parse(parsers::empty_token)
             .map_err(|_| Error::new(Reason::ExpectedEmptyValue))?;
@@ -112,6 +383,12 @@ where
             .map_err(|_| Error::new(Reason::ExpectedValue))
     }
 
+    fn parse_escaped_key(&mut self) -> Result<Cow<'de, str>> {
+        let key = self.parse(parsers::any_escaped_key)
+            .map_err(|_| Error::new(Reason::ExpectedValue))?;
+        Ok(parsers::maybe_escape_str(key))
+    }
+
     fn parse_block_sep(&mut self) -> Result<()> {
         self.parse(parsers::block_sep)
             .map_err(|_| Error::new(Reason::ExpectedNewline))
@@ -131,7 +408,7 @@ where
         self.parse(parsers::peeked_seq_end).is_ok()
     }
 
-    fn parsed_block_sep_and_token(&mut self, token: &'de str) -> bool {
+    fn parsed_block_sep_and_token(&mut self, token: &str) -> bool {
         self.parse(parsers::block_sep_and_token(token)).is_ok()
     }
 
@@ -140,24 +417,24 @@ where
     }
 }
 
-pub trait DeserializerLevel<'lvl, 'de>: Sized {
+trait DeserializerLevel<'lvl, 'de>: Sized {
     fn deserialize_any<V>(
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>;
 
     fn deserialize_seq<V>(
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>;
 
     fn deserialize_map<V>(
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>;
@@ -166,13 +443,13 @@ pub trait DeserializerLevel<'lvl, 'de>: Sized {
         name: &'static str,
         variants: &'static [&'static str],
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>;
 }
 
-impl<'wr, 'lvl, 'de, T> de::Deserializer<'de> for &'wr mut Deserializer<'lvl, 'de, T>
+impl<'de_ref, 'lvl, 'de, T> de::Deserializer<'de> for &'de_ref mut DeserializerImpl<'lvl, 'de, T>
 where
     T: DeserializerLevel<'lvl, 'de>,
 {
@@ -277,7 +554,14 @@ where
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_borrowed_str(self.parse_value()?)
+        if self.escaped {
+            match self.parse_escaped_value()? {
+                Cow::Borrowed(str) => visitor.visit_borrowed_str(str),
+                Cow::Owned(string) => visitor.visit_string(string),
+            }
+        } else {
+            visitor.visit_borrowed_str(self.parse_value()?)
+        }
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
@@ -411,7 +695,7 @@ pub struct Root;
 impl<'lvl, 'de> DeserializerLevel<'lvl, 'de> for Root {
     fn deserialize_any<V>(
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -421,44 +705,44 @@ impl<'lvl, 'de> DeserializerLevel<'lvl, 'de> for Root {
 
     fn deserialize_seq<V>(
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_seq(RootAccess::new(&mut deserializer.inner_level(Value)))
+        visitor.visit_seq(RootAccess::new(&mut deserializer.inner_level::<Value>()))
     }
 
     fn deserialize_map<V>(
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_map(RootAccess::new(&mut deserializer.inner_level(Value)))
+        visitor.visit_map(RootAccess::new(&mut deserializer.inner_level::<Value>()))
     }
 
     fn deserialize_enum<V>(
         _name: &'static str,
         _variants: &'static [&'static str],
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_enum(RootAccess::new(&mut deserializer.inner_level(Value)))
+        visitor.visit_enum(RootAccess::new(&mut deserializer.inner_level::<Value>()))
     }
 }
 
-struct RootAccess<'wr, 'lvl, 'de> {
-    deserializer: &'wr mut Deserializer<'lvl, 'de, Value>,
+struct RootAccess<'de_ref, 'lvl, 'de> {
+    deserializer: &'de_ref mut DeserializerImpl<'lvl, 'de, Value>,
     first: bool,
 }
 
-impl<'wr, 'lvl, 'de> RootAccess<'wr, 'lvl, 'de> {
-    fn new(deserializer: &'wr mut Deserializer<'lvl, 'de, Value>) -> Self {
+impl<'de_ref, 'lvl, 'de> RootAccess<'de_ref, 'lvl, 'de> {
+    fn new(deserializer: &'de_ref mut DeserializerImpl<'lvl, 'de, Value>) -> Self {
         Self {
             deserializer,
             first: true,
@@ -466,7 +750,7 @@ impl<'wr, 'lvl, 'de> RootAccess<'wr, 'lvl, 'de> {
     }
 }
 
-impl<'wr, 'lvl, 'de> SeqAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
+impl<'de_ref, 'lvl, 'de> SeqAccess<'de> for RootAccess<'de_ref, 'lvl, 'de> {
     type Error = Error;
 
     fn next_element_seed<S>(&mut self, seed: S) -> Result<Option<S::Value>>
@@ -480,12 +764,16 @@ impl<'wr, 'lvl, 'de> SeqAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
             self.deserializer.parse_block_sep()?;
         }
         self.first = false;
-        self.deserializer.parse_key()?;
+        if self.deserializer.escaped {
+            self.deserializer.parse_escaped_key()?;
+        } else {
+            self.deserializer.parse_key()?;
+        }
         seed.deserialize(&mut *self.deserializer).map(Some)
     }
 }
 
-impl<'wr, 'lvl, 'de> MapAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
+impl<'de_ref, 'lvl, 'de> MapAccess<'de> for RootAccess<'de_ref, 'lvl, 'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -499,10 +787,16 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
             self.deserializer.parse_block_sep()?;
         }
         self.first = false;
-        let key = self.deserializer.parse_key()?;
-        self.deserializer.last_key = key;
-        seed.deserialize(BorrowedStrDeserializer::new(key))
-            .map(Some)
+        let (key, value) = if self.deserializer.escaped {
+            let key = self.deserializer.parse_escaped_key()?;
+            let value = seed.deserialize(key.as_ref().into_deserializer())?;
+            (key, value)
+        } else {
+            let key = self.deserializer.parse_key()?;
+            (Cow::Borrowed(key), seed.deserialize(BorrowedStrDeserializer::new(key))?)
+        };
+        self.deserializer.last_key = Some(key);
+        Ok(Some(value))
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
@@ -513,7 +807,7 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
     }
 }
 
-impl<'wr, 'lvl, 'de> EnumAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
+impl<'de_ref, 'lvl, 'de> EnumAccess<'de> for RootAccess<'de_ref, 'lvl, 'de> {
     type Error = Error;
     type Variant = Self;
 
@@ -521,13 +815,20 @@ impl<'wr, 'lvl, 'de> EnumAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        let key = self.deserializer.parse_key()?;
-        self.deserializer.last_key = key;
-        Ok((seed.deserialize(BorrowedStrDeserializer::new(key))?, self))
+        let (key, value) = if self.deserializer.escaped {
+            let key = self.deserializer.parse_escaped_key()?;
+            let value = seed.deserialize(key.as_ref().into_deserializer())?;
+            (key, value)
+        } else {
+            let key = self.deserializer.parse_key()?;
+            (Cow::Borrowed(key), seed.deserialize(BorrowedStrDeserializer::new(key))?)
+        };
+        self.deserializer.last_key = Some(key);
+        Ok((value, self))
     }
 }
 
-impl<'wr, 'lvl, 'de> VariantAccess<'de> for RootAccess<'wr, 'lvl, 'de> {
+impl<'de_ref, 'lvl, 'de> VariantAccess<'de> for RootAccess<'de_ref, 'lvl, 'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
@@ -561,7 +862,7 @@ struct Value;
 impl<'lvl, 'de> DeserializerLevel<'lvl, 'de> for Value {
     fn deserialize_any<V>(
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -574,17 +875,18 @@ impl<'lvl, 'de> DeserializerLevel<'lvl, 'de> for Value {
 
     fn deserialize_seq<V>(
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_seq(SeqValueAccess::new(deserializer, deserializer.last_key))
+        let element_key = deserializer.last_key.take().ok_or_else(|| Error::new(Reason::SequenceUnknownKey))?;
+        visitor.visit_seq(SeqValueAccess::new(deserializer, element_key))
     }
 
     fn deserialize_map<V>(
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -597,7 +899,7 @@ impl<'lvl, 'de> DeserializerLevel<'lvl, 'de> for Value {
         _name: &'static str,
         _variants: &'static [&'static str],
         visitor: V,
-        deserializer: &mut Deserializer<'lvl, 'de, Self>,
+        deserializer: &mut DeserializerImpl<'lvl, 'de, Self>,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -614,13 +916,13 @@ impl<'lvl, 'de> DeserializerLevel<'lvl, 'de> for Value {
     }
 }
 
-struct ValueAccess<'wr, 'lvl, 'de> {
-    deserializer: &'wr mut Deserializer<'lvl, 'de, Value>,
+struct ValueAccess<'de_ref, 'lvl, 'de> {
+    deserializer: &'de_ref mut DeserializerImpl<'lvl, 'de, Value>,
     first: bool,
 }
 
-impl<'wr, 'lvl, 'de> ValueAccess<'wr, 'lvl, 'de> {
-    fn new(deserializer: &'wr mut Deserializer<'lvl, 'de, Value>) -> Self {
+impl<'de_ref, 'lvl, 'de> ValueAccess<'de_ref, 'lvl, 'de> {
+    fn new(deserializer: &'de_ref mut DeserializerImpl<'lvl, 'de, Value>) -> Self {
         Self {
             deserializer,
             first: true,
@@ -628,7 +930,7 @@ impl<'wr, 'lvl, 'de> ValueAccess<'wr, 'lvl, 'de> {
     }
 }
 
-impl<'wr, 'lvl, 'de> MapAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
+impl<'de_ref, 'lvl, 'de> MapAccess<'de> for ValueAccess<'de_ref, 'lvl, 'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -642,10 +944,16 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
             self.deserializer.parse_block_sep()?;
         }
         self.first = false;
-        let key = self.deserializer.parse_key()?;
-        self.deserializer.last_key = key;
-        seed.deserialize(BorrowedStrDeserializer::new(key))
-            .map(Some)
+        let (key, value) = if self.deserializer.escaped {
+            let key = self.deserializer.parse_escaped_key()?;
+            let value = seed.deserialize(key.as_ref().into_deserializer())?;
+            (key, value)
+        } else {
+            let key = self.deserializer.parse_key()?;
+            (Cow::Borrowed(key), seed.deserialize(BorrowedStrDeserializer::new(key))?)
+        };
+        self.deserializer.last_key = Some(key);
+        Ok(Some(value))
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
@@ -656,7 +964,7 @@ impl<'wr, 'lvl, 'de> MapAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
     }
 }
 
-impl<'wr, 'lvl, 'de> EnumAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
+impl<'de_ref, 'lvl, 'de> EnumAccess<'de> for ValueAccess<'de_ref, 'lvl, 'de> {
     type Error = Error;
     type Variant = Self;
 
@@ -664,13 +972,20 @@ impl<'wr, 'lvl, 'de> EnumAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        let key = self.deserializer.parse_key()?;
-        self.deserializer.last_key = key;
-        Ok((seed.deserialize(BorrowedStrDeserializer::new(key))?, self))
+        let (key, value) = if self.deserializer.escaped {
+            let key = self.deserializer.parse_escaped_key()?;
+            let value = seed.deserialize(key.as_ref().into_deserializer())?;
+            (key, value)
+        } else {
+            let key = self.deserializer.parse_key()?;
+            (Cow::Borrowed(key), seed.deserialize(BorrowedStrDeserializer::new(key))?)
+        };
+        self.deserializer.last_key = Some(key);
+        Ok((value, self))
     }
 }
 
-impl<'wr, 'lvl, 'de> VariantAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
+impl<'de_ref, 'lvl, 'de> VariantAccess<'de> for ValueAccess<'de_ref, 'lvl, 'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
@@ -699,14 +1014,14 @@ impl<'wr, 'lvl, 'de> VariantAccess<'de> for ValueAccess<'wr, 'lvl, 'de> {
     }
 }
 
-struct SeqValueAccess<'wr, 'lvl, 'de> {
-    deserializer: &'wr mut Deserializer<'lvl, 'de, Value>,
+struct SeqValueAccess<'de_ref, 'lvl, 'de> {
+    deserializer: &'de_ref mut DeserializerImpl<'lvl, 'de, Value>,
     first: bool,
-    element_key: &'de str,
+    element_key: Cow<'de, str>,
 }
 
-impl<'wr, 'lvl, 'de> SeqValueAccess<'wr, 'lvl, 'de> {
-    fn new(deserializer: &'wr mut Deserializer<'lvl, 'de, Value>, element_key: &'de str) -> Self {
+impl<'de_ref, 'lvl, 'de> SeqValueAccess<'de_ref, 'lvl, 'de> {
+    fn new(deserializer: &'de_ref mut DeserializerImpl<'lvl, 'de, Value>, element_key: Cow<'de, str>) -> Self {
         Self {
             deserializer,
             first: true,
@@ -715,7 +1030,7 @@ impl<'wr, 'lvl, 'de> SeqValueAccess<'wr, 'lvl, 'de> {
     }
 }
 
-impl<'wr, 'lvl, 'de> SeqAccess<'de> for SeqValueAccess<'wr, 'lvl, 'de> {
+impl<'de_ref, 'lvl, 'de> SeqAccess<'de> for SeqValueAccess<'de_ref, 'lvl, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -728,7 +1043,7 @@ impl<'wr, 'lvl, 'de> SeqAccess<'de> for SeqValueAccess<'wr, 'lvl, 'de> {
         if !self.first
             && !self
                 .deserializer
-                .parsed_block_sep_and_token(self.element_key)
+                .parsed_block_sep_and_token(self.element_key.as_ref())
         {
             return Ok(None);
         }
