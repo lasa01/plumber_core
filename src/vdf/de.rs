@@ -9,10 +9,7 @@ use serde::{
     Deserialize,
 };
 
-use super::{
-    error::{Error, Position, Reason, Result},
-    parsers,
-};
+use super::{error::{Error, Position, Reason, Result}, escape::maybe_unescape_str, parsers};
 
 /// # Errors
 ///
@@ -352,7 +349,7 @@ where
         let value = self
             .parse(parsers::any_escaped_value)
             .map_err(|_| Error::new(Reason::ExpectedValue))?;
-        Ok(parsers::maybe_escape_str(value))
+        Ok(maybe_unescape_str(value))
     }
 
     fn parse_empty_token(&mut self) -> Result<()> {
@@ -386,7 +383,7 @@ where
         let key = self
             .parse(parsers::any_escaped_key)
             .map_err(|_| Error::new(Reason::ExpectedValue))?;
-        Ok(parsers::maybe_escape_str(key))
+        Ok(maybe_unescape_str(key))
     }
 
     fn parse_block_sep(&mut self) -> Result<()> {

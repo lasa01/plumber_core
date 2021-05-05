@@ -5,7 +5,7 @@ use serde::{
     Serialize,
 };
 
-use super::error::{Error, Reason, Result};
+use super::{error::{Error, Reason, Result}, escape::write_escape_str};
 
 /// # Errors
 ///
@@ -18,6 +18,24 @@ where
         output: String::new(),
         last_key: None,
         indentation: 0,
+        escaped: false,
+    };
+    value.serialize(&mut serializer)?;
+    Ok(serializer.output)
+}
+
+/// # Errors
+///
+/// Will return `Err` if the serialization fails.
+pub fn escaped_to_string<T>(value: &T) -> Result<String>
+where
+    T: Serialize,
+{
+    let mut serializer = Serializer {
+        output: String::new(),
+        last_key: None,
+        indentation: 0,
+        escaped: true,
     };
     value.serialize(&mut serializer)?;
     Ok(serializer.output)
@@ -27,6 +45,7 @@ pub struct Serializer {
     output: String,
     last_key: Option<String>,
     indentation: usize,
+    escaped: bool,
 }
 
 impl Serializer {
@@ -39,6 +58,10 @@ impl Serializer {
 
     fn is_root(&self) -> bool {
         self.output.is_empty()
+    }
+
+    fn serialize_escaped_str(&mut self, str: &str) {
+        write_escape_str(str, &mut self.output);
     }
 
     fn serialize_class(&mut self) -> SerializeClass {
@@ -133,8 +156,12 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        // write to string is infallible
-        write!(self.output, "\"{}\"", v).unwrap();
+        if self.escaped {
+            self.serialize_escaped_str(v);
+        } else {
+            // write to string is infallible
+            write!(self.output, "\"{}\"", v).unwrap();
+        }
         Ok(())
     }
 
@@ -277,8 +304,12 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     where
         T: Display,
     {
-        // write to string is infallible
-        write!(self.output, "\"{}\"", value).unwrap();
+        if self.escaped {
+            self.serialize_escaped_str(&value.to_string());
+        } else {
+            // write to string is infallible
+            write!(self.output, "\"{}\"", value).unwrap();
+        }
         Ok(())
     }
 }
