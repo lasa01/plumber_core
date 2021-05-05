@@ -6,12 +6,27 @@ use std::{
 
 use crate::vdf;
 
+use phf::phf_set;
 use serde::{
     de::{IgnoredAny, MapAccess, Visitor},
     Deserialize,
 };
 use serde_derive::Deserialize;
 use thiserror::Error;
+
+static SOURCE_APPS: phf::Set<u32> = phf_set! {
+    219u32, 220u32, 240u32, 260u32, 280u32, 300u32, 320u32, 340u32, 360u32, 380u32,
+    400u32, 410u32, 420u32, 440u32, 500u32, 550u32, 570u32, 590u32, 620u32, 630u32, 730u32,
+    1300u32, 1800u32, 2100u32, 2120u32, 2130u32, 2400u32, 2430u32, 2450u32, 2600u32, 4000u32,
+    17500u32, 17510u32, 17520u32, 17530u32, 17550u32, 17570u32, 17580u32, 17700u32, 17710u32,
+    17730u32, 17740u32, 17750u32, 90007u32, 222880u32, 224260u32, 235780u32, 238430u32, 252530u32,
+    261820u32, 261980u32, 265630u32, 270370u32, 280740u32, 286080u32, 287820u32, 290930u32,
+    313240u32, 317360u32, 317400u32, 317790u32, 334370u32, 346290u32, 346330u32, 349480u32,
+    353220u32, 362890u32, 397680u32, 433970u32, 440000u32, 447820u32, 563560u32, 587650u32,
+    601360u32, 628410u32, 638800u32, 669270u32, 747250u32, 869480u32, 6626680u32, 1054600u32,
+    1057700u32, 1104390u32, 1117390u32, 1154130u32, 1255980u32, 1341060u32, 1367890u32, 1372780u32,
+    1389950u32,
+};
 
 fn is_acf_file(filename: &str) -> bool {
     filename
@@ -252,9 +267,18 @@ impl Libraries {
 ///
 /// The [`Result`] will be an [`Err`] if a library directory read fails,
 /// an appmanifest can't be read or the appmanifest deserialization fails.
+#[derive(Debug)]
 pub struct Apps<'a> {
     paths: Iter<'a, PathBuf>,
     current_path: Option<(PathBuf, fs::ReadDir)>,
+}
+
+impl<'a> Apps<'a> {
+    /// Filter the iterator to only return Source apps.
+    #[must_use]
+    pub fn source(self) -> SourceApps<'a> {
+        SourceApps(self)
+    }
 }
 
 impl<'a> Iterator for Apps<'a> {
@@ -294,6 +318,63 @@ impl<'a> Iterator for Apps<'a> {
                 Err(e) => return Some(Err(e.into())),
             }
         }
+    }
+}
+
+/// Iterator over Source apps in libraries.
+/// Apps' ids are checked against a static set of known Source ids and filtered.
+///
+/// # Errors
+///
+/// The [`Result`] will be an [`Err`] if a library directory read fails,
+/// an appmanifest can't be read or the appmanifest deserialization fails.
+#[derive(Debug)]
+pub struct SourceApps<'a>(Apps<'a>);
+
+impl<'a> Iterator for SourceApps<'a> {
+    type Item = Result<App, AppError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for result in &mut self.0 {
+            if result
+                .as_ref()
+                .map_or(true, |app| SOURCE_APPS.contains(&app.app_id))
+            {
+                return Some(result);
+            }
+        }
+        None
+    }
+}
+
+#[cfg(feature = "fs")]
+impl<'a> SourceApps<'a> {
+    /// Parse the filesystems from the Source apps.
+    #[must_use]
+    pub fn filesystems(self) -> FileSystems<'a> {
+        FileSystems(self)
+    }
+}
+
+/// Iterator over Source apps' filesystems in libraries.
+/// Apps' ids are checked against a static set of known Source ids and filtered.
+///
+/// # Errors
+///
+/// The [`Result`] will be an [`Err`] if the library directory read fails,
+/// the appmanifest can't be read, the appmanifest deserialization fails,
+/// the gameinfo.txt read fails or the gameinfo deserialization fails.
+#[cfg(feature = "fs")]
+#[derive(Debug)]
+pub struct FileSystems<'a>(SourceApps<'a>);
+
+impl<'a> Iterator for FileSystems<'a> {
+    type Item = Result<crate::fs::FileSystem, crate::fs::ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|result| result
+            .map_or_else(|e| Err(crate::fs::ParseError::from(e)), |a| crate::fs::FileSystem::from_app(&a))
+        )
     }
 }
 
@@ -405,5 +486,18 @@ mod tests {
         eprintln!("discovered libraries: {:?}", libraries.paths);
         let apps: Vec<App> = libraries.apps().map(Result::unwrap).collect();
         eprintln!("discovered apps: {:?}", apps);
+        let source_apps: Vec<App> = libraries.apps().source().map(Result::unwrap).collect();
+        eprintln!("discovered source apps: {:?}", source_apps);
+    }
+
+    /// Fails if steam is not installed
+    #[cfg(feature = "fs")]
+    #[test]
+    #[ignore]
+    fn test_filesystem_discovery() {
+        let libraries = Libraries::discover().unwrap();
+        for filesystem in libraries.apps().source().filesystems() {
+            eprintln!("filesystem: {:?}", filesystem);
+        }
     }
 }

@@ -14,7 +14,7 @@ license = "MIT OR Apache-2.0"
 
 [features]
 default = ["fs", "steam", "vmf", "vpk"]
-steam = ["winreg", "home"]
+steam = ["winreg", "home", "phf"]
 vpk = ["zerocopy", "byteorder", "crc", "md5"]
 fs = ["vpk"]
 vmf = []
@@ -37,6 +37,7 @@ serde_derive = { git = "https://github.com/lasa01/serde", branch = "case-insensi
 thiserror = "1.0.24"
 uncased = { version = "0.9.6", features = ["with-serde-alloc"] }
 zerocopy = { version = "0.5.0", optional = true }
+phf = { version = "0.8.0", features = ["macros"], optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winreg = { version = "0.8", optional = true }

@@ -8,6 +8,9 @@ use std::{
 
 use crate::{vdf, vpk};
 
+#[cfg(feature = "steam")]
+use crate::steam;
+
 use serde::{
     de::{MapAccess, Visitor},
     Deserialize,
@@ -16,37 +19,36 @@ use serde_derive::Deserialize;
 use thiserror::Error;
 use uncased::UncasedStr;
 
-pub mod discovery;
-
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(case_insensitive)]
 struct GameInfoFile {
     #[serde(rename = "gameinfo")]
-    pub game_info: GameInfo,
+    game_info: GameInfo,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(case_insensitive)]
 struct GameInfo {
-    pub game: String,
+    #[serde(default)]
+    game: String,
     #[serde(rename = "filesystem")]
-    pub file_system: GameInfoFileSystem,
+    file_system: GameInfoFileSystem,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(case_insensitive)]
 struct GameInfoFileSystem {
     #[serde(rename = "steamappid")]
-    pub steam_app_id: u32,
+    steam_app_id: u32,
     #[serde(rename = "toolsappid")]
-    pub tools_app_id: Option<u32>,
+    tools_app_id: Option<u32>,
     #[serde(rename = "searchpaths")]
-    pub search_paths: GameInfoSearchPaths,
+    search_paths: GameInfoSearchPaths,
 }
 
 #[derive(Debug, PartialEq)]
 struct GameInfoSearchPaths {
-    pub game_search_paths: Vec<String>,
+    game_search_paths: Vec<String>,
 }
 
 impl<'de> Deserialize<'de> for GameInfoSearchPaths {
@@ -95,20 +97,34 @@ fn is_vpk_file(filename: &str) -> bool {
 
 /// Stores Source games' filesystems.
 #[derive(Debug)]
-pub struct GameManager {
-    pub games: Vec<Game>,
+pub struct Manager {
+    pub games: Vec<FileSystem>,
 }
 
 #[derive(Debug, Error)]
-pub enum GameReadError {
+pub enum ParseError {
     #[error("io error: {0}")]
     Io(#[from] io::Error),
+    #[error("could not find gameinfo.txt")]
+    NoGameInfo,
     #[error("error deserializing gameinfo.txt: {0}")]
     Deserialization(#[from] vdf::Error),
+    #[error("error deserializing appmanifest: {0}")]
+    AppDeserialization(vdf::Error),
+}
+
+#[cfg(feature = "steam")]
+impl From<steam::AppError> for ParseError {
+    fn from(e: steam::AppError) -> Self {
+        match e {
+            steam::AppError::Io(e) => ParseError::Io(e),
+            steam::AppError::Deserialization(e) => ParseError::AppDeserialization(e),
+        }
+    }
 }
 
 #[derive(Debug, Error)]
-pub enum GameOpenError {
+pub enum OpenError {
     #[error("io error: {0}")]
     Io(#[from] io::Error),
     #[error("error reading vpk: {0}")]
@@ -125,12 +141,36 @@ pub enum SearchPath {
 
 /// Represents a Source game's filesystem.
 #[derive(Debug)]
-pub struct Game {
+pub struct FileSystem {
     pub name: String,
     pub search_paths: Vec<SearchPath>,
 }
 
-impl Game {
+impl FileSystem {
+    /// # Errors
+    ///
+    /// Returns `Err` if gameinfo.txt can't be found,
+    /// the gameinfo.txt read fails or the gameinfo deserialization fails.
+    #[cfg(feature = "steam")]
+    pub fn from_app(app: &steam::App) -> Result<Self, ParseError> {
+        let mut entries = fs::read_dir(&app.install_dir)?;
+        let gameinfo_path = loop {
+            if let Some(entry) = entries.next() {
+                let entry = entry?;
+                if !entry.file_type()?.is_dir() {
+                    continue;
+                }
+                let maybe_gameinfo_path = entry.path().join("gameinfo.txt");
+                if maybe_gameinfo_path.is_file() {
+                    break maybe_gameinfo_path;
+                }
+            } else {
+                return Err(ParseError::NoGameInfo);
+            }
+        };
+        Self::from_paths(&app.install_dir, &gameinfo_path)
+    }
+
     /// # Errors
     ///
     /// Returns `Err` if the gameinfo.txt read fails or the deserialization fails.
@@ -141,7 +181,7 @@ impl Game {
     pub fn from_paths<P: AsRef<Path>>(
         root_path: P,
         game_info_path: P,
-    ) -> Result<Self, GameReadError> {
+    ) -> Result<Self, ParseError> {
         let root_path = root_path.as_ref();
         let game_info_path = game_info_path.as_ref();
 
@@ -177,13 +217,22 @@ impl Game {
 
             if let Some(file_name) = path.file_name().and_then(OsStr::to_str) {
                 if is_vpk_file(file_name) {
-                    search_paths.push(SearchPath::Vpk(path));
+                    let new_path = SearchPath::Vpk(path);
+                    if !search_paths.contains(&new_path) {
+                        search_paths.push(new_path);
+                    }
                 } else if file_name == "*" {
                     if let Some(parent) = path.parent() {
-                        search_paths.push(SearchPath::Wildcard(parent.into()));
+                        let new_path = SearchPath::Wildcard(parent.into());
+                        if !search_paths.contains(&new_path) {
+                            search_paths.push(new_path);
+                        }    
                     }
                 } else {
-                    search_paths.push(SearchPath::Directory(path))
+                    let new_path = SearchPath::Directory(path);
+                    if !search_paths.contains(&new_path) {
+                        search_paths.push(new_path);
+                    }
                 }
             }
         }
@@ -195,24 +244,33 @@ impl Game {
     }
 
     /// Opens the game's filesystem.
-    /// Opens all vpk archives, verifies that search directories exist and reads wildcard directories' contents.
+    /// Opens all vpk archives and verifies that search directories exist.
     ///
     /// # Errors
     ///
     /// Returns `Err` if a search path doesn't exist or a vpk archive can't be opened.
-    pub fn open(&self) -> Result<OpenGame, GameOpenError> {
+    pub fn open(&self) -> Result<OpenGame, OpenError> {
         let mut open_search_paths = Vec::new();
         for search_path in &self.search_paths {
             match search_path {
                 SearchPath::Vpk(path) => {
-                    open_search_paths.push(OpenSearchPath::Vpk(vpk::Directory::read(path)?));
+                    let alt_path = path
+                        .file_stem()
+                        .map(|s| {
+                            let mut s = s.to_os_string();
+                            s.push("_dir.vpk");
+                            path.with_file_name(s)
+                        });
+                    open_search_paths.push(OpenSearchPath::Vpk(
+                        vpk::Directory::read(path).or_else(|e| alt_path.map_or(Err(e), vpk::Directory::read))?
+                    ));
                 }
                 SearchPath::Directory(path) => {
-                    if !path.is_dir() {
-                        return Err(GameOpenError::Io(io::Error::new(
-                            io::ErrorKind::NotFound,
-                            path.to_string_lossy(),
-                        )));
+                    for entry in fs::read_dir(path)? {
+                        let entry = entry?;
+                        if entry.file_type()?.is_file() && entry.file_name().to_str() == Some("pak01_dir.vpk") {
+                            open_search_paths.push(OpenSearchPath::Vpk(vpk::Directory::read(entry.path())?));
+                        }
                     }
                     open_search_paths.push(OpenSearchPath::Directory(path.clone()));
                 }
@@ -248,23 +306,21 @@ impl OpenSearchPath {
         match self {
             OpenSearchPath::Vpk(vpk) => vpk
                 .open_file(file_path)
-                .map(|f| Some(GameFile::Vpk(f)))
-                .or_else(|e| {
+                .map_or_else(|e| {
                     if e.kind() == io::ErrorKind::NotFound {
                         Ok(None)
                     } else {
                         Err(e)
                     }
-                }),
+                }, |f| Ok(Some(GameFile::Vpk(f)))),
             OpenSearchPath::Directory(path) => fs::File::open(path.join(file_path))
-                .map(|f| Some(GameFile::Fs(f)))
-                .or_else(|e| {
+                .map_or_else(|e| {
                     if e.kind() == io::ErrorKind::NotFound {
                         Ok(None)
                     } else {
                         Err(e)
                     }
-                }),
+                }, |f| Ok(Some(GameFile::Fs(f)))),
         }
     }
 }
