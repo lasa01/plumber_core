@@ -68,22 +68,12 @@ struct OtherMd5Section {
 pub enum DirectoryReadError {
     #[error("io error: {0}")]
     Io(#[from] io::Error),
-    #[error("encountered eof reading header")]
-    HeaderEof,
-    #[error("not a vpk (invalid signature)")]
+    #[error("not a vpk: invalid signature")]
     InvalidSignature,
-    #[error("unsupported version {0}")]
+    #[error("unsupported version: {0}")]
     UnsupportedVersion(u32),
-    #[error("invalid string in tree")]
-    InvalidString,
-    #[error("encountered eof reading a tree entry")]
-    EntryEof,
-    #[error("encountered eof reading an entry's preload data")]
-    PreloadEof,
-    #[error("encountered eof reading checksums")]
-    ChecksumEof,
-    #[error("corrupted vpk (checksum mismatch)")]
-    ChecksumMismatch,
+    #[error("corrupted vpk: {0}")]
+    Corrupted(&'static str),
 }
 
 fn parse_nul_str<'a>(bytes: &mut &'a [u8]) -> Option<&'a str> {
@@ -117,10 +107,10 @@ struct Entry {
 impl Entry {
     fn parse(bytes: &mut &[u8], base_offset: u64) -> Result<Self, DirectoryReadError> {
         let entry: LayoutVerified<_, DirectoryEntry> =
-            parse(bytes).ok_or(DirectoryReadError::EntryEof)?;
+            parse(bytes).ok_or(DirectoryReadError::Corrupted("eof reading directory entry"))?;
         let preload = entry.preload_bytes.get().into();
         if preload > bytes.len() {
-            return Err(DirectoryReadError::PreloadEof);
+            return Err(DirectoryReadError::Corrupted("eof reading preload bytes"));
         }
         let preload_data = {
             let (data, remaining) = bytes.split_at(preload);
@@ -184,24 +174,17 @@ impl Directory {
     ///
     /// Returns `Err` if `vpk_path` doesn't have an utf8 filename or `bytes` is not a valid vpk directory file.
     pub fn parse(vpk_path: PathBuf, mut bytes: &[u8]) -> Result<Self, DirectoryReadError> {
-        let vpk_stem = vpk_path
-            .file_stem()
-            .and_then(OsStr::to_str)
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidInput, "file name is not valid utf8")
-            })?;
-        let vpk_base = vpk_stem
-            .strip_suffix("_dir")
-            .unwrap_or(vpk_stem)
-            .to_string();
+        let vpk_base = get_vpk_base(&vpk_path)?;
         let header: LayoutVerified<_, HeaderV1> =
-            parse(&mut bytes).ok_or(DirectoryReadError::HeaderEof)?;
+            parse(&mut bytes).ok_or(DirectoryReadError::Corrupted("eof reading header"))?;
         if header.signature.get() != 0x55aa_1234 {
             return Err(DirectoryReadError::InvalidSignature);
         }
         let header_v2: Option<LayoutVerified<_, HeaderV2Ext>> = match header.version.get() {
             1 => None,
-            2 => Some(parse(&mut bytes).ok_or(DirectoryReadError::HeaderEof)?),
+            2 => Some(
+                parse(&mut bytes).ok_or(DirectoryReadError::Corrupted("eof reading header v2"))?,
+            ),
             other => return Err(DirectoryReadError::UnsupportedVersion(other)),
         };
         let tree_len = header.tree_size.get() as usize;
@@ -214,7 +197,9 @@ impl Directory {
         let mut directory_contents: HashMap<String, Vec<DirectoryContent>> = HashMap::new();
 
         loop {
-            let extension = parse_nul_str(&mut bytes).ok_or(DirectoryReadError::InvalidString)?;
+            let extension = parse_nul_str(&mut bytes).ok_or(DirectoryReadError::Corrupted(
+                "eof reading a tree extension",
+            ))?;
             if extension.is_empty() {
                 break;
             }
@@ -224,7 +209,8 @@ impl Directory {
                 (".", extension)
             };
             loop {
-                let path = parse_nul_str(&mut bytes).ok_or(DirectoryReadError::InvalidString)?;
+                let path = parse_nul_str(&mut bytes)
+                    .ok_or(DirectoryReadError::Corrupted("eof reading a tree path"))?;
                 if path.is_empty() {
                     break;
                 }
@@ -239,8 +225,9 @@ impl Directory {
                     }
                 }
                 loop {
-                    let mut file_stem =
-                        parse_nul_str(&mut bytes).ok_or(DirectoryReadError::InvalidString)?;
+                    let mut file_stem = parse_nul_str(&mut bytes).ok_or(
+                        DirectoryReadError::Corrupted("eof reading a tree file stem"),
+                    )?;
                     if file_stem.is_empty() {
                         break;
                     }
@@ -267,7 +254,7 @@ impl Directory {
             let skip_to_checksums = header_v2.file_data_section_size.get() as usize;
             let archive_md5_len = header_v2.archive_md5_section_size.get() as usize;
             if bytes.len() < skip_to_checksums + archive_md5_len {
-                return Err(DirectoryReadError::ChecksumEof);
+                return Err(DirectoryReadError::Corrupted("eof reading checksums"));
             }
             bytes = &bytes[skip_to_checksums..];
             let archive_md5_bytes = {
@@ -276,15 +263,17 @@ impl Directory {
                 data
             };
             let other_md5: LayoutVerified<_, OtherMd5Section> =
-                parse(&mut bytes).ok_or(DirectoryReadError::ChecksumEof)?;
+                parse(&mut bytes).ok_or(DirectoryReadError::Corrupted("eof reading checksums"))?;
 
             let tree_bytes = &before_tree[..tree_len];
 
             if *md5::compute(archive_md5_bytes) != other_md5.archive_md5_section_checksum {
-                return Err(DirectoryReadError::ChecksumMismatch);
+                return Err(DirectoryReadError::Corrupted(
+                    "archive md5 section checksum mismatch",
+                ));
             }
             if *md5::compute(tree_bytes) != other_md5.tree_checksum {
-                return Err(DirectoryReadError::ChecksumMismatch);
+                return Err(DirectoryReadError::Corrupted("tree checksum mismatch"));
             }
         }
 
@@ -346,6 +335,20 @@ impl Directory {
                 contents: c.as_slice().iter(),
             })
     }
+}
+
+fn get_vpk_base(vpk_path: &Path) -> io::Result<String> {
+    let vpk_stem = vpk_path
+        .file_stem()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "file name is not valid utf8")
+        })?;
+    let vpk_base = vpk_stem
+        .strip_suffix("_dir")
+        .unwrap_or(vpk_stem)
+        .to_string();
+    Ok(vpk_base)
 }
 
 /// An iterator over files in a vpk archive.
