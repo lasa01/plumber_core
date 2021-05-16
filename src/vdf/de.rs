@@ -9,11 +9,15 @@ use serde::{
     Deserialize,
 };
 
-use super::{error::{Error, Position, Reason, Result}, escape::maybe_unescape_str, parsers};
+use super::{
+    error::{Error, Position, Reason, Result},
+    escape::maybe_unescape_str,
+    parsers,
+};
 
 /// # Errors
 ///
-/// Will return `Err` if the deserialization fails.
+/// Returns `Err` if the deserialization fails.
 pub fn from_str<'de, T>(mut input: &'de str) -> Result<T>
 where
     T: Deserialize<'de>,
@@ -25,7 +29,7 @@ where
 
 /// # Errors
 ///
-/// Will return `Err` if the deserialization fails.
+/// Returns `Err` if the deserialization fails.
 pub fn escaped_from_str<'de, T>(mut input: &'de str) -> Result<T>
 where
     T: Deserialize<'de>,

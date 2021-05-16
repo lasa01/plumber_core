@@ -21,21 +21,24 @@ use serde::{
 use serde_derive::{Deserialize, Serialize};
 use uncased::Uncased;
 
+type UncasedString = Uncased<'static>;
+
 /// # Errors
 ///
-/// Will return `Err` if the deserialization fails.
+/// Returns `Err` if the deserialization fails.
 pub fn from_str(input: &str) -> vdf::Result<Vmf> {
     Vmf::from_str(input)
 }
 
 /// # Errors
 ///
-/// Will return `Err` if the serialization fails.
+/// Returns `Err` if the serialization fails.
 pub fn to_string(vmf: &Vmf) -> vdf::Result<String> {
     vmf.to_string()
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(expecting = "a vmf file")]
 pub struct Vmf {
     #[serde(rename = "versioninfo")]
     version_info: VersionInfo,
@@ -51,14 +54,14 @@ pub struct Vmf {
 impl Vmf {
     /// # Errors
     ///
-    /// Will return `Err` if the deserialization fails.
+    /// Returns `Err` if the deserialization fails.
     pub fn from_str(input: &str) -> vdf::Result<Self> {
         vdf::from_str(input)
     }
 
     /// # Errors
     ///
-    /// Will return `Err` if the serialization fails.
+    /// Returns `Err` if the serialization fails.
     pub fn to_string(&self) -> vdf::Result<String> {
         vdf::to_string(self)
     }
@@ -145,7 +148,7 @@ pub struct World {
     #[serde(rename = "skyname")]
     sky_name: String,
     #[serde(flatten)]
-    properties: BTreeMap<Uncased<'static>, String>,
+    properties: BTreeMap<UncasedString, String>,
     #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
     solids: Vec<Solid>,
 }
@@ -756,8 +759,8 @@ pub struct Entity {
     #[serde(rename = "spawnflags")]
     spawn_flags: i32,
     #[serde(flatten)]
-    properties: BTreeMap<Uncased<'static>, String>,
-    connections: BTreeMap<Uncased<'static>, String>,
+    properties: BTreeMap<UncasedString, String>,
+    connections: BTreeMap<UncasedString, String>,
     #[serde(rename = "solid", skip_serializing_if = "Vec::is_empty")]
     solids: Vec<Solid>,
     #[serde(skip_serializing_if = "Option::is_none")]

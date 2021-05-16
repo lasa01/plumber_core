@@ -5,11 +5,14 @@ use serde::{
     Serialize,
 };
 
-use super::{error::{Error, Reason, Result}, escape::write_escape_str};
+use super::{
+    error::{Error, Reason, Result},
+    escape::write_escape_str,
+};
 
 /// # Errors
 ///
-/// Will return `Err` if the serialization fails.
+/// Returns `Err` if the serialization fails.
 pub fn to_string<T>(value: &T) -> Result<String>
 where
     T: Serialize,
@@ -26,7 +29,7 @@ where
 
 /// # Errors
 ///
-/// Will return `Err` if the serialization fails.
+/// Returns `Err` if the serialization fails.
 pub fn escaped_to_string<T>(value: &T) -> Result<String>
 where
     T: Serialize,

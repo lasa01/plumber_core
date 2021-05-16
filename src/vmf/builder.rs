@@ -199,11 +199,10 @@ impl<'a> SolidBuilder<'a> {
         }
     }
 
-    fn build_uvs(&mut self) {
+    fn build_uvs(&mut self, texture_width: f64, texture_height: f64) {
         let vertices = &self.vertices;
         for side in &mut self.sides {
-            let texture_width = 1024.0; //TODO: these
-            let texture_height = 1024.0;
+            side.vertice_uvs.reserve_exact(side.vertice_indices.len());
             let u_axis = side.side.u_axis;
             let v_axis = side.side.v_axis;
             for &vi in &side.vertice_indices {
@@ -215,41 +214,41 @@ impl<'a> SolidBuilder<'a> {
             }
 
             // normalize
-            if let Some((mut nearest_u, mut nearest_v)) = side.vertice_uvs.first() {
-                for (u, _) in &side.vertice_uvs {
-                    if u.abs() <= 1.0 {
-                        nearest_u = 1.0;
-                        break;
-                    }
-                    if u.abs() < nearest_u.abs() {
-                        nearest_u = *u;
-                    }
+            let mut nearest_u = f64::MAX;
+            let mut nearest_v = f64::MAX;
+            for (u, _) in &side.vertice_uvs {
+                if u.abs() <= 1.0 {
+                    nearest_u = 0.0;
+                    break;
                 }
-                nearest_u = if nearest_u > 0.0 {
-                    nearest_u.floor()
-                } else {
-                    nearest_u.ceil()
-                };
+                if u.abs() < nearest_u.abs() {
+                    nearest_u = *u;
+                }
+            }
+            nearest_u = if nearest_u > 0.0 {
+                nearest_u.floor()
+            } else {
+                nearest_u.ceil()
+            };
 
-                for (_, v) in &side.vertice_uvs {
-                    if v.abs() <= 1.0 {
-                        nearest_v = 1.0;
-                        break;
-                    }
-                    if v.abs() < nearest_v.abs() {
-                        nearest_v = *v;
-                    }
+            for (_, v) in &side.vertice_uvs {
+                if v.abs() <= 1.0 {
+                    nearest_v = 0.0;
+                    break;
                 }
-                nearest_v = if nearest_v > 0.0 {
-                    nearest_v.floor()
-                } else {
-                    nearest_v.ceil()
-                };
+                if v.abs() < nearest_v.abs() {
+                    nearest_v = *v;
+                }
+            }
+            nearest_v = if nearest_v > 0.0 {
+                nearest_v.floor()
+            } else {
+                nearest_v.ceil()
+            };
 
-                for (u, v) in &mut side.vertice_uvs {
-                    *u -= nearest_u;
-                    *v -= nearest_v;
-                }
+            for (u, v) in &mut side.vertice_uvs {
+                *u -= nearest_u;
+                *v -= nearest_v;
             }
         }
     }
@@ -269,7 +268,7 @@ impl Solid {
         builder.intersect_sides();
         builder.remove_invalid_sides();
         builder.sort_vertices();
-        builder.build_uvs();
+        builder.build_uvs(1024.0, 1024.0);
         builder.finish()
     }
 }
@@ -291,10 +290,10 @@ mod tests {
             normal: Vector3::new(6.0, -2.0, -3.0).normalize(),
             distance: 0.857_142_857_142_857,
         };
-        assert_relative_eq!(plane_1.normal, plane_2.normal, epsilon = 1e-6);
-        assert_relative_eq!(plane_1.distance, plane_2.distance, epsilon = 1e-6);
+        assert_relative_eq!(plane_1.normal, plane_2.normal, epsilon = EPSILON);
+        assert_relative_eq!(plane_1.distance, plane_2.distance, epsilon = EPSILON);
 
         let distance = plane_1.distance_to_point(&Point3::new(0.0, -2.0, 0.0));
-        assert_relative_eq!(distance, 1.428_571_428_571_428, epsilon = 1e-6);
+        assert_relative_eq!(distance, 1.428_571_428_571_428, epsilon = EPSILON);
     }
 }
