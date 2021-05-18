@@ -1,9 +1,9 @@
-mod builder;
+pub mod loader;
 mod types;
 
 use types::{BracketedVector2, BracketedVector3, Plane, Rgb, UvAxis, Vector3};
 
-use crate::vdf;
+use crate::{fs::PathBuf, vdf};
 
 use std::{
     collections::BTreeMap,
@@ -146,7 +146,7 @@ pub struct World {
     #[serde(rename = "classname")]
     class_name: String,
     #[serde(rename = "skyname")]
-    sky_name: String,
+    sky_name: PathBuf,
     #[serde(flatten)]
     properties: BTreeMap<UncasedString, String>,
     #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
@@ -167,7 +167,7 @@ pub struct Solid {
 pub struct Side {
     id: i32,
     plane: Plane,
-    material: String,
+    material: PathBuf,
     #[serde(rename = "uaxis")]
     u_axis: UvAxis,
     #[serde(rename = "vaxis")]

@@ -1,3 +1,5 @@
+use crate::{fs::Path, vmt::loader::MaterialInfo};
+
 use super::{Plane, Side, Solid};
 
 use approx::{abs_diff_eq, relative_eq};
@@ -11,6 +13,12 @@ const CUT_THRESHOLD: f64 = 1e-4;
 pub struct BuiltSolid<'a> {
     pub solid: &'a Solid,
     pub vertices: Vec<Point3<f64>>,
+    pub sides: Vec<BuiltSide>,
+}
+
+pub struct BuiltSide {
+    pub vertice_indices: Vec<usize>,
+    pub vertice_uvs: Vec<(f64, f64)>,
 }
 
 /// A plane defined by a normal vector and a distance to the origin.
@@ -62,6 +70,13 @@ impl<'a> SideBuilder<'a> {
     fn insert_vertice(&mut self, i: usize) {
         if !self.vertice_indices.contains(&i) {
             self.vertice_indices.push(i);
+        }
+    }
+
+    fn finish(self) -> BuiltSide {
+        BuiltSide {
+            vertice_indices: self.vertice_indices,
+            vertice_uvs: self.vertice_uvs,
         }
     }
 }
@@ -199,9 +214,12 @@ impl<'a> SolidBuilder<'a> {
         }
     }
 
-    fn build_uvs(&mut self, texture_width: f64, texture_height: f64) {
+    fn build_uvs(&mut self, mut get_material_info: impl FnMut(&Path) -> MaterialInfo) {
         let vertices = &self.vertices;
         for side in &mut self.sides {
+            let material_info = get_material_info(&side.side.material);
+            let texture_width = f64::from(material_info.width());
+            let texture_height = f64::from(material_info.height());
             side.vertice_uvs.reserve_exact(side.vertice_indices.len());
             let u_axis = side.side.u_axis;
             let v_axis = side.side.v_axis;
@@ -257,18 +275,19 @@ impl<'a> SolidBuilder<'a> {
         BuiltSolid {
             solid: self.solid,
             vertices: self.vertices,
+            sides: self.sides.into_iter().map(SideBuilder::finish).collect(),
         }
     }
 }
 
 impl Solid {
     #[must_use]
-    pub fn build_mesh(&self) -> BuiltSolid {
+    pub fn build_mesh(&self, get_material_info: impl FnMut(&Path) -> MaterialInfo) -> BuiltSolid {
         let mut builder = SolidBuilder::new(self);
         builder.intersect_sides();
         builder.remove_invalid_sides();
         builder.sort_vertices();
-        builder.build_uvs(1024.0, 1024.0);
+        builder.build_uvs(get_material_info);
         builder.finish()
     }
 }
