@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
-fn unescape(char: char) -> Option<char> {
+fn unescape(char: u8) -> Option<u8> {
     match char {
-        't' => Some('\t'),
-        'n' => Some('\n'),
-        '\\' => Some('\\'),
-        '"' => Some('"'),
+        b't' => Some(b'\t'),
+        b'n' => Some(b'\n'),
+        b'\\' => Some(b'\\'),
+        b'"' => Some(b'"'),
         _ => None,
     }
 }
@@ -20,25 +20,25 @@ fn escape(char: char) -> Option<char> {
     }
 }
 
-pub(crate) fn maybe_unescape_str(input: &str) -> Cow<str> {
-    let mut char_iter = input.char_indices();
-    while let Some((i, ch)) = char_iter.next() {
-        if ch == '\\' {
-            if let Some(escaped) = char_iter.next().and_then(|(_, ch)| unescape(ch)) {
-                let mut escaped_string = String::with_capacity(input.len() + 1);
-                escaped_string.push_str(&input[..i]);
+pub(crate) fn maybe_unescape_str(input: &[u8]) -> Cow<[u8]> {
+    let mut char_iter = input.iter().enumerate();
+    while let Some((i, &ch)) = char_iter.next() {
+        if ch == b'\\' {
+            if let Some(escaped) = char_iter.next().and_then(|(_, &ch)| unescape(ch)) {
+                let mut escaped_string = Vec::with_capacity(input.len() + 1);
+                escaped_string.extend_from_slice(&input[..i]);
                 escaped_string.push(escaped);
-                while let Some((_, ch)) = char_iter.next() {
-                    if ch == '\\' {
-                        if let Some((_, next_ch)) = char_iter.next() {
+                while let Some((_, &ch)) = char_iter.next() {
+                    if ch == b'\\' {
+                        if let Some((_, &next_ch)) = char_iter.next() {
                             if let Some(escaped) = unescape(next_ch) {
                                 escaped_string.push(escaped);
                             } else {
-                                escaped_string.push('\\');
+                                escaped_string.push(b'\\');
                                 escaped_string.push(next_ch);
                             }
                         } else {
-                            escaped_string.push('\\');
+                            escaped_string.push(b'\\');
                         }
                     } else {
                         escaped_string.push(ch);
@@ -70,15 +70,18 @@ mod tests {
     #[test]
     fn unescaping() {
         assert_eq!(
-            maybe_unescape_str("not escaped"),
-            Cow::Borrowed("not escaped"),
+            maybe_unescape_str(b"not escaped"),
+            Cow::Borrowed(b"not escaped"),
         );
 
-        assert_eq!(maybe_unescape_str("escaped \\\" value"), "escaped \" value",);
+        assert_eq!(
+            maybe_unescape_str(b"escaped \\\" value").as_ref(),
+            b"escaped \" value",
+        );
 
         assert_eq!(
-            maybe_unescape_str("escaped \\\" value more escapes \\\\ here"),
-            "escaped \" value more escapes \\ here",
+            maybe_unescape_str(b"escaped \\\" value more escapes \\\\ here").as_ref(),
+            b"escaped \" value more escapes \\ here",
         );
     }
 

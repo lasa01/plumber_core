@@ -2,6 +2,8 @@ use std::{
     error,
     fmt::{self, Display},
     result,
+    str::Utf8Error,
+    string::FromUtf8Error,
 };
 
 use serde::{de, ser};
@@ -17,8 +19,6 @@ pub enum Reason {
     ExpectedValue,
     #[error("expected an empty value")]
     ExpectedEmptyValue,
-    #[error("expected a newline")]
-    ExpectedNewline,
     #[error("expected a `{{`")]
     ExpectedOpeningBracket,
     #[error("expected a `}}`")]
@@ -35,6 +35,8 @@ pub enum Reason {
     EmptySequence,
     #[error("sequence must be inside a class")]
     SequenceUnknownKey,
+    #[error("contains invalid utf-8")]
+    InvalidUtf8,
     #[error("{0}")]
     Custom(String),
 }
@@ -100,5 +102,17 @@ impl ser::Error for Error {
         T: Display,
     {
         Self::new(Reason::Custom(msg.to_string()))
+    }
+}
+
+impl From<Utf8Error> for Error {
+    fn from(_: Utf8Error) -> Self {
+        Self::new(Reason::InvalidUtf8)
+    }
+}
+
+impl From<FromUtf8Error> for Error {
+    fn from(_: FromUtf8Error) -> Self {
+        Self::new(Reason::InvalidUtf8)
     }
 }
