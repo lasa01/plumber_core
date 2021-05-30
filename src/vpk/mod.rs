@@ -1,17 +1,21 @@
+mod path;
+
+pub use path::{Path, PathBuf};
+
 use std::{
     collections::{hash_map::Keys, HashMap},
     convert::TryInto,
     ffi::OsStr,
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    path::{Path as StdPath, PathBuf as StdPathBuf},
     slice::Iter,
     str,
 };
 
 use byteorder::LE;
 use crc::crc32;
-use itertools::Itertools;
+use encoding::{all::ISO_8859_1, DecoderTrap, Encoding};
 use thiserror::Error;
 use zerocopy::{
     byteorder::{U16, U32},
@@ -76,15 +80,14 @@ pub enum DirectoryReadError {
     Corrupted(&'static str),
 }
 
-fn parse_nul_str<'a>(bytes: &mut &'a [u8]) -> Option<&'a str> {
-    let mut split = bytes.splitn(2, |&b| b == 0);
-    let str_bytes = split.next()?;
-    if str_bytes == b"\0" {
+fn parse_nul_str<'a>(bytes: &mut &'a [u8]) -> Option<&'a [u8]> {
+    if bytes.is_empty() {
         return None;
     }
-    let str = str::from_utf8(str_bytes).ok()?;
+    let mut split = bytes.splitn(2, |&b| b == 0);
+    let str_bytes = split.next()?;
     *bytes = split.next().unwrap_or_default();
-    Some(str)
+    Some(str_bytes)
 }
 
 fn parse<'a, T: Unaligned>(bytes: &mut &'a [u8]) -> Option<LayoutVerified<&'a [u8], T>> {
@@ -139,8 +142,16 @@ impl Entry {
 /// A directory or file inside a vpk archive.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DirectoryContent {
-    Directory(String),
-    File(String),
+    Directory(PathBuf),
+    File(PathBuf),
+}
+
+impl PartialEq<Path> for DirectoryContent {
+    fn eq(&self, other: &Path) -> bool {
+        match self {
+            DirectoryContent::Directory(name) | DirectoryContent::File(name) => name == other,
+        }
+    }
 }
 
 /// A vpk archive directory.
@@ -148,10 +159,10 @@ pub enum DirectoryContent {
 /// or separately in accompanying archive files.
 #[derive(Debug)]
 pub struct Directory {
-    path: PathBuf,
+    path: StdPathBuf,
     file_base: String,
-    files: HashMap<String, Entry>,
-    directory_contents: HashMap<String, Vec<DirectoryContent>>,
+    files: HashMap<PathBuf, Entry>,
+    directory_contents: HashMap<PathBuf, Vec<DirectoryContent>>,
 }
 
 impl Directory {
@@ -160,7 +171,7 @@ impl Directory {
     /// # Errors
     ///
     /// Returns `Err` if `file_path` doesn't have an utf8 filename, can't be read or is not a valid vpk directory file.
-    pub fn read<P: AsRef<Path>>(file_path: P) -> Result<Self, DirectoryReadError> {
+    pub fn read<P: AsRef<StdPath>>(file_path: P) -> Result<Self, DirectoryReadError> {
         let file_path = file_path.as_ref().to_owned();
         let file_content = fs::read(&file_path)?;
         let bytes = file_content.as_slice();
@@ -173,8 +184,8 @@ impl Directory {
     /// # Errors
     ///
     /// Returns `Err` if `vpk_path` doesn't have an utf8 filename or `bytes` is not a valid vpk directory file.
-    pub fn parse(vpk_path: PathBuf, mut bytes: &[u8]) -> Result<Self, DirectoryReadError> {
-        let vpk_base = get_vpk_base(&vpk_path)?;
+    pub fn parse(vpk_path: StdPathBuf, mut bytes: &[u8]) -> Result<Self, DirectoryReadError> {
+        let vpk_base = Self::get_vpk_base(&vpk_path)?;
         let header: LayoutVerified<_, HeaderV1> =
             parse(&mut bytes).ok_or(DirectoryReadError::Corrupted("eof reading header"))?;
         if header.signature.get() != 0x55aa_1234 {
@@ -193,61 +204,10 @@ impl Directory {
         let header_size = if header_v2.is_none() { 12 } else { 28 };
         let base_offset = header_size + tree_len as u64;
 
-        let mut files = HashMap::new();
-        let mut directory_contents: HashMap<String, Vec<DirectoryContent>> = HashMap::new();
+        let mut files: HashMap<PathBuf, Entry> = HashMap::new();
+        let mut directory_contents: HashMap<PathBuf, Vec<DirectoryContent>> = HashMap::new();
 
-        loop {
-            let extension = parse_nul_str(&mut bytes).ok_or(DirectoryReadError::Corrupted(
-                "eof reading a tree extension",
-            ))?;
-            if extension.is_empty() {
-                break;
-            }
-            let (dot, extension) = if extension == " " {
-                ("", "")
-            } else {
-                (".", extension)
-            };
-            loop {
-                let path = parse_nul_str(&mut bytes)
-                    .ok_or(DirectoryReadError::Corrupted("eof reading a tree path"))?;
-                if path.is_empty() {
-                    break;
-                }
-                let (path, separator) = if path == " " { ("", "") } else { (path, "/") };
-                if !path.is_empty() {
-                    for (parent, child) in path.split('/').filter(|s| !s.is_empty()).tuple_windows()
-                    {
-                        directory_contents
-                            .entry(parent.to_string())
-                            .or_default()
-                            .push(DirectoryContent::Directory(child.to_string()));
-                    }
-                }
-                loop {
-                    let mut file_stem = parse_nul_str(&mut bytes).ok_or(
-                        DirectoryReadError::Corrupted("eof reading a tree file stem"),
-                    )?;
-                    if file_stem.is_empty() {
-                        break;
-                    }
-                    if file_stem == " " {
-                        file_stem = "";
-                    }
-
-                    let file_name = format!("{}{}{}", file_stem, dot, extension);
-
-                    files.insert(
-                        format!("{}{}{}", path, separator, &file_name),
-                        Entry::parse(&mut bytes, base_offset)?,
-                    );
-                    directory_contents
-                        .entry(path.to_string())
-                        .or_default()
-                        .push(DirectoryContent::File(file_name));
-                }
-            }
-        }
+        Self::parse_tree(&mut bytes, &mut directory_contents, &mut files, base_offset)?;
 
         if let Some(header_v2) = &header_v2 {
             // verify checksums
@@ -285,16 +245,125 @@ impl Directory {
         })
     }
 
+    fn parse_tree(
+        bytes: &mut &[u8],
+        directory_contents: &mut HashMap<PathBuf, Vec<DirectoryContent>>,
+        files: &mut HashMap<PathBuf, Entry>,
+        base_offset: u64,
+    ) -> Result<(), DirectoryReadError> {
+        loop {
+            let extension = parse_nul_str(bytes).ok_or(DirectoryReadError::Corrupted(
+                "eof reading a tree extension",
+            ))?;
+            if extension.is_empty() {
+                break;
+            }
+            loop {
+                let path = parse_nul_str(bytes)
+                    .ok_or(DirectoryReadError::Corrupted("eof reading a tree path"))?;
+                if path.is_empty() {
+                    break;
+                }
+                let path = if path == b" " {
+                    String::new()
+                } else {
+                    ISO_8859_1.decode(path, DecoderTrap::Strict).map_err(|_| {
+                        DirectoryReadError::Corrupted("a tree path is not valid ISO 8859-1")
+                    })?
+                };
+                if !path.is_empty() {
+                    path.split('/').filter(|s| !s.is_empty()).fold(
+                        PathBuf::new(),
+                        |mut parent, child| {
+                            let dir = directory_contents.entry(parent.clone()).or_default();
+                            let child: PathBuf = child.to_string().into();
+                            parent.push(&child);
+                            if !dir.iter().any(|c| c == child.as_path()) {
+                                dir.push(DirectoryContent::Directory(child))
+                            }
+                            parent
+                        },
+                    );
+                }
+                loop {
+                    let mut file_stem = parse_nul_str(bytes).ok_or(
+                        DirectoryReadError::Corrupted("eof reading a tree file stem"),
+                    )?;
+                    if file_stem.is_empty() {
+                        break;
+                    }
+                    if file_stem == b" " {
+                        file_stem = b"";
+                    }
+
+                    let mut file_name =
+                        ISO_8859_1
+                            .decode(file_stem, DecoderTrap::Strict)
+                            .map_err(|_| {
+                                DirectoryReadError::Corrupted(
+                                    "a tree file stem is not valid ISO 8859-1",
+                                )
+                            })?;
+                    if extension != b" " {
+                        file_name.push('.');
+                        ISO_8859_1
+                            .decode_to(extension, DecoderTrap::Strict, &mut file_name)
+                            .map_err(|_| {
+                                DirectoryReadError::Corrupted(
+                                    "a tree extension is not valid ISO 8859-1",
+                                )
+                            })?;
+                    }
+
+                    let mut full_path = path.clone();
+                    if !path.is_empty() {
+                        full_path.push('/');
+                    }
+                    full_path.push_str(&file_name);
+
+                    if files
+                        .insert(full_path.into(), Entry::parse(bytes, base_offset)?)
+                        .is_none()
+                    {
+                        directory_contents
+                            .entry(path.clone().into())
+                            .or_default()
+                            .push(DirectoryContent::File(file_name.into()));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn get_vpk_base(vpk_path: &StdPath) -> io::Result<String> {
+        let vpk_stem = vpk_path
+            .file_stem()
+            .and_then(OsStr::to_str)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "file name is not valid utf8")
+            })?;
+        let vpk_base = vpk_stem
+            .strip_suffix("_dir")
+            .unwrap_or(vpk_stem)
+            .to_string();
+        Ok(vpk_base)
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &StdPath {
+        &self.path
+    }
+
     /// Opens the specified file if it exists.
     ///
     /// # Errors
     ///
     /// Returns `Err` if `file_path` is not in the directory or if the file can't be opened.
-    pub fn open_file(&self, file_path: &str) -> io::Result<File> {
-        let entry = self
-            .files
-            .get(file_path)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, file_path))?;
+    pub fn open_file(&self, file_path: &Path) -> io::Result<File> {
+        let entry = self.files.get(file_path).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, file_path.as_str().to_string())
+        })?;
         let file = if entry.entry_length == 0 {
             None
         } else {
@@ -328,40 +397,26 @@ impl Directory {
 
     /// Returns an iterator over contents of the specified directory if the directory exists.
     #[must_use]
-    pub fn directory_contents(&self, directory: &str) -> Option<DirectoryContents> {
+    pub fn directory_contents(&self, directory: &Path) -> Option<DirectoryContents> {
         self.directory_contents
-            .get(directory.trim_end_matches('/'))
+            .get(directory)
             .map(|c| DirectoryContents {
                 contents: c.as_slice().iter(),
             })
     }
 }
 
-fn get_vpk_base(vpk_path: &Path) -> io::Result<String> {
-    let vpk_stem = vpk_path
-        .file_stem()
-        .and_then(OsStr::to_str)
-        .ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "file name is not valid utf8")
-        })?;
-    let vpk_base = vpk_stem
-        .strip_suffix("_dir")
-        .unwrap_or(vpk_stem)
-        .to_string();
-    Ok(vpk_base)
-}
-
 /// An iterator over files in a vpk archive.
 #[derive(Debug, Clone)]
 pub struct Files<'a> {
-    files: Keys<'a, String, Entry>,
+    files: Keys<'a, PathBuf, Entry>,
 }
 
 impl<'a> Iterator for Files<'a> {
-    type Item = &'a str;
+    type Item = &'a Path;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.files.next().map(String::as_str)
+        self.files.next().map(PathBuf::as_path)
     }
 }
 
@@ -477,6 +532,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parse_nul_terminated_str() {
+        let bytes = [0x62_u8, 0x31, 0x37, 0x00];
+        let mut bytes_ref = bytes.as_ref();
+        assert_eq!(parse_nul_str(&mut bytes_ref), Some(b"b17".as_ref()));
+        assert_eq!(parse_nul_str(&mut bytes_ref), None);
+
+        let bytes2 = [0x00_u8];
+        bytes_ref = bytes2.as_ref();
+        assert_eq!(parse_nul_str(&mut bytes_ref), Some(b"".as_ref()));
+        assert_eq!(parse_nul_str(&mut bytes_ref), None);
+    }
+
+    #[test]
     fn parse_header() {
         let mut header = &[
             0x34_u8, 0x12, 0xaa, 0x55, // signature
@@ -520,12 +588,12 @@ mod tests {
             0xFF, 0xFF, // terminator
             0x00, 0x00, 0x00, // tree end
         ][..];
-        assert_eq!(parse_nul_str(&mut tree), Some("vmt"),);
+        assert_eq!(parse_nul_str(&mut tree), Some(b"vmt".as_ref()),);
         assert_eq!(
             parse_nul_str(&mut tree),
-            Some("materials/models/props_vehicles"),
+            Some(b"materials/models/props_vehicles".as_ref()),
         );
-        assert_eq!(parse_nul_str(&mut tree), Some("b17"),);
+        assert_eq!(parse_nul_str(&mut tree), Some(b"b17".as_ref()),);
         assert_eq!(
             parse::<DirectoryEntry>(&mut tree).unwrap().into_ref(),
             &DirectoryEntry {
@@ -580,7 +648,7 @@ mod tests {
 
     #[test]
     fn file_full() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        let path = StdPath::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("test.txt");
 

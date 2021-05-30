@@ -15,7 +15,7 @@ license = "MIT OR Apache-2.0"
 [features]
 default = ["fs", "steam", "vmf", "vpk", "vmt"]
 steam = ["winreg", "home", "phf"]
-vpk = ["zerocopy", "byteorder", "crc", "md5"]
+vpk = ["zerocopy", "byteorder", "crc", "md5", "encoding"]
 fs = ["vpk"]
 vmt = ["fs", "vtflib", "image"]
 vmf = ["fs", "vmt"]
@@ -25,12 +25,11 @@ approx = "0.4.0"
 bytecount = "0.6.2"
 byteorder = { version = "1.4.3", optional = true }
 crc = { version = "1.8.1", optional = true }
-derive_more = "0.99.13"
 float-ord = "0.3.1"
 itertools = "0.10.0"
 md5 = { version = "0.7.0", optional = true }
-nalgebra = "0.24.1"
-ndarray = "0.14.0"
+nalgebra = "0.25.4"
+ndarray = "0.15.1"
 nom = "6.1.2"
 rgb = "0.8.27"
 serde = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
@@ -41,6 +40,7 @@ zerocopy = { version = "0.5.0", optional = true }
 phf = { version = "0.8.0", features = ["macros"], optional = true }
 vtflib = { version = "0.2.0", optional = true, features = ["static"] }
 image = { version = "0.23.14", optional = true, default-features = false }
+encoding = { version = "0.2.33", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winreg = { version = "0.8", optional = true }
