@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io, sync::Mutex};
+use std::{
+    collections::HashMap,
+    io,
+    sync::{Condvar, Mutex},
+};
 
 use image::RgbaImage;
 use thiserror::Error;
@@ -72,31 +76,125 @@ impl TextureLoadError {
         }
     }
 }
+
+pub trait MaterialBuilder: Sized {
+    type Built;
+
+    /// # Errors
+    ///
+    /// Returns `Err` if the info getting fails.
+    fn info(&self, vmt: &mut LoadedVmt<Self>) -> Result<MaterialInfo, MaterialLoadError> {
+        // get material dimensions
+        let (width, height) = match get_dimension_reference(&vmt.shader) {
+            Some(texture_path) => {
+                let texture_path = texture_path.to_owned().into();
+                vmt.load_texture(texture_path)
+                    .map(|info| (info.width, info.height))
+            }
+            None => Ok((512, 512)),
+        }?;
+        let no_draw = is_nodraw(vmt.material_path, &vmt.shader);
+
+        Ok(MaterialInfo {
+            width,
+            height,
+            no_draw,
+        })
+    }
+
+    /// # Errors
+    ///
+    /// Returns `Err` if the building fails.
+    fn build(&self, vmt: LoadedVmt<Self>) -> Result<Self::Built, MaterialLoadError>;
+}
+
+fn is_nodraw(material_path: &Path, shader: &Shader) -> bool {
+    let no_draw = NODRAW_MATERIALS
+        .iter()
+        .any(|m| material_path.as_str() == *m)
+        || NODRAW_PARAMS.iter().any(|p| {
+            shader
+                .parameters
+                .get(UncasedStr::new(p))
+                .map_or(false, |v| v == "1")
+        });
+    no_draw
+}
+
+fn get_dimension_reference(shader: &Shader) -> Option<&String> {
+    DIMENSION_REFERENCE_TEXTURES
+        .iter()
+        .find_map(|parameter| shader.parameters.get(UncasedStr::new(parameter)))
+}
+
+/// The default material builder.
+/// Returns the loaded dimension reference texture.
 #[derive(Debug, Default)]
-pub struct Loader {
+pub struct DefaultMaterialBuilder;
+
+impl MaterialBuilder for DefaultMaterialBuilder {
+    type Built = Option<LoadedTexture>;
+
+    fn build(&self, mut vmt: LoadedVmt<Self>) -> Result<Self::Built, MaterialLoadError> {
+        Ok(vmt.textures_mut().pop())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Loader<L> {
+    material_loader: L,
     material_cache: Mutex<HashMap<PathBuf, MaterialInfo>>,
+    material_condvar: Condvar,
     texture_cache: Mutex<HashMap<PathBuf, TextureInfo>>,
 }
 
-impl Loader {
+impl<L> Loader<L>
+where
+    L: MaterialBuilder,
+{
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(material_loader: L) -> Self {
+        Self {
+            material_loader,
+            material_cache: Mutex::new(HashMap::new()),
+            material_condvar: Condvar::new(),
+            texture_cache: Mutex::new(HashMap::new()),
+        }
     }
 
+    /// Block the thread until another thread has loaded a given material, and return the info.
+    ///
+    /// # Panics
+    ///
+    /// May panic if the internal mutex is poisoned. This should not happen.
+    pub fn wait_for_material(&self, material_path: impl AsRef<Path>) -> MaterialInfo {
+        let material_path = material_path.as_ref();
+        let mut guard = self.material_cache.lock().unwrap();
+        loop {
+            match guard.get(material_path) {
+                None => guard = self.material_condvar.wait(guard).unwrap(),
+                Some(info) => return info.clone(),
+            }
+        }
+    }
+
+    /// Load materials from an iterator.
+    ///
+    /// # Panics
+    ///
+    /// Panics if vtflib is already initialized.
     pub fn load_materials<'a, I, O>(
         &'a self,
         material_paths: I,
         filesystem: &'a OpenFileSystem,
-        vtf_lib: &'a mut (VtfLib, VtfGuard),
-    ) -> LoadMaterials<'a, O>
+    ) -> LoadMaterials<'a, O, L>
     where
         I: IntoIterator<Item = PathBuf, IntoIter = O>,
     {
         LoadMaterials {
             loader: self,
             filesystem,
-            vtf_lib,
+            vtf_lib: VtfLib::initialize().unwrap(),
             material_paths: material_paths.into_iter(),
         }
     }
@@ -106,45 +204,31 @@ impl Loader {
         material_path: PathBuf,
         filesystem: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
-    ) -> Result<(MaterialInfo, Option<LoadedMaterial>), MaterialLoadError> {
+    ) -> Result<(MaterialInfo, Option<<L as MaterialBuilder>::Built>), MaterialLoadError> {
         if let Some(info) = self.material_cache.lock().unwrap().get(&material_path) {
             return Ok((info.clone(), None));
         }
 
         let shader = get_shader(&material_path, filesystem)?;
 
-        let mut textures = Vec::new();
-
-        // get material dimensions
-        let (width, height) = match get_dimension_reference(&shader) {
-            Some(texture_path) => self
-                .load_texture(texture_path.to_owned().into(), filesystem, vtf_lib)
-                .map(|(info, texture)| {
-                    if let Some(texture) = texture {
-                        textures.push(texture);
-                    }
-                    (info.width, info.height)
-                }),
-            None => Ok((512, 512)),
-        }?;
-
-        let no_draw = is_nodraw(&material_path, &shader);
-
-        let loaded_material = LoadedMaterial {
-            info: MaterialInfo {
-                width,
-                height,
-                no_draw,
-            },
+        let mut loaded_vmt = LoadedVmt {
             shader,
-            textures,
+            textures: Vec::new(),
+            loader: self,
+            vtf_lib,
+            filesystem,
+            material_path: &material_path,
         };
+        let info = self.material_loader.info(&mut loaded_vmt)?;
+        let loaded_material = self.material_loader.build(loaded_vmt)?;
+
         self.material_cache
             .lock()
             .unwrap()
-            .insert(material_path, loaded_material.info.clone());
+            .insert(material_path, info.clone());
+        self.material_condvar.notify_all();
 
-        Ok((loaded_material.info.clone(), Some(loaded_material)))
+        Ok((info, Some(loaded_material)))
     }
 
     fn load_texture(
@@ -165,12 +249,6 @@ impl Loader {
     }
 }
 
-fn get_dimension_reference(shader: &Shader) -> Option<&String> {
-    DIMENSION_REFERENCE_TEXTURES
-        .iter()
-        .find_map(|parameter| shader.parameters.get(UncasedStr::new(parameter)))
-}
-
 fn get_shader(
     material_path: &PathBuf,
     filesystem: &OpenFileSystem,
@@ -183,38 +261,26 @@ fn get_shader(
     Ok(material.resolve_shader(filesystem)?)
 }
 
-fn is_nodraw(material_path: &PathBuf, shader: &Shader) -> bool {
-    let no_draw = NODRAW_MATERIALS
-        .iter()
-        .any(|m| material_path.as_str() == *m)
-        || NODRAW_PARAMS.iter().any(|p| {
-            shader
-                .parameters
-                .get(UncasedStr::new(p))
-                .map_or(false, |v| v == "1")
-        });
-    no_draw
-}
-
 #[derive(Debug)]
-pub struct LoadMaterials<'a, I> {
-    loader: &'a Loader,
+pub struct LoadMaterials<'a, I, L> {
+    loader: &'a Loader<L>,
     filesystem: &'a OpenFileSystem,
-    vtf_lib: &'a mut (VtfLib, VtfGuard),
+    vtf_lib: (VtfLib, VtfGuard),
     material_paths: I,
 }
 
-impl<'a, I> Iterator for LoadMaterials<'a, I>
+impl<'a, I, L> Iterator for LoadMaterials<'a, I, L>
 where
     I: Iterator<Item = PathBuf>,
+    L: MaterialBuilder,
 {
-    type Item = Result<LoadedMaterial, MaterialLoadError>;
+    type Item = Result<<L as MaterialBuilder>::Built, MaterialLoadError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         for material_path in &mut self.material_paths {
             match self
                 .loader
-                .load_material(material_path, self.filesystem, self.vtf_lib)
+                .load_material(material_path, self.filesystem, &mut self.vtf_lib)
             {
                 Ok((_, Some(loaded))) => return Some(Ok(loaded)),
                 Ok((_, None)) => continue,
@@ -249,17 +315,31 @@ impl MaterialInfo {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LoadedMaterial {
-    info: MaterialInfo,
+#[derive(Debug)]
+pub struct LoadedVmt<'a, L> {
+    loader: &'a Loader<L>,
+    vtf_lib: &'a mut (VtfLib, VtfGuard),
+    filesystem: &'a OpenFileSystem,
+    material_path: &'a Path,
     shader: Shader,
     textures: Vec<LoadedTexture>,
 }
 
-impl LoadedMaterial {
-    #[must_use]
-    pub fn info(&self) -> &MaterialInfo {
-        &self.info
+impl<'a, L> LoadedVmt<'a, L>
+where
+    L: MaterialBuilder,
+{
+    /// # Errors
+    ///
+    /// Returns `Err` if the texture loading fails.
+    pub fn load_texture(&mut self, texture_path: PathBuf) -> Result<TextureInfo, TextureLoadError> {
+        let (info, texture) =
+            self.loader
+                .load_texture(texture_path, self.filesystem, self.vtf_lib)?;
+        if let Some(texture) = texture {
+            self.textures.push(texture);
+        }
+        Ok(info)
     }
 
     #[must_use]
@@ -270,6 +350,11 @@ impl LoadedMaterial {
     #[must_use]
     pub fn textures(&self) -> &[LoadedTexture] {
         &self.textures
+    }
+
+    #[must_use]
+    pub fn textures_mut(&mut self) -> &mut Vec<LoadedTexture> {
+        &mut self.textures
     }
 }
 
