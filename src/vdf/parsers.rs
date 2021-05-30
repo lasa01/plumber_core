@@ -1,16 +1,14 @@
 use nom::{
     branch::alt,
-    bytes::complete::{escaped, is_not, tag, take_till, take_until},
-    character::complete::{
-        anychar, char, line_ending, multispace1, none_of, one_of, space0, space1,
-    },
-    combinator::{all_consuming, cut, not, opt, peek, recognize, value},
+    bytes::complete::{escaped, is_a, is_not, tag, take_till, take_until},
+    character::complete::{anychar, char, multispace1, none_of, one_of, space0, space1},
+    combinator::{all_consuming, cut, eof, not, opt, peek, recognize, value},
     error::{ErrorKind, ParseError},
     sequence::{delimited, preceded, terminated},
     Err, IResult, Parser,
 };
 
-fn ignore<I, O, E, F>(mut parser: F) -> impl FnMut(I) -> IResult<I, (), E>
+fn unit<I, O, E, F>(mut parser: F) -> impl FnMut(I) -> IResult<I, (), E>
 where
     F: Parser<I, O, E>,
 {
@@ -94,8 +92,13 @@ fn multispace_comment0<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a 
     ignore_many0(alt((multispace1, comment)))(i)
 }
 
-fn space_comment0<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], (), E> {
-    preceded(space0, ignore(opt(comment)))(i)
+fn trash<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], Option<&'a [u8]>, E> {
+    opt(is_not(b"\r\n{}".as_ref()))(i)
+}
+
+fn space_comment_trash0<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], (), E> {
+    // ignore possible trash before line ending
+    delimited(space0, unit(opt(comment)), trash)(i)
 }
 
 fn quoted_token<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], &'a [u8], E> {
@@ -128,8 +131,8 @@ fn unquoted_key<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], &
 
 fn unquoted_value<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], &'a [u8], E> {
     recognize(ignore_many1(alt((
-        ignore(unquoted_char_nonspace),
-        ignore(terminated(space1, unquoted_char_nonspace)),
+        unit(unquoted_char_nonspace),
+        unit(terminated(space1, unquoted_char_nonspace)),
     ))))(i)
 }
 
@@ -143,14 +146,6 @@ fn specific_token<'a: 'b, 'b, E: ParseError<&'a [u8]> + 'a>(
             tag(key),
         )),
     )
-}
-
-// this is some weird way of specifying platform-specific stuff
-fn value_terminator<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], &'a [u8], E> {
-    preceded(
-        space0,
-        delimited(char('['), take_till(|c| c == b']'), char(']')),
-    )(i)
 }
 
 pub(crate) fn any_key<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], &'a [u8], E> {
@@ -175,10 +170,7 @@ pub(crate) fn empty_token<'a, E: ParseError<&'a [u8]>>(
 pub(crate) fn any_value<'a, E: ParseError<&'a [u8]>>(
     i: &'a [u8],
 ) -> IResult<&'a [u8], &'a [u8], E> {
-    preceded(
-        multispace_comment0,
-        terminated(alt((quoted_token, unquoted_value)), opt(value_terminator)),
-    )(i)
+    preceded(multispace_comment0, alt((quoted_token, unquoted_value)))(i)
 }
 
 pub(crate) fn any_escaped_value<'a, E: ParseError<&'a [u8]>>(
@@ -191,25 +183,31 @@ pub(crate) fn any_escaped_value<'a, E: ParseError<&'a [u8]>>(
 }
 
 pub(crate) fn block_start<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], (), E> {
-    preceded(multispace_comment0, ignore(char('{')))(i)
+    preceded(multispace_comment0, unit(char('{')))(i)
 }
 
 pub(crate) fn block_end<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], (), E> {
     preceded(
-        multispace_comment0,
-        alt((all_consuming(|i| Ok((i, ()))), ignore(char('}')))),
+        preceded(space_comment_trash0, multispace_comment0),
+        unit(alt((eof, tag(b"}")))),
     )(i)
 }
 
+pub(crate) fn block_end_early<'a, E: ParseError<&'a [u8]>>(
+    i: &'a [u8],
+) -> IResult<&'a [u8], (), E> {
+    preceded(multispace_comment0, unit(alt((eof, tag(b"}")))))(i)
+}
+
 pub(crate) fn block_sep<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], (), E> {
-    ignore(preceded(space_comment0, opt(line_ending)))(i)
+    unit(preceded(space_comment_trash0, is_a(b"\r\n".as_ref())))(i)
 }
 
 pub(crate) fn peeked_char<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], char, E> {
     preceded(multispace_comment0, peek(anychar))(i)
 }
 
-pub(crate) fn eof<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], (), E> {
+pub(crate) fn comment_eof<'a, E: ParseError<&'a [u8]>>(i: &'a [u8]) -> IResult<&'a [u8], (), E> {
     all_consuming(multispace_comment0)(i)
 }
 

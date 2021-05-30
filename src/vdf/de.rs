@@ -72,6 +72,7 @@ where
 pub struct Deserializer<'de> {
     original_input: &'de [u8],
     input: &'de [u8],
+    remaining_depth: u8,
     last_key: Option<Cow<'de, [u8]>>,
     escaped: bool,
 }
@@ -97,6 +98,7 @@ impl<'de> Deserializer<'de> {
         Self {
             original_input: <&[u8]>::clone(&input),
             input,
+            remaining_depth: 128,
             last_key: None,
             escaped,
         }
@@ -178,9 +180,9 @@ impl<'de> Deserializer<'de> {
         Ok(maybe_unescape_str(key))
     }
 
-    fn parse_block_sep(&mut self) {
+    fn parse_block_sep(&mut self) -> Result<()> {
         self.parse(parsers::block_sep)
-            .expect("block_sep parser cannot fail")
+            .map_err(|_| Error::new(Reason::ExpectedNewline))
     }
 
     fn parse_block_start(&mut self) -> Result<()> {
@@ -193,6 +195,10 @@ impl<'de> Deserializer<'de> {
             .map_err(|_| Error::new(Reason::ExpectedClosingBracket))
     }
 
+    fn parsed_block_end_early(&mut self) -> bool {
+        self.parse(parsers::block_end_early).is_ok()
+    }
+
     fn peeked_block_end(&mut self) -> bool {
         self.parse(parsers::peeked_block_end).is_ok()
     }
@@ -202,7 +208,7 @@ impl<'de> Deserializer<'de> {
     }
 
     fn parsed_eof(&mut self) -> bool {
-        self.parse(parsers::eof).is_ok()
+        self.parse(parsers::comment_eof).is_ok()
     }
 }
 
@@ -469,7 +475,7 @@ impl<'de_ref, 'de> SeqAccess<'de> for RootAccess<'de_ref, 'de> {
             return Ok(None);
         }
         if !self.first {
-            self.deserializer.parse_block_sep();
+            self.deserializer.parse_block_sep()?;
         }
         self.first = false;
         if self.deserializer.escaped {
@@ -493,7 +499,7 @@ impl<'de_ref, 'de> MapAccess<'de> for RootAccess<'de_ref, 'de> {
             return Ok(None);
         }
         if !self.first {
-            self.deserializer.parse_block_sep();
+            self.deserializer.parse_block_sep()?;
         }
         self.first = false;
         let (key, value) = if self.deserializer.escaped {
@@ -752,10 +758,20 @@ impl<'de_ref, 'de> de::Deserializer<'de> for ValueDeserializer<'de_ref, 'de> {
             .last_key
             .take()
             .ok_or_else(|| Error::new(Reason::SequenceUnknownKey))?;
-        visitor.visit_seq(SeqValueAccess::new(
+
+        self.deserializer.remaining_depth -= 1;
+        if self.deserializer.remaining_depth == 0 {
+            return Err(Error::new(Reason::Recursion));
+        }
+
+        let res = visitor.visit_seq(SeqValueAccess::new(
             ValueDeserializer::new(&mut *self.deserializer),
             element_key,
-        ))
+        ));
+
+        self.deserializer.remaining_depth += 1;
+
+        res
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
@@ -782,9 +798,18 @@ impl<'de_ref, 'de> de::Deserializer<'de> for ValueDeserializer<'de_ref, 'de> {
         V: de::Visitor<'de>,
     {
         self.deserializer.parse_block_start()?;
-        visitor.visit_map(ValueAccess::new(ValueDeserializer::new(
+
+        self.deserializer.remaining_depth -= 1;
+        if self.deserializer.remaining_depth == 0 {
+            return Err(Error::new(Reason::Recursion));
+        }
+
+        let res = visitor.visit_map(ValueAccess::new(ValueDeserializer::new(
             &mut *self.deserializer,
-        )))
+        )));
+
+        self.deserializer.remaining_depth += 1;
+        res
     }
 
     fn deserialize_struct<V>(
@@ -811,9 +836,17 @@ impl<'de_ref, 'de> de::Deserializer<'de> for ValueDeserializer<'de_ref, 'de> {
         match self.deserializer.peek_char()? {
             '{' => {
                 self.deserializer.parse_block_start()?;
+
+                self.deserializer.remaining_depth -= 1;
+                if self.deserializer.remaining_depth == 0 {
+                    return Err(Error::new(Reason::Recursion));
+                }
+
                 let value = visitor.visit_enum(ValueAccess::new(ValueDeserializer::new(
                     &mut *self.deserializer,
                 )))?;
+
+                self.deserializer.remaining_depth += 1;
                 self.deserializer.parse_block_end()?;
                 Ok(value)
             }
@@ -856,11 +889,13 @@ impl<'de_ref, 'de> MapAccess<'de> for ValueAccess<'de_ref, 'de> {
     where
         K: de::DeserializeSeed<'de>,
     {
-        if let Ok(..) = self.value.deserializer.parse_block_end() {
-            return Ok(None);
-        }
         if !self.first {
-            self.value.deserializer.parse_block_sep();
+            if self.value.deserializer.parse_block_end().is_ok() {
+                return Ok(None);
+            }
+            self.value.deserializer.parse_block_sep()?;
+        } else if self.value.deserializer.parsed_block_end_early() {
+            return Ok(None);
         }
         self.first = false;
         let (key, value) = if self.value.deserializer.escaped {

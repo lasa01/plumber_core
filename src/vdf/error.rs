@@ -23,6 +23,8 @@ pub enum Reason {
     ExpectedOpeningBracket,
     #[error("expected a `}}`")]
     ExpectedClosingBracket,
+    #[error("expected a newline")]
+    ExpectedNewline,
     #[error("invalid int")]
     InvalidInt,
     #[error("invalid float")]
@@ -37,6 +39,8 @@ pub enum Reason {
     SequenceUnknownKey,
     #[error("contains invalid utf-8")]
     InvalidUtf8,
+    #[error("recursion limit exceeded")]
+    Recursion,
     #[error("{0}")]
     Custom(String),
 }
