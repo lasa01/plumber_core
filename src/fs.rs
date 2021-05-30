@@ -1,13 +1,17 @@
 use std::{
-    borrow::Borrow,
+    borrow::Cow,
     ffi::OsStr,
-    fmt::Formatter,
-    fs,
+    fmt::{Debug, Formatter},
+    fs::{self, FileType},
     io::{self, Read, Seek},
-    ops::Deref,
     path::{Path as StdPath, PathBuf as StdPathBuf},
+    slice,
 };
 
+use crate::{
+    vdf,
+    vpk::{self, DirectoryReadError},
+};
 pub use vpk::{Path, PathBuf};
 
 #[cfg(feature = "steam")]
@@ -15,7 +19,7 @@ use crate::steam;
 
 use serde::{
     de::{MapAccess, Visitor},
-    Deserialize, Serialize,
+    Deserialize,
 };
 use thiserror::Error;
 use uncased::UncasedStr;
@@ -104,8 +108,8 @@ pub struct Manager {
 
 #[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
+    #[error("io error reading `{path}`: {inner}")]
+    Io { path: String, inner: io::Error },
     #[error("could not find gameinfo.txt")]
     NoGameInfo,
     #[error("error deserializing gameinfo.txt: {0}")]
@@ -114,21 +118,46 @@ pub enum ParseError {
     AppDeserialization(vdf::Error),
 }
 
+impl ParseError {
+    fn from_io(err: io::Error, path: &StdPath) -> Self {
+        Self::Io {
+            path: path.as_os_str().to_string_lossy().into_owned(),
+            inner: err,
+        }
+    }
+}
+
 #[cfg(feature = "steam")]
 impl From<steam::AppError> for ParseError {
     fn from(e: steam::AppError) -> Self {
         match e {
-            steam::AppError::Io(e) => ParseError::Io(e),
+            steam::AppError::Io { path, inner } => ParseError::Io { path, inner },
             steam::AppError::Deserialization(e) => ParseError::AppDeserialization(e),
         }
     }
 }
 
 #[derive(Debug, Error)]
-pub enum OpenError {
+#[error("error reading `{path}`: {ty}")]
+pub struct OpenError {
+    path: String,
+    ty: OpenErrorType,
+}
+
+impl OpenError {
+    fn new(path: &StdPath, ty: OpenErrorType) -> Self {
+        Self {
+            path: path.as_os_str().to_string_lossy().into_owned(),
+            ty,
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum OpenErrorType {
     #[error("io error: {0}")]
     Io(#[from] io::Error),
-    #[error("error reading vpk: {0}")]
+    #[error("reading vpk failed: {0}")]
     Vpk(#[from] vpk::DirectoryReadError),
 }
 
@@ -154,11 +183,12 @@ impl FileSystem {
     /// the gameinfo.txt read fails or the gameinfo deserialization fails.
     #[cfg(feature = "steam")]
     pub fn from_app(app: &steam::App) -> Result<Self, ParseError> {
-        let mut entries = fs::read_dir(&app.install_dir)?;
+        let mut entries = fs::read_dir(&app.install_dir)
+            .map_err(|err| ParseError::from_io(err, &app.install_dir))?;
         let gameinfo_path = loop {
             if let Some(entry) = entries.next() {
-                let entry = entry?;
-                if !entry.file_type()?.is_dir() {
+                let entry = entry.map_err(|err| ParseError::from_io(err, &app.install_dir))?;
+                if !entry.file_type().as_ref().map_or(false, FileType::is_dir) {
                     continue;
                 }
                 let maybe_gameinfo_path = entry.path().join("gameinfo.txt");
@@ -186,8 +216,11 @@ impl FileSystem {
         let root_path = root_path.as_ref();
         let game_info_path = game_info_path.as_ref();
 
-        let game_info =
-            vdf::from_str::<GameInfoFile>(&fs::read_to_string(game_info_path)?)?.game_info;
+        let game_info = vdf::from_str::<GameInfoFile>(
+            &fs::read_to_string(game_info_path)
+                .map_err(|err| ParseError::from_io(err, game_info_path))?,
+        )?
+        .game_info;
         Ok(Self::from_game_info(
             game_info,
             game_info_path
@@ -249,11 +282,11 @@ impl FileSystem {
     }
 
     /// Opens the game's filesystem.
-    /// Opens all vpk archives and verifies that search directories exist.
+    /// Opens all vpk archives. Silently ignores non-existing search paths.
     ///
     /// # Errors
     ///
-    /// Returns `Err` if a search path doesn't exist or a vpk archive can't be opened.
+    /// Returns `Err` if a search path or a vpk archive can't be opened.
     pub fn open(&self) -> Result<OpenFileSystem, OpenError> {
         let mut open_search_paths = Vec::new();
         for search_path in &self.search_paths {
@@ -264,36 +297,67 @@ impl FileSystem {
                         s.push("_dir.vpk");
                         path.with_file_name(s)
                     });
-                    open_search_paths.push(OpenSearchPath::Vpk(
-                        vpk::Directory::read(path)
-                            .or_else(|e| alt_path.map_or(Err(e), vpk::Directory::read))?,
-                    ));
-                }
-                SearchPath::Directory(path) => {
-                    for entry in fs::read_dir(path)? {
-                        let entry = entry?;
-                        if entry.file_type()?.is_file()
-                            && entry.file_name().to_str() == Some("pak01_dir.vpk")
-                        {
-                            open_search_paths
-                                .push(OpenSearchPath::Vpk(vpk::Directory::read(entry.path())?));
+                    match vpk::Directory::read(path)
+                        .or_else(|e| alt_path.map_or(Err(e), vpk::Directory::read))
+                    {
+                        Ok(dir) => open_search_paths.push(OpenSearchPath::Vpk(dir)),
+                        Err(err) => {
+                            if let DirectoryReadError::Io(inner) = &err {
+                                if inner.kind() == io::ErrorKind::NotFound {
+                                    continue;
+                                }
+                            }
+                            return Err(OpenError::new(path, err.into()));
                         }
                     }
-                    open_search_paths.push(OpenSearchPath::Directory(path.clone()));
                 }
-                SearchPath::Wildcard(path) => {
-                    for entry in fs::read_dir(path)? {
-                        let entry = entry?;
-                        let file_type = entry.file_type()?;
-                        if file_type.is_file() {
-                            if entry.file_name().to_str().map_or(false, is_vpk_file) {
+                SearchPath::Directory(path) => match fs::read_dir(path) {
+                    Ok(readdir) => {
+                        for entry in readdir {
+                            let entry = entry.map_err(|err| OpenError::new(path, err.into()))?;
+                            if entry
+                                .file_type()
+                                .map_err(|err| OpenError::new(path, err.into()))?
+                                .is_file()
+                                && entry.file_name().to_str() == Some("pak01_dir.vpk")
+                            {
+                                let path = entry.path();
+                                open_search_paths.push(OpenSearchPath::Vpk(
+                                    vpk::Directory::read(&path)
+                                        .map_err(|err| OpenError::new(&path, err.into()))?,
+                                ));
+                            }
+                        }
+                        open_search_paths.push(OpenSearchPath::Directory(path.clone()));
+                    }
+                    Err(err) => {
+                        if err.kind() != io::ErrorKind::NotFound {
+                            return Err(OpenError::new(path, err.into()));
+                        }
+                    }
+                },
+                SearchPath::Wildcard(path) => match fs::read_dir(path) {
+                    Ok(readdir) => {
+                        for entry in readdir {
+                            let entry = entry.map_err(|err| OpenError::new(path, err.into()))?;
+                            let file_type = entry
+                                .file_type()
+                                .map_err(|err| OpenError::new(path, err.into()))?;
+                            if file_type.is_file() {
+                                if entry.file_name().to_str().map_or(false, is_vpk_file) {
+                                    open_search_paths.push(OpenSearchPath::Directory(entry.path()));
+                                }
+                            } else if file_type.is_dir() {
                                 open_search_paths.push(OpenSearchPath::Directory(entry.path()));
                             }
-                        } else if file_type.is_dir() {
-                            open_search_paths.push(OpenSearchPath::Directory(entry.path()));
                         }
                     }
-                }
+                    Err(err) => {
+                        if err.kind() != io::ErrorKind::NotFound {
+                            return Err(OpenError::new(path, err.into()));
+                        }
+                    }
+                },
             }
         }
         Ok(OpenFileSystem {
@@ -302,16 +366,44 @@ impl FileSystem {
     }
 }
 
-#[derive(Debug)]
 enum OpenSearchPath {
     Vpk(vpk::Directory),
     Directory(StdPathBuf),
 }
 
+impl PartialEq for OpenSearchPath {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            OpenSearchPath::Vpk(dir) => {
+                matches!(other, OpenSearchPath::Vpk(other_dir) if other_dir.path() == dir.path())
+            }
+            OpenSearchPath::Directory(path) => {
+                matches!(other, OpenSearchPath::Directory(other_path) if other_path == path)
+            }
+        }
+    }
+}
+
+impl Debug for OpenSearchPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OpenSearchPath::Vpk(dir) => write!(f, "OpenSearchPath::Vpk({:?})", dir.path()),
+            OpenSearchPath::Directory(path) => write!(f, "OpenSearchPath::Directory({:?})", path),
+        }
+    }
+}
+
 impl OpenSearchPath {
+    fn path(&self) -> &StdPath {
+        match self {
+            OpenSearchPath::Vpk(dir) => dir.path(),
+            OpenSearchPath::Directory(path) => &path,
+        }
+    }
+
     fn try_open_file(&self, file_path: &Path) -> io::Result<Option<GameFile>> {
         match self {
-            OpenSearchPath::Vpk(vpk) => vpk.open_file(&file_path.0).map_or_else(
+            OpenSearchPath::Vpk(vpk) => vpk.open_file(&file_path).map_or_else(
                 |e| {
                     if e.kind() == io::ErrorKind::NotFound {
                         Ok(None)
@@ -321,16 +413,115 @@ impl OpenSearchPath {
                 },
                 |f| Ok(Some(GameFile::Vpk(f))),
             ),
-            OpenSearchPath::Directory(path) => fs::File::open(path.join(&file_path.0)).map_or_else(
-                |e| {
-                    if e.kind() == io::ErrorKind::NotFound {
-                        Ok(None)
-                    } else {
-                        Err(e)
+            OpenSearchPath::Directory(path) => fs::File::open(path.join(file_path.as_str()))
+                .map_or_else(
+                    |e| {
+                        if e.kind() == io::ErrorKind::NotFound {
+                            Ok(None)
+                        } else {
+                            Err(e)
+                        }
+                    },
+                    |f| Ok(Some(GameFile::Fs(f))),
+                ),
+        }
+    }
+
+    fn try_read_dir<'a>(&'a self, path: &Path) -> io::Result<Option<ReadDirPart<'a>>> {
+        match self {
+            OpenSearchPath::Vpk(vpk) => vpk.directory_contents(path).map_or(Ok(None), |contents| {
+                Ok(Some(ReadDirPart {
+                    search_path: self,
+                    ty: ReadDirPartType::Vpk(contents),
+                }))
+            }),
+            OpenSearchPath::Directory(dir_path) => fs::read_dir(dir_path.join(path.as_str()))
+                .map_or_else(
+                    |e| {
+                        if e.kind() == io::ErrorKind::NotFound {
+                            Ok(None)
+                        } else {
+                            Err(e)
+                        }
+                    },
+                    |readdir| {
+                        Ok(Some(ReadDirPart {
+                            search_path: self,
+                            ty: ReadDirPartType::Fs(Box::new(readdir)),
+                        }))
+                    },
+                ),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ReadDirPart<'a> {
+    search_path: &'a OpenSearchPath,
+    ty: ReadDirPartType<'a>,
+}
+
+#[derive(Debug)]
+enum ReadDirPartType<'a> {
+    Vpk(vpk::DirectoryContents<'a>),
+    Fs(Box<fs::ReadDir>),
+}
+
+impl<'a> ReadDirPart<'a> {
+    fn next_entry(&mut self, path: &'a Path) -> Option<io::Result<DirEntry<'a>>> {
+        match &mut self.ty {
+            ReadDirPartType::Vpk(contents) => contents.next().map(|c| match c {
+                vpk::DirectoryContent::Directory(p) => Ok(DirEntry::new_borrowed(
+                    self.search_path,
+                    p,
+                    path,
+                    DirEntryType::Directory,
+                )),
+                vpk::DirectoryContent::File(p) => Ok(DirEntry::new_borrowed(
+                    self.search_path,
+                    p,
+                    path,
+                    DirEntryType::File,
+                )),
+            }),
+            ReadDirPartType::Fs(readdir) => {
+                for result in readdir {
+                    match result {
+                        Ok(e) => {
+                            let file_type = match e.file_type() {
+                                Ok(ty) => ty,
+                                Err(err) => return Some(Err(err)),
+                            };
+                            let name = match e.file_name().into_string().map_err(|_| {
+                                io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "a directory entry is not utf8",
+                                )
+                            }) {
+                                Ok(name) => name,
+                                Err(err) => return Some(Err(err)),
+                            };
+                            if file_type.is_dir() {
+                                return Some(Ok(DirEntry::new_owned(
+                                    self.search_path,
+                                    name.into(),
+                                    path,
+                                    DirEntryType::Directory,
+                                )));
+                            } else if file_type.is_file() {
+                                return Some(Ok(DirEntry::new_owned(
+                                    self.search_path,
+                                    name.into(),
+                                    path,
+                                    DirEntryType::File,
+                                )));
+                            }
+                        }
+                        Err(err) => return Some(Err(err)),
                     }
-                },
-                |f| Ok(Some(GameFile::Fs(f))),
-            ),
+                }
+                None
+            }
         }
     }
 }
@@ -360,7 +551,10 @@ impl OpenFileSystem {
                 return Ok(file);
             }
         }
-        Err(io::Error::new(io::ErrorKind::NotFound, &file_path.0))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            file_path.as_str().to_string(),
+        ))
     }
 
     /// Reads the specified file into a [`Vec`].
@@ -385,6 +579,170 @@ impl OpenFileSystem {
         let mut buffer = String::with_capacity(initial_buffer_size(&file));
         file.read_to_string(&mut buffer)?;
         Ok(buffer)
+    }
+
+    /// Returns an iterator over the entries within a directory.
+    pub fn read_dir<'a>(&'a self, path: &'a Path) -> ReadDir<'a> {
+        ReadDir {
+            search_paths: self.search_paths.iter(),
+            path,
+            current_readdir: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+#[must_use]
+pub struct ReadDir<'a> {
+    search_paths: slice::Iter<'a, OpenSearchPath>,
+    current_readdir: Option<ReadDirPart<'a>>,
+    path: &'a Path,
+}
+
+impl<'a> Iterator for ReadDir<'a> {
+    type Item = Result<DirEntry<'a>, io::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let path = self.path;
+        loop {
+            if let Some(ret) = self
+                .current_readdir
+                .as_mut()
+                .and_then(|r| r.next_entry(path))
+            {
+                return Some(ret);
+            }
+            if let Some(path) = self.search_paths.next() {
+                match path.try_read_dir(&self.path) {
+                    Ok(r) => {
+                        self.current_readdir = r;
+                        continue;
+                    }
+                    Err(err) => return Some(Err(err)),
+                }
+            }
+            return None;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DirEntryType {
+    File,
+    Directory,
+}
+
+impl DirEntryType {
+    /// Returns `true` if the entry is a [`File`].
+    #[must_use]
+    pub fn is_file(&self) -> bool {
+        matches!(self, Self::File)
+    }
+
+    /// Returns `true` if the entry is a [`Directory`].
+    #[must_use]
+    pub fn is_directory(&self) -> bool {
+        matches!(self, Self::Directory)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DirEntry<'a> {
+    search_path: &'a OpenSearchPath,
+    name: Cow<'a, Path>,
+    path: PathBuf,
+    ty: DirEntryType,
+}
+
+impl<'a> DirEntry<'a> {
+    fn new_borrowed(
+        search_path: &'a OpenSearchPath,
+        name: &'a Path,
+        path: &'a Path,
+        ty: DirEntryType,
+    ) -> Self {
+        Self {
+            search_path,
+            name: Cow::Borrowed(name),
+            path: path.join(name),
+            ty,
+        }
+    }
+
+    fn new_owned(
+        search_path: &'a OpenSearchPath,
+        name: PathBuf,
+        path: &'a Path,
+        ty: DirEntryType,
+    ) -> Self {
+        Self {
+            search_path,
+            path: path.join(&name),
+            name: Cow::Owned(name),
+            ty,
+        }
+    }
+
+    #[must_use]
+    pub fn entry_type(&self) -> &DirEntryType {
+        &self.ty
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &Path {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Opens the entry if it is a file.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `self` is not a file or if the file can't be opened.
+    pub fn open(&self) -> io::Result<GameFile> {
+        self.search_path
+            .try_open_file(&self.path())
+            .and_then(|maybe_file| {
+                maybe_file
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, self.path.as_str()))
+            })
+    }
+
+    /// Reads the entry into a [`Vec`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `self` is not a file or if the file can't be read.
+    pub fn read(&self) -> io::Result<Vec<u8>> {
+        let mut file = self.open()?;
+        let mut buffer = Vec::with_capacity(initial_buffer_size(&file));
+        file.read_to_end(&mut buffer)?;
+        Ok(buffer)
+    }
+
+    /// Reads the entry into a [`String`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `self` is not a file or if the file can't be read.
+    pub fn read_to_string(&self) -> io::Result<String> {
+        let mut file = self.open()?;
+        let mut buffer = String::with_capacity(initial_buffer_size(&file));
+        file.read_to_string(&mut buffer)?;
+        Ok(buffer)
+    }
+
+    /// Returns an iterator over the entries within this entry.
+    pub fn read_dir(&self) -> ReadDir {
+        ReadDir {
+            search_paths: slice::from_ref(self.search_path).iter(),
+            path: &self.path,
+            current_readdir: None,
+        }
     }
 }
 
@@ -424,6 +782,7 @@ impl<'a> Seek for GameFile<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_gameinfo_deserialization() {
@@ -492,5 +851,52 @@ mod tests {
                 }
             }
         )
+    }
+
+    /// Fails if steam is not installed
+    #[cfg(feature = "steam")]
+    #[test]
+    #[ignore]
+    fn open_discovered_filesystems() {
+        use crate::steam::Libraries;
+
+        let libraries = Libraries::discover().unwrap();
+        for filesystem in libraries.apps().source().filesystems().map(Result::unwrap) {
+            eprintln!("filesystem: {:?}", filesystem);
+            filesystem.open().unwrap();
+        }
+    }
+
+    /// Fails if steam is not installed
+    #[cfg(feature = "steam")]
+    #[test]
+    #[ignore]
+    fn opened_discovered_filesystems_readdir() {
+        use crate::steam::Libraries;
+
+        let libraries = Libraries::discover().unwrap();
+        for filesystem in libraries.apps().source().filesystems().map(Result::unwrap) {
+            eprintln!("filesystem: {:?}", filesystem.name);
+            let opened = filesystem.open().unwrap();
+            let mut encountered = HashSet::new();
+            recurse_readdir(
+                opened.read_dir(Path::from_str("").unwrap()),
+                &mut encountered,
+            );
+        }
+    }
+
+    fn recurse_readdir(readdir: ReadDir, encountered: &mut HashSet<(StdPathBuf, PathBuf)>) {
+        // check that recursing yields no duplicates
+        for entry in readdir.map(Result::unwrap) {
+            let search_path = entry.search_path.path().to_path_buf();
+            let entry_path = entry.path().to_path_buf();
+            if entry.entry_type().is_directory() {
+                recurse_readdir(entry.read_dir(), encountered);
+            }
+            if let Some(old) = encountered.replace((search_path, entry_path)) {
+                panic!("readdir encountered duplicate: {:?}", old);
+            }
+        }
     }
 }
