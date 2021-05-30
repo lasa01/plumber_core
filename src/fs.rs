@@ -17,7 +17,6 @@ use serde::{
     de::{MapAccess, Visitor},
     Deserialize, Serialize,
 };
-use serde_derive::Deserialize;
 use thiserror::Error;
 use uncased::UncasedStr;
 

@@ -11,7 +11,6 @@ use serde::{
     de::{IgnoredAny, MapAccess, Visitor},
     Deserialize,
 };
-use serde_derive::Deserialize;
 use thiserror::Error;
 
 static SOURCE_APPS: phf::Set<u32> = phf_set! {

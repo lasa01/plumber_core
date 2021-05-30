@@ -12,7 +12,6 @@ use serde::{
     ser::SerializeMap,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
 use uncased::Uncased;
 

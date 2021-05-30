@@ -18,7 +18,6 @@ use serde::{
     ser::{SerializeMap, SerializeStruct},
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use serde_derive::{Deserialize, Serialize};
 use uncased::Uncased;
 
 type UncasedString = Uncased<'static>;
