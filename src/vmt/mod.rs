@@ -8,7 +8,7 @@ use crate::{
 use std::{collections::BTreeMap, fmt, io};
 
 use serde::{
-    de::{self, MapAccess, Visitor},
+    de::{self, IgnoredAny, MapAccess, Visitor},
     ser::SerializeMap,
     Deserialize, Deserializer, Serialize, Serializer,
 };
@@ -87,13 +87,119 @@ enum ShaderOrPatch {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct Patch {
     include: PathBuf,
+    #[serde(default, alias = "replace")]
     insert: BTreeMap<UncasedString, String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum StringOrProxies {
+    Proxies,
+    String(String),
+}
+
+impl<'de> Deserialize<'de> for StringOrProxies {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ProxiesOrStringVisitor;
+
+        impl<'de> Visitor<'de> for ProxiesOrStringVisitor {
+            type Value = StringOrProxies;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v.eq_ignore_ascii_case("proxies") {
+                    Ok(StringOrProxies::Proxies)
+                } else {
+                    Ok(StringOrProxies::String(v.into()))
+                }
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v.eq_ignore_ascii_case("patch") {
+                    Ok(StringOrProxies::Proxies)
+                } else {
+                    Ok(StringOrProxies::String(v))
+                }
+            }
+        }
+
+        deserializer.deserialize_string(ProxiesOrStringVisitor)
+    }
+}
+
+struct Parameters {
+    parameters: BTreeMap<UncasedString, String>,
+    proxies: BTreeMap<UncasedString, BTreeMap<UncasedString, String>>,
+}
+
+impl<'de> Deserialize<'de> for Parameters {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ParametersVisitor;
+
+        impl<'de> Visitor<'de> for ParametersVisitor {
+            type Value = Parameters;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("shader parameters")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut parameters = BTreeMap::new();
+                let mut proxies = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        StringOrProxies::Proxies => {
+                            if proxies.is_some() {
+                                return Err(de::Error::duplicate_field("proxies"));
+                            }
+                            proxies = Some(map.next_value()?);
+                        }
+                        StringOrProxies::String(key) => {
+                            if let Ok(value) = map.next_value() {
+                                parameters.insert(key.into(), value);
+                            } else {
+                                map.next_value::<IgnoredAny>()?;
+                            }
+                        }
+                    }
+                }
+
+                let proxies = proxies.unwrap_or_default();
+
+                Ok(Parameters {
+                    parameters,
+                    proxies,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(ParametersVisitor)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Shader {
     pub shader: UncasedString,
     pub parameters: BTreeMap<UncasedString, String>,
+    pub proxies: BTreeMap<UncasedString, BTreeMap<UncasedString, String>>,
 }
 
 impl Shader {}
@@ -201,10 +307,11 @@ impl<'de> Deserialize<'de> for Vmt {
                 let shader = match shader_or_patch {
                     StringOrPatch::Patch => ShaderOrPatch::Patch(map.next_value()?),
                     StringOrPatch::String(shader) => {
-                        let parameters = map.next_value()?;
+                        let parameters: Parameters = map.next_value()?;
                         ShaderOrPatch::Shader(Shader {
                             shader: shader.into(),
-                            parameters,
+                            parameters: parameters.parameters,
+                            proxies: parameters.proxies,
                         })
                     }
                 };
@@ -229,5 +336,66 @@ impl Serialize for Vmt {
             ShaderOrPatch::Patch(patch) => map.serialize_entry("patch", patch),
         }?;
         map.end()
+    }
+}
+
+#[cfg(all(test, feature = "fs", feature = "steam"))]
+mod tests {
+    use super::*;
+    use crate::fs::{DirEntryType, Path, ReadDir};
+    use crate::steam::Libraries;
+
+    fn is_vmt_file(filename: &str) -> bool {
+        filename
+            .rsplit('.')
+            .next()
+            .map(|ext| ext.eq_ignore_ascii_case("vmt"))
+            == Some(true)
+    }
+
+    /// Fails if steam is not installed
+    /// Tests parsing of all materials in all source games currently installed.
+    /// Takes some time.
+    #[test]
+    #[ignore]
+    fn parse_discovered_materials() {
+        let libraries = Libraries::discover().unwrap();
+        // let mut errors = Vec::new();
+        for result in libraries.apps().source().filesystems() {
+            match result {
+                Ok(filesystem) => {
+                    eprintln!("reading from filesystem: {}", filesystem.name);
+                    let filesystem = filesystem.open().unwrap();
+                    recurse(filesystem.read_dir(Path::from_str("materials").unwrap()))
+                }
+                Err(err) => eprintln!("warning: failed filesystem discovery: {}", err),
+            }
+        }
+        // if !errors.is_empty() {
+        //     eprint!("Errors in parsing:");
+        //     for error in errors {
+        //         eprintln!("\t{:?}", error);
+        //     }
+        //     panic!("Errors in parsing");
+        // }
+    }
+
+    fn recurse(readdir: ReadDir) {
+        for entry in readdir.map(Result::unwrap) {
+            let name = entry.name();
+            match entry.entry_type() {
+                DirEntryType::File => {
+                    if is_vmt_file(name.as_str()) {
+                        let vmt_contents = entry
+                            .read_to_string()
+                            .unwrap_or_else(|err| panic!("{}:\n{}", entry.path().as_str(), err));
+                        from_str(&vmt_contents).unwrap_or_else(|err| {
+                            panic!("{}:\n{}\n\n{}", entry.path().as_str(), err, &vmt_contents)
+                        });
+                    }
+                }
+                DirEntryType::Directory => recurse(entry.read_dir()),
+            }
+        }
     }
 }
