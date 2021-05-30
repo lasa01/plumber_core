@@ -1,7 +1,9 @@
 pub mod loader;
 mod types;
 
-use types::{BracketedVector2, BracketedVector3, Plane, Rgb, UvAxis, Vector3};
+use nalgebra::{Vector2, Vector3};
+use rgb::RGB8;
+use types::{bracketed_vector2, bracketed_vector3, color, BracketedVector3, Plane, UvAxis};
 
 use crate::{fs::PathBuf, vdf};
 
@@ -105,7 +107,8 @@ pub struct VisGroup {
     name: String,
     #[serde(rename = "visgroupid")]
     vis_group_id: i32,
-    color: Rgb,
+    #[serde(with = "color")]
+    color: RGB8,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -182,8 +185,8 @@ pub struct Side {
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct DispInfo {
     power: u8,
-    #[serde(rename = "startposition")]
-    start_position: BracketedVector3,
+    #[serde(rename = "startposition", with = "bracketed_vector3")]
+    start_position: Vector3<f64>,
     elevation: f64,
     subdiv: bool,
     normals: Vector3DispData,
@@ -272,7 +275,7 @@ impl<'de> Deserialize<'de> for DispInfo {
                             if start_position.is_some() {
                                 return Err(de::Error::duplicate_field("startposition"));
                             }
-                            start_position = Some(map.next_value()?);
+                            start_position = Some(map.next_value::<BracketedVector3>()?.0);
                         }
                         Field::Elevation => {
                             if elevation.is_some() {
@@ -442,7 +445,7 @@ impl Serialize for RowKey {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vector3DispData {
-    data: Array2<Vector3>,
+    pub data: Array2<nalgebra::Vector3<f64>>,
 }
 
 impl Vector3DispData {
@@ -536,7 +539,7 @@ pub struct NumDispData<T>
 where
     T: Default + FromStr + Display,
 {
-    data: Array2<T>,
+    pub data: Array2<T>,
 }
 
 impl<T> NumDispData<T>
@@ -737,7 +740,8 @@ impl Default for AllowedVerts {
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class editor")]
 pub struct Editor {
-    color: Rgb,
+    #[serde(with = "color")]
+    color: RGB8,
     #[serde(default, rename = "groupid")]
     group_id: i32,
     #[serde(default, rename = "visgroupshown")]
@@ -746,8 +750,13 @@ pub struct Editor {
     vis_group_auto_shown: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     comments: Option<String>,
-    #[serde(rename = "logicalpos", skip_serializing_if = "Option::is_none")]
-    logical_pos: Option<BracketedVector2>,
+    #[serde(
+        rename = "logicalpos",
+        skip_serializing_if = "Option::is_none",
+        default,
+        with = "bracketed_vector2::option"
+    )]
+    logical_pos: Option<Vector2<f64>>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]

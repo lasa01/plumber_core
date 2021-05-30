@@ -1,8 +1,9 @@
+#![allow(clippy::wildcard_imports)]
+
 use crate::parsers::{bracketed, parenthesed, space_separated};
 
 use std::fmt::{self, Display};
 
-use derive_more::{Deref, DerefMut};
 use nom::sequence::tuple;
 use rgb::RGB8;
 use serde::{
@@ -10,10 +11,28 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Deref, DerefMut)]
-pub struct Rgb(RGB8);
+pub mod color {
+    use super::*;
 
-impl<'de> Deserialize<'de> for Rgb {
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    pub fn serialize<S>(color: &RGB8, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Color::serialize(&Color(*color), serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<RGB8, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Color::deserialize(deserializer).map(|color| color.0)
+    }
+}
+
+pub struct Color(pub RGB8);
+
+impl<'de> Deserialize<'de> for Color {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -21,7 +40,7 @@ impl<'de> Deserialize<'de> for Rgb {
         struct RgbVisitor;
 
         impl<'de> Visitor<'de> for RgbVisitor {
-            type Value = Rgb;
+            type Value = Color;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("an rgb string")
@@ -51,7 +70,7 @@ impl<'de> Deserialize<'de> for Rgb {
                                 &"an int between 0 and 255",
                             )
                         })?;
-                        Ok(Rgb(RGB8 { r, g, b }))
+                        Ok(Color(RGB8 { r, g, b }))
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
                 }
@@ -62,7 +81,7 @@ impl<'de> Deserialize<'de> for Rgb {
     }
 }
 
-impl Serialize for Rgb {
+impl Serialize for Color {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -71,14 +90,13 @@ impl Serialize for Rgb {
     }
 }
 
-impl Display for Rgb {
+impl Display for Color {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {} {}", self.0.r, self.0.g, self.0.b)
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut)]
-pub struct Vector2(nalgebra::Vector2<f64>);
+pub struct Vector2(pub nalgebra::Vector2<f64>);
 
 impl<'de> Deserialize<'de> for Vector2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -132,8 +150,7 @@ impl Display for Vector2 {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut)]
-pub struct Vector3(nalgebra::Vector3<f64>);
+pub struct Vector3(pub nalgebra::Vector3<f64>);
 
 impl<'de> Deserialize<'de> for Vector3 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -190,8 +207,35 @@ impl Display for Vector3 {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut)]
-pub struct BracketedVector2(nalgebra::Vector2<f64>);
+pub mod bracketed_vector2 {
+    use super::*;
+
+    pub mod option {
+        use super::*;
+
+        pub fn serialize<S>(
+            vector: &Option<nalgebra::Vector2<f64>>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            Option::<BracketedVector2>::serialize(&vector.map(BracketedVector2), serializer)
+        }
+
+        pub fn deserialize<'de, D>(
+            deserializer: D,
+        ) -> Result<Option<nalgebra::Vector2<f64>>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            Option::<BracketedVector2>::deserialize(deserializer)
+                .map(|option| option.map(|vector| vector.0))
+        }
+    }
+}
+
+pub struct BracketedVector2(pub nalgebra::Vector2<f64>);
 
 impl<'de> Deserialize<'de> for BracketedVector2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -241,12 +285,22 @@ impl Serialize for BracketedVector2 {
 
 impl Display for BracketedVector2 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{} {}]", self.x, self.y)
+        write!(f, "[{} {}]", self.0.x, self.0.y)
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deref, DerefMut)]
-pub struct BracketedVector3(nalgebra::Vector3<f64>);
+pub mod bracketed_vector3 {
+    use super::*;
+
+    pub fn serialize<S>(vector: &nalgebra::Vector3<f64>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        BracketedVector3::serialize(&BracketedVector3(*vector), serializer)
+    }
+}
+
+pub struct BracketedVector3(pub nalgebra::Vector3<f64>);
 
 impl<'de> Deserialize<'de> for BracketedVector3 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -299,7 +353,7 @@ impl Serialize for BracketedVector3 {
 
 impl Display for BracketedVector3 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{} {} {}]", self.x, self.y, self.z)
+        write!(f, "[{} {} {}]", self.0.x, self.0.y, self.0.z)
     }
 }
 
