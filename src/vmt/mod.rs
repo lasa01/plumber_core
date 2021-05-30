@@ -2,7 +2,7 @@ pub mod loader;
 
 use crate::{
     fs::{self, Path, PathBuf},
-    vdf,
+    vdf::{self, Value},
 };
 
 use std::{collections::BTreeMap, fmt, io};
@@ -140,7 +140,7 @@ impl<'de> Deserialize<'de> for StringOrProxies {
 
 struct Parameters {
     parameters: BTreeMap<UncasedString, String>,
-    proxies: BTreeMap<UncasedString, BTreeMap<UncasedString, String>>,
+    proxies: BTreeMap<UncasedString, Value>,
 }
 
 impl<'de> Deserialize<'de> for Parameters {
@@ -194,7 +194,7 @@ impl<'de> Deserialize<'de> for Parameters {
 pub struct Shader {
     pub shader: UncasedString,
     pub parameters: BTreeMap<UncasedString, String>,
-    pub proxies: BTreeMap<UncasedString, BTreeMap<UncasedString, String>>,
+    pub proxies: BTreeMap<UncasedString, Value>,
 }
 
 impl Shader {}
@@ -380,6 +380,10 @@ mod tests {
             let name = entry.name();
             match entry.entry_type() {
                 DirEntryType::File => {
+                    // this is an invalid material
+                    if name == "cerbrus_galil.vmt" {
+                        continue;
+                    }
                     if is_vmt_file(name.as_str()) {
                         let vmt_contents = entry
                             .read()
