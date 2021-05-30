@@ -1,7 +1,7 @@
 pub mod loader;
 
 use crate::{
-    fs::{self, PathBuf},
+    fs::{self, Path, PathBuf},
     vdf,
 };
 
@@ -100,12 +100,21 @@ impl Shader {}
 
 #[derive(Debug, Error)]
 pub enum ShaderResolveError {
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
+    #[error("io error reading `{path}`: {inner}")]
+    Io { path: String, inner: io::Error },
     #[error("error deserializing included material: {0}")]
     Deserialization(#[from] vdf::Error),
     #[error("included material cannot be a patch material")]
     RecursivePatch,
+}
+
+impl ShaderResolveError {
+    fn from_io(err: io::Error, path: &Path) -> Self {
+        Self::Io {
+            path: path.as_str().to_string(),
+            inner: err,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -143,7 +152,9 @@ impl Vmt {
         match self.shader {
             ShaderOrPatch::Shader(shader) => Ok(shader),
             ShaderOrPatch::Patch(mut patch) => {
-                let base_contents = filesystem.read_to_string(&patch.include)?;
+                let base_contents = filesystem
+                    .read_to_string(&patch.include)
+                    .map_err(|err| ShaderResolveError::from_io(err, &patch.include))?;
                 let base_vmt = Self::from_str(&base_contents)?;
                 let mut base_shader = base_vmt
                     .into_shader()

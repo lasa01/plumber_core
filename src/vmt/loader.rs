@@ -35,24 +35,43 @@ const NODRAW_PARAMS: &[&str] = &[
 
 #[derive(Debug, Error)]
 pub enum MaterialLoadError {
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
+    #[error("io error reading `{path}`: {inner}")]
+    Io { path: String, inner: io::Error },
     #[error("error loading patch material: {0}")]
     Patch(#[from] ShaderResolveError),
     #[error("error deserializing material: {0}")]
     Deserialization(#[from] vdf::Error),
     #[error("error loading texture: {0}")]
     Texture(#[from] TextureLoadError),
+    #[error("{0}")]
+    Custom(&'static str),
+}
+
+impl MaterialLoadError {
+    fn from_io(err: io::Error, path: &Path) -> Self {
+        Self::Io {
+            path: path.as_str().to_string(),
+            inner: err,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum TextureLoadError {
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
+    #[error("io error reading `{path}`: {inner}")]
+    Io { path: String, inner: io::Error },
     #[error("error loading vtf file: {0}")]
     Vtf(#[from] vtflib::Error),
 }
 
+impl TextureLoadError {
+    fn from_io(err: io::Error, path: &Path) -> Self {
+        Self::Io {
+            path: path.as_str().to_string(),
+            inner: err,
+        }
+    }
+}
 #[derive(Debug, Default)]
 pub struct Loader {
     material_cache: Mutex<HashMap<PathBuf, MaterialInfo>>,
@@ -156,7 +175,10 @@ fn get_shader(
     material_path: &PathBuf,
     filesystem: &OpenFileSystem,
 ) -> Result<Shader, MaterialLoadError> {
-    let material_contents = filesystem.read_to_string(material_path.with_extension(".vmt"))?;
+    let material_path = material_path.with_extension(".vmt");
+    let material_contents = filesystem
+        .read_to_string(&material_path)
+        .map_err(|err| MaterialLoadError::from_io(err, &material_path))?;
     let material = Vmt::from_str(&material_contents)?;
     Ok(material.resolve_shader(filesystem)?)
 }
@@ -282,7 +304,10 @@ impl LoadedTexture {
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<Self, TextureLoadError> {
         let (vtf_lib, guard) = vtf_lib;
-        let vtf_bytes = filesystem.read(texture_path.with_extension(".vmt"))?;
+        let texture_path = texture_path.with_extension(".vmt");
+        let vtf_bytes = filesystem
+            .read(&texture_path)
+            .map_err(|err| TextureLoadError::from_io(err, &texture_path))?;
         let mut vtf = vtf_lib.new_vtf_file().bind(guard);
         vtf.load(&vtf_bytes)?;
         Self::load_vtf(&vtf)

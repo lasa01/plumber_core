@@ -153,20 +153,38 @@ impl<'de> Deserialize<'de> for LibraryFolders {
 
 #[derive(Debug, Error)]
 pub enum LibraryDiscoveryError {
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
+    #[error("io error reading `{path}`: {inner}")]
+    Io { path: String, inner: io::Error },
     #[error("error deserializing libraryfolders.vdf: {0}")]
     Deserialization(#[from] vdf::Error),
     #[error("home directory is unknown")]
     NoHome,
 }
 
+impl LibraryDiscoveryError {
+    fn from_io(err: io::Error, path: &Path) -> Self {
+        Self::Io {
+            path: path.as_os_str().to_string_lossy().into_owned(),
+            inner: err,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
+    #[error("io error reading `{path}`: {inner}")]
+    Io { path: String, inner: io::Error },
     #[error("error deserializing appmanifest: {0}")]
     Deserialization(#[from] vdf::Error),
+}
+
+impl AppError {
+    fn from_io(err: io::Error, path: &Path) -> Self {
+        Self::Io {
+            path: path.as_os_str().to_string_lossy().into_owned(),
+            inner: err,
+        }
+    }
 }
 
 /// A steam app. `install_dir` is absolute.
@@ -206,8 +224,20 @@ impl Libraries {
         use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let steam = hkcu.open_subkey("SOFTWARE\\Valve\\Steam")?;
-        let steam_path: String = steam.get_value("SteamPath")?;
+        let steam = hkcu.open_subkey("SOFTWARE\\Valve\\Steam").map_err(|err| {
+            LibraryDiscoveryError::Io {
+                inner: err,
+                path: "registry HKEY_CURRENT_USER\\SOFTWARE\\Valve\\Steam".to_string(),
+            }
+        })?;
+        let steam_path: String =
+            steam
+                .get_value("SteamPath")
+                .map_err(|err| LibraryDiscoveryError::Io {
+                    inner: err,
+                    path: "registry HKEY_CURRENT_USER\\SOFTWARE\\Valve\\Steam\\SteamPath"
+                        .to_string(),
+                })?;
         Self::discover_from_steam_path(Path::new(&steam_path))
     }
 
@@ -219,7 +249,8 @@ impl Libraries {
             .ok_or(LibraryDiscoveryError::NoHome)?
             .join(".steam")
             .join("root");
-        let steam_path = fs::read_link(steam_path)?;
+        let steam_path = fs::read_link(&steam_path)
+            .map_err(|err| LibraryDiscoveryError::from_io(err, &steam_path))?;
         Self::discover_from_steam_path(steam_path)
     }
 
@@ -241,10 +272,12 @@ impl Libraries {
         let steam_path = steam_path.as_ref();
         let libraryfolders_path = steam_path.join("steamapps").join("libraryfolders.vdf");
 
-        let mut libraries =
-            vdf::escaped_from_str::<LibraryFoldersFile>(&fs::read_to_string(libraryfolders_path)?)?
-                .library_folders
-                .0;
+        let mut libraries = vdf::escaped_from_str::<LibraryFoldersFile>(
+            &fs::read_to_string(&libraryfolders_path)
+                .map_err(|err| LibraryDiscoveryError::from_io(err, &libraryfolders_path))?,
+        )?
+        .library_folders
+        .0;
         libraries.paths.push(steam_path.to_path_buf());
 
         Ok(libraries)
@@ -289,7 +322,7 @@ impl<'a> Iterator for Apps<'a> {
                 for entry in current_iter {
                     let entry = match entry {
                         Ok(entry) => entry,
-                        Err(e) => return Some(Err(e.into())),
+                        Err(err) => return Some(Err(AppError::from_io(err, &current_path))),
                     };
                     if !entry.file_type().map_or(false, |t| t.is_file()) {
                         continue;
@@ -298,9 +331,10 @@ impl<'a> Iterator for Apps<'a> {
                         if !filename.starts_with("appmanifest_") || !is_acf_file(filename) {
                             continue;
                         }
+                        let path = entry.path();
                         return Some(
-                            fs::read_to_string(entry.path())
-                                .map_err(AppError::from)
+                            fs::read_to_string(&path)
+                                .map_err(|err| AppError::from_io(err, &path))
                                 .and_then(|s| {
                                     vdf::from_str::<AppManifest>(&s).map_err(AppError::from)
                                 })
@@ -314,7 +348,7 @@ impl<'a> Iterator for Apps<'a> {
                 Ok(iter) => {
                     self.current_path = Some((steamapps_path, iter));
                 }
-                Err(e) => return Some(Err(e.into())),
+                Err(err) => return Some(Err(AppError::from_io(err, &steamapps_path))),
             }
         }
     }
@@ -371,9 +405,12 @@ impl<'a> Iterator for FileSystems<'a> {
     type Item = Result<crate::fs::FileSystem, crate::fs::ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|result| result
-            .map_or_else(|e| Err(crate::fs::ParseError::from(e)), |a| crate::fs::FileSystem::from_app(&a))
-        )
+        self.0.next().map(|result| {
+            result.map_or_else(
+                |e| Err(crate::fs::ParseError::from(e)),
+                |a| crate::fs::FileSystem::from_app(&a),
+            )
+        })
     }
 }
 
@@ -495,7 +532,7 @@ mod tests {
     #[ignore]
     fn test_filesystem_discovery() {
         let libraries = Libraries::discover().unwrap();
-        for filesystem in libraries.apps().source().filesystems() {
+        for filesystem in libraries.apps().source().filesystems().map(Result::unwrap) {
             eprintln!("filesystem: {:?}", filesystem);
         }
     }
