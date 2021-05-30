@@ -20,8 +20,8 @@ type UncasedString = Uncased<'static>;
 /// # Errors
 ///
 /// Returns `Err` if the deserialization fails.
-pub fn from_str(input: &str) -> vdf::Result<Vmt> {
-    Vmt::from_str(input)
+pub fn from_bytes(input: &[u8]) -> vdf::Result<Vmt> {
+    Vmt::from_bytes(input)
 }
 
 /// # Errors
@@ -162,15 +162,12 @@ impl<'de> Deserialize<'de> for Parameters {
                 A: MapAccess<'de>,
             {
                 let mut parameters = BTreeMap::new();
-                let mut proxies = None;
+                let mut proxies = BTreeMap::new();
 
                 while let Some(key) = map.next_key()? {
                     match key {
                         StringOrProxies::Proxies => {
-                            if proxies.is_some() {
-                                return Err(de::Error::duplicate_field("proxies"));
-                            }
-                            proxies = Some(map.next_value()?);
+                            proxies.append(&mut map.next_value()?);
                         }
                         StringOrProxies::String(key) => {
                             if let Ok(value) = map.next_value() {
@@ -181,8 +178,6 @@ impl<'de> Deserialize<'de> for Parameters {
                         }
                     }
                 }
-
-                let proxies = proxies.unwrap_or_default();
 
                 Ok(Parameters {
                     parameters,
@@ -232,8 +227,8 @@ impl Vmt {
     /// # Errors
     ///
     /// Returns `Err` if the deserialization fails.
-    pub fn from_str(input: &str) -> vdf::Result<Self> {
-        vdf::from_str(input)
+    pub fn from_bytes(input: &[u8]) -> vdf::Result<Self> {
+        vdf::from_bytes(input)
     }
 
     /// # Errors
@@ -259,9 +254,9 @@ impl Vmt {
             ShaderOrPatch::Shader(shader) => Ok(shader),
             ShaderOrPatch::Patch(mut patch) => {
                 let base_contents = filesystem
-                    .read_to_string(&patch.include)
+                    .read(&patch.include)
                     .map_err(|err| ShaderResolveError::from_io(err, &patch.include))?;
-                let base_vmt = Self::from_str(&base_contents)?;
+                let base_vmt = Self::from_bytes(&base_contents)?;
                 let mut base_shader = base_vmt
                     .into_shader()
                     .ok_or(ShaderResolveError::RecursivePatch)?;
@@ -387,10 +382,16 @@ mod tests {
                 DirEntryType::File => {
                     if is_vmt_file(name.as_str()) {
                         let vmt_contents = entry
-                            .read_to_string()
+                            .read()
                             .unwrap_or_else(|err| panic!("{}:\n{}", entry.path().as_str(), err));
-                        from_str(&vmt_contents).unwrap_or_else(|err| {
-                            panic!("{}:\n{}\n\n{}", entry.path().as_str(), err, &vmt_contents)
+
+                        from_bytes(&vmt_contents).unwrap_or_else(|err| {
+                            panic!(
+                                "{}:\n{}\n\n{}",
+                                entry.path().as_str(),
+                                err,
+                                String::from_utf8_lossy(&vmt_contents)
+                            )
                         });
                     }
                 }

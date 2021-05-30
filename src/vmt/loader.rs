@@ -255,9 +255,9 @@ fn get_shader(
 ) -> Result<Shader, MaterialLoadError> {
     let material_path = material_path.with_extension(".vmt");
     let material_contents = filesystem
-        .read_to_string(&material_path)
+        .read(&material_path)
         .map_err(|err| MaterialLoadError::from_io(err, &material_path))?;
-    let material = Vmt::from_str(&material_contents)?;
+    let material = Vmt::from_bytes(&material_contents)?;
     Ok(material.resolve_shader(filesystem)?)
 }
 
