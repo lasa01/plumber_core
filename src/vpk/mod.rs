@@ -650,6 +650,7 @@ mod tests {
     fn file_full() {
         let path = StdPath::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
+            .join("vpk")
             .join("test.txt");
 
         let entry = Entry {

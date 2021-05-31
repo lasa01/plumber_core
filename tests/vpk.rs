@@ -10,6 +10,7 @@ use valveflow::{
 fn test_vpk_single_file() {
     let path = StdPath::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
+        .join("vpk")
         .join("test.vpk");
     let vpk = Directory::read(path).unwrap();
     let mut files: Vec<&Path> = vpk.files().collect();
@@ -17,13 +18,14 @@ fn test_vpk_single_file() {
     assert_eq!(files, vec!["test.vdf", "test.vmf"]);
     let mut file = vpk.open_file(Path::from_str("test.vdf").unwrap()).unwrap();
     let contents = String::from_utf8(file.verify_contents().unwrap()).unwrap();
-    assert_eq!(&contents, include_str!("test.vdf"));
+    assert_eq!(&contents, include_str!("vdf/test.vdf"));
 }
 
 #[test]
 fn test_vpk_multi_part() {
     let path = StdPath::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
+        .join("vpk")
         .join("test_dir.vpk");
     let vpk = Directory::read(path).unwrap();
     let mut files: Vec<&Path> = vpk.files().collect();
