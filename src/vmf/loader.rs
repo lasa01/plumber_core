@@ -24,6 +24,7 @@ pub enum SolidError {
 #[derive(Debug)]
 pub struct BuiltSolid<'a> {
     pub solid: &'a Solid,
+    pub position: Point3<f64>,
     pub vertices: Vec<Point3<f64>>,
     pub sides: Vec<BuiltSide>,
     pub materials: Vec<PathBuf>,
@@ -31,25 +32,14 @@ pub struct BuiltSolid<'a> {
 
 #[derive(Debug)]
 pub struct BuiltSide {
-    pub position: Point3<f64>,
     pub vertice_indices: Vec<usize>,
     pub vertice_uvs: Vec<(f64, f64)>,
     pub material_index: usize,
 }
 
-impl Default for BuiltSide {
-    fn default() -> Self {
-        Self {
-            position: Point3::new(0.0, 0.0, 0.0),
-            vertice_indices: Vec::with_capacity(3),
-            vertice_uvs: Vec::with_capacity(3),
-            material_index: 0,
-        }
-    }
-}
-
 /// A plane defined by a normal vector and a distance to the origin.
 /// Also keeps a point on the plane for convenience.
+#[derive(Clone, Copy)]
 struct NdPlane {
     point: Point3<f64>,
     normal: Vector3<f64>,
@@ -83,7 +73,6 @@ impl NdPlane {
 struct SideBuilder<'a> {
     side: &'a Side,
     plane: NdPlane,
-    center: Point3<f64>,
     vertice_indices: Vec<usize>,
     vertice_uvs: Vec<(f64, f64)>,
     material_index: usize,
@@ -95,7 +84,6 @@ impl<'a> SideBuilder<'a> {
         Self {
             side,
             plane,
-            center,
             vertice_indices: Vec::new(),
             vertice_uvs: Vec::new(),
             material_index: 0,
@@ -122,20 +110,25 @@ impl<'a> SideBuilder<'a> {
             .map(|info| 2 * (info.dimension() - 1).pow(2))
     }
 
-    fn build_displacement(
-        self,
+    fn verify_displacement(&self) -> Result<(), SolidError> {
+        let side_vertices_n = self.vertice_indices.len();
+        if side_vertices_n != 4 {
+            return Err(SolidError::InvalidDisplacement {
+                side_id: self.side.id,
+                vertices: side_vertices_n,
+            });
+        }
+        Ok(())
+    }
+
+    fn maybe_build_displacement(
+        &mut self,
         old_vertices: &[Point3<f64>],
         vertices: &mut Vec<Point3<f64>>,
-        sides: &mut Vec<BuiltSide>,
+        sides: &mut Vec<SideBuilder<'a>>,
     ) -> Result<(), SolidError> {
         if let Some(info) = &self.side.disp_info {
-            let side_vertices_n = self.vertice_indices.len();
-            if side_vertices_n != 4 {
-                return Err(SolidError::InvalidDisplacement {
-                    side_id: self.side.id,
-                    vertices: side_vertices_n,
-                });
-            }
+            self.verify_displacement()?;
 
             // find out which corner vertice the displacement start position is
             let (start_i, _) = self
@@ -221,7 +214,16 @@ impl<'a> SideBuilder<'a> {
                 }
             }
 
-            let mut disp_faces = Array3::<BuiltSide>::default((dimension - 1, dimension - 1, 2));
+            let mut disp_faces = Array3::<SideBuilder>::from_shape_simple_fn(
+                (dimension - 1, dimension - 1, 2),
+                || SideBuilder {
+                    side: self.side,
+                    plane: self.plane,
+                    vertice_indices: Vec::with_capacity(3),
+                    vertice_uvs: Vec::with_capacity(3),
+                    material_index: 0,
+                },
+            );
 
             for ((r_i, c_i, face_i), face) in disp_faces.indexed_iter_mut() {
                 let face_vert_is = match face_i {
@@ -245,7 +247,6 @@ impl<'a> SideBuilder<'a> {
 
     fn finish(self) -> BuiltSide {
         BuiltSide {
-            position: self.center,
             vertice_indices: self.vertice_indices,
             vertice_uvs: self.vertice_uvs,
             material_index: self.material_index,
@@ -291,6 +292,7 @@ where
 
 struct SolidBuilder<'a> {
     solid: &'a Solid,
+    center: Point3<f64>,
     sides: Vec<SideBuilder<'a>>,
     vertices: Vec<Point3<f64>>,
     materials: Vec<PathBuf>,
@@ -307,6 +309,7 @@ impl<'a> SolidBuilder<'a> {
 
         Self {
             solid,
+            center: solid_center,
             sides: solid
                 .sides
                 .iter()
@@ -455,7 +458,7 @@ impl<'a> SolidBuilder<'a> {
         }
     }
 
-    fn build_displacement(self) -> Result<BuiltSolid<'a>, SolidError> {
+    fn maybe_build_displacement(&mut self) -> Result<(), SolidError> {
         // calculate amount of new vertices
         let vertices_len = match self
             .sides
@@ -464,7 +467,7 @@ impl<'a> SolidBuilder<'a> {
             .sum1()
         {
             Some(sum) => sum,
-            None => return Ok(self.finish()), // this is not a displacement
+            None => return Ok(()), // this is not a displacement
         };
 
         let old_vertices = &self.vertices;
@@ -475,23 +478,30 @@ impl<'a> SolidBuilder<'a> {
             .iter()
             .filter_map(SideBuilder::disp_faces_len)
             .sum();
-        let mut sides: Vec<BuiltSide> = Vec::with_capacity(sides_len);
+        let mut sides: Vec<SideBuilder> = Vec::with_capacity(sides_len);
 
-        for builder in self.sides {
-            builder.build_displacement(old_vertices, &mut vertices, &mut sides)?;
+        for builder in &mut self.sides {
+            builder.maybe_build_displacement(old_vertices, &mut vertices, &mut sides)?;
         }
 
-        Ok(BuiltSolid {
-            solid: self.solid,
-            vertices,
-            sides,
-            materials: self.materials,
-        })
+        self.vertices = vertices;
+        self.sides = sides;
+
+        Ok(())
     }
 
-    pub fn finish(self) -> BuiltSolid<'a> {
+    fn recenter(&mut self) {
+        let center = polygon_center(self.vertices.iter().copied()).coords;
+        for vertice in &mut self.vertices {
+            *vertice -= center;
+        }
+        self.center += center;
+    }
+
+    fn finish(self) -> BuiltSolid<'a> {
         BuiltSolid {
             solid: self.solid,
+            position: self.center,
             vertices: self.vertices,
             sides: self.sides.into_iter().map(SideBuilder::finish).collect(),
             materials: self.materials,
@@ -506,7 +516,7 @@ fn lerp_uv(lhs: (f64, f64), rhs: (f64, f64), t: f64) -> (f64, f64) {
 impl Solid {
     /// # Errors
     ///
-    /// idk
+    /// Returns `Err` if the mesh creation fails.
     pub fn build_mesh(
         &self,
         get_material_info: impl FnMut(&Path) -> MaterialInfo,
@@ -516,7 +526,9 @@ impl Solid {
         builder.remove_invalid_sides();
         builder.sort_vertices();
         builder.build_uvs(get_material_info);
-        builder.build_displacement()
+        builder.maybe_build_displacement()?;
+        builder.recenter();
+        Ok(builder.finish())
     }
 }
 
