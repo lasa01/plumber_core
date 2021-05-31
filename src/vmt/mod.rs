@@ -355,7 +355,6 @@ mod tests {
     #[ignore]
     fn parse_discovered_materials() {
         let libraries = Libraries::discover().unwrap();
-        // let mut errors = Vec::new();
         for result in libraries.apps().source().filesystems() {
             match result {
                 Ok(filesystem) => {
@@ -366,13 +365,6 @@ mod tests {
                 Err(err) => eprintln!("warning: failed filesystem discovery: {}", err),
             }
         }
-        // if !errors.is_empty() {
-        //     eprint!("Errors in parsing:");
-        //     for error in errors {
-        //         eprintln!("\t{:?}", error);
-        //     }
-        //     panic!("Errors in parsing");
-        // }
     }
 
     fn recurse(readdir: ReadDir) {
