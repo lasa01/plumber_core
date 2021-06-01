@@ -300,6 +300,15 @@ pub struct MaterialInfo {
 
 impl MaterialInfo {
     #[must_use]
+    pub fn new(width: u32, height: u32, no_draw: bool) -> Self {
+        Self {
+            width,
+            height,
+            no_draw,
+        }
+    }
+
+    #[must_use]
     pub fn width(&self) -> u32 {
         self.width
     }
