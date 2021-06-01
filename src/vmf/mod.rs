@@ -42,14 +42,14 @@ pub fn to_string(vmf: &Vmf) -> vdf::Result<String> {
 #[serde(expecting = "a vmf file")]
 pub struct Vmf {
     #[serde(rename = "versioninfo")]
-    version_info: VersionInfo,
+    pub version_info: VersionInfo,
     #[serde(rename = "visgroups")]
-    vis_groups: VisGroups,
+    pub vis_groups: VisGroups,
     #[serde(rename = "viewsettings")]
-    view_settings: ViewSettings,
-    world: World,
+    pub view_settings: ViewSettings,
+    pub world: World,
     #[serde(default, rename = "entity", skip_serializing_if = "Vec::is_empty")]
-    entities: Vec<Entity>,
+    pub entities: Vec<Entity>,
 }
 
 impl Vmf {
@@ -72,14 +72,14 @@ impl Vmf {
 #[serde(default, expecting = "class versioninfo")]
 pub struct VersionInfo {
     #[serde(rename = "editorversion")]
-    editor_version: i32,
+    pub editor_version: i32,
     #[serde(rename = "editorbuild")]
-    editor_build: i32,
+    pub editor_build: i32,
     #[serde(rename = "mapversion")]
-    map_version: i32,
+    pub map_version: i32,
     #[serde(rename = "formatversion")]
-    format_version: i32,
-    prefab: bool,
+    pub format_version: i32,
+    pub prefab: bool,
 }
 
 impl Default for VersionInfo {
@@ -98,17 +98,17 @@ impl Default for VersionInfo {
 #[serde(expecting = "class visgroups")]
 pub struct VisGroups {
     #[serde(default, rename = "visgroup", skip_serializing_if = "Vec::is_empty")]
-    vis_groups: Vec<VisGroup>,
+    pub vis_groups: Vec<VisGroup>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class visgroup")]
 pub struct VisGroup {
-    name: String,
+    pub name: String,
     #[serde(rename = "visgroupid")]
-    vis_group_id: i32,
+    pub vis_group_id: i32,
     #[serde(with = "color")]
-    color: RGB8,
+    pub color: RGB8,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -116,15 +116,15 @@ pub struct VisGroup {
 #[serde(default, expecting = "class viewsettings")]
 pub struct ViewSettings {
     #[serde(rename = "bSnapToGrid")]
-    snap_to_grid: bool,
+    pub snap_to_grid: bool,
     #[serde(rename = "bShowGrid")]
-    show_grid: bool,
+    pub show_grid: bool,
     #[serde(rename = "bShowLogicalGrid")]
-    show_logical_grid: bool,
+    pub show_logical_grid: bool,
     #[serde(rename = "nGridSpacing")]
-    grid_spacing: i32,
+    pub grid_spacing: i32,
     #[serde(rename = "bShow3DGrid")]
-    show_3d_grid: bool,
+    pub show_3d_grid: bool,
 }
 
 impl Default for ViewSettings {
@@ -142,60 +142,61 @@ impl Default for ViewSettings {
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class world")]
 pub struct World {
-    id: i32,
+    pub id: i32,
     #[serde(rename = "mapversion")]
-    map_version: i32,
+    pub map_version: i32,
     #[serde(rename = "classname")]
-    class_name: String,
+    pub class_name: String,
     #[serde(rename = "skyname")]
-    sky_name: PathBuf,
+    pub sky_name: PathBuf,
     #[serde(flatten)]
-    properties: BTreeMap<UncasedString, String>,
+    pub properties: BTreeMap<UncasedString, String>,
     #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
-    solids: Vec<Solid>,
+    pub solids: Vec<Solid>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class solid")]
 pub struct Solid {
-    id: i32,
+    pub id: i32,
     #[serde(rename = "side", skip_serializing_if = "Vec::is_empty")]
-    sides: Vec<Side>,
-    editor: Editor,
+    pub sides: Vec<Side>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor: Option<Editor>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(expecting = "class side")]
 pub struct Side {
-    id: i32,
-    plane: Plane,
-    material: PathBuf,
+    pub id: i32,
+    pub plane: Plane,
+    pub material: PathBuf,
     #[serde(rename = "uaxis")]
-    u_axis: UvAxis,
+    pub u_axis: UvAxis,
     #[serde(rename = "vaxis")]
-    v_axis: UvAxis,
-    rotation: f64,
+    pub v_axis: UvAxis,
+    pub rotation: f64,
     #[serde(rename = "lightmapscale")]
-    light_map_scale: i32,
-    smoothing_groups: i32,
+    pub light_map_scale: i32,
+    pub smoothing_groups: i32,
     #[serde(rename = "dispinfo", skip_serializing_if = "Option::is_none")]
-    disp_info: Option<DispInfo>,
+    pub disp_info: Option<DispInfo>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct DispInfo {
-    power: u8,
+    pub power: u8,
     #[serde(rename = "startposition", with = "bracketed_vector3")]
-    start_position: Vector3<f64>,
-    elevation: f64,
-    subdiv: bool,
-    normals: Vector3DispData,
-    distances: NumDispData<f64>,
-    offsets: Vector3DispData,
-    offset_normals: Vector3DispData,
-    alphas: NumDispData<u8>,
-    triangle_tags: NumDispData<u8>,
-    allowed_verts: AllowedVerts,
+    pub start_position: Vector3<f64>,
+    pub elevation: f64,
+    pub subdiv: bool,
+    pub normals: Vector3DispData,
+    pub distances: NumDispData<f64>,
+    pub offsets: Vector3DispData,
+    pub offset_normals: Vector3DispData,
+    pub alphas: NumDispData<u8>,
+    pub triangle_tags: NumDispData<u8>,
+    pub allowed_verts: AllowedVerts,
 }
 
 impl DispInfo {
@@ -737,42 +738,42 @@ impl Default for AllowedVerts {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
 #[serde(expecting = "class editor")]
 pub struct Editor {
     #[serde(with = "color")]
-    color: RGB8,
+    pub color: RGB8,
     #[serde(default, rename = "groupid")]
-    group_id: i32,
+    pub group_id: i32,
     #[serde(default, rename = "visgroupshown")]
-    vis_group_shown: bool,
+    pub vis_group_shown: bool,
     #[serde(default, rename = "visgroupautoshown")]
-    vis_group_auto_shown: bool,
+    pub vis_group_auto_shown: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    comments: Option<String>,
+    pub comments: Option<String>,
     #[serde(
         rename = "logicalpos",
         skip_serializing_if = "Option::is_none",
         default,
         with = "bracketed_vector2::option"
     )]
-    logical_pos: Option<Vector2<f64>>,
+    pub logical_pos: Option<Vector2<f64>>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct Entity {
-    id: i32,
+    pub id: i32,
     #[serde(rename = "classname")]
-    class_name: String,
+    pub class_name: String,
     #[serde(rename = "spawnflags")]
-    spawn_flags: i32,
+    pub spawn_flags: i32,
     #[serde(flatten)]
-    properties: BTreeMap<UncasedString, String>,
-    connections: BTreeMap<UncasedString, String>,
+    pub properties: BTreeMap<UncasedString, String>,
+    pub connections: BTreeMap<UncasedString, String>,
     #[serde(rename = "solid", skip_serializing_if = "Vec::is_empty")]
-    solids: Vec<Solid>,
+    pub solids: Vec<Solid>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    editor: Option<Editor>,
+    pub editor: Option<Editor>,
 }
 
 impl<'de> Deserialize<'de> for Entity {

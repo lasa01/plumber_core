@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::{
     fs::{Path, PathBuf},
     vmt::loader::MaterialInfo,
@@ -39,7 +41,7 @@ pub struct BuiltSide {
 
 /// A plane defined by a normal vector and a distance to the origin.
 /// Also keeps a point on the plane for convenience.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct NdPlane {
     point: Point3<f64>,
     normal: Vector3<f64>,
@@ -48,10 +50,12 @@ struct NdPlane {
 
 impl NdPlane {
     fn from_plane(plane: &Plane, center: &Point3<f64>) -> Self {
+        // in vmf, plane points are in cw winding order,
+        // everywhere from now on, ccw winding order
         Self::from_points(
-            &(plane.0 - center).into(),
-            &(plane.1 - center).into(),
             &(plane.2 - center).into(),
+            &(plane.1 - center).into(),
+            &(plane.0 - center).into(),
         )
     }
 
@@ -76,6 +80,17 @@ struct SideBuilder<'a> {
     vertice_indices: Vec<usize>,
     vertice_uvs: Vec<(f64, f64)>,
     material_index: usize,
+}
+
+impl<'a> Debug for SideBuilder<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SideBuilder")
+            .field("plane", &self.plane)
+            .field("vertice_indices", &self.vertice_indices)
+            .field("vertice_uvs", &self.vertice_uvs)
+            .field("material_index", &self.material_index)
+            .finish()
+    }
 }
 
 impl<'a> SideBuilder<'a> {
@@ -221,7 +236,7 @@ impl<'a> SideBuilder<'a> {
                     plane: self.plane,
                     vertice_indices: Vec::with_capacity(3),
                     vertice_uvs: Vec::with_capacity(3),
-                    material_index: 0,
+                    material_index: self.material_index,
                 },
             );
 
@@ -296,6 +311,17 @@ struct SolidBuilder<'a> {
     sides: Vec<SideBuilder<'a>>,
     vertices: Vec<Point3<f64>>,
     materials: Vec<PathBuf>,
+}
+
+impl<'a> Debug for SolidBuilder<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SolidBuilder")
+            .field("center", &self.center)
+            .field("sides", &self.sides)
+            .field("vertices", &self.vertices)
+            .field("materials", &self.materials)
+            .finish()
+    }
 }
 
 impl<'a> SolidBuilder<'a> {
@@ -380,12 +406,13 @@ impl<'a> SolidBuilder<'a> {
                     .filter(|(_, &vi)| filter_plane.distance_to_point(&vertices[vi]) >= 0.0)
                     .map(|(i, &vi)| {
                         let to_candidate: Vector3<f64> = (vertices[vi] - center).normalize();
-                        let angle = to_current.dot(&to_candidate);
-                        (i, angle)
+                        let dot = to_current.dot(&to_candidate);
+                        (i, dot)
                     })
-                    .min_by_key(|(_, d)| FloatOrd(*d))
+                    // max because smaller angle -> bigger dot product
+                    .max_by_key(|(_, d)| FloatOrd(*d))
                 {
-                    builder.vertice_indices.swap(i + 1, next_idx);
+                    builder.vertice_indices.swap(i + 1, i + 1 + next_idx);
                 }
             }
 
@@ -534,11 +561,13 @@ impl Solid {
 
 #[cfg(test)]
 mod tests {
+    use crate::vdf;
+
     use super::*;
     use approx::assert_relative_eq;
 
     #[test]
-    fn test_planes() {
+    fn plane_creation() {
         let plane_1 = NdPlane::from_points(
             &Point3::new(-1.0, 0.0, 0.0),
             &Point3::new(0.0, 3.0, 0.0),
@@ -554,5 +583,230 @@ mod tests {
 
         let distance = plane_1.distance_to_point(&Point3::new(0.0, -2.0, 0.0));
         assert_relative_eq!(distance, 1.428_571_428_571_428, epsilon = EPSILON);
+    }
+
+    #[test]
+    fn plane_intersection() {
+        let a = Point3::new(1.0, 2.0, -1.0);
+        let b = Point3::new(3.0, -2.0, 1.0);
+        let c = Point3::new(2.0, 3.0, 0.0);
+        let d = Point3::new(-3.0, 2.0, 4.0);
+
+        let plane_1 = NdPlane::from_points(&a, &b, &c);
+        let plane_2 = NdPlane::from_points(&a, &c, &d);
+        let plane_3 = NdPlane::from_points(&c, &b, &d);
+
+        let intersection = intersect_planes(&plane_1, &plane_2, &plane_3).unwrap();
+
+        assert_relative_eq!(intersection, c, epsilon = EPSILON);
+    }
+
+    #[test]
+    fn center_calculation() {
+        let points = vec![
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 1.0),
+            Point3::new(-2.0, 0.0, 2.0),
+            Point3::new(0.0, -2.0, 1.0),
+        ];
+
+        let center = polygon_center(points.into_iter());
+
+        assert_relative_eq!(center, Point3::new(0.0, 0.0, 1.0), epsilon = EPSILON);
+    }
+
+    #[test]
+    fn normal_calculation() {
+        let points = vec![
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 1.0),
+            Point3::new(-2.0, 0.0, 2.0),
+            Point3::new(0.0, -2.0, 1.0),
+        ];
+
+        let normal = polygon_normal(points.into_iter());
+
+        assert_relative_eq!(
+            normal,
+            Vector3::new(0.447_213_595, 0.0, 0.894_427_191),
+            epsilon = EPSILON
+        );
+    }
+
+    fn get_test_solid() -> Solid {
+        let input = r#"
+            "id" "3"
+            side
+            {
+                "id" "7"
+                "plane" "(-960 64 64) (-832 64 64) (-832 -64 64)"
+                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "uaxis" "[1 0 0 0] 0.25"
+                "vaxis" "[0 -1 0 0] 0.25"
+                "rotation" "0"
+                "lightmapscale" "16"
+                "smoothing_groups" "0"
+            }
+            side
+            {
+                "id" "8"
+                "plane" "(-960 -64 0) (-832 -64 0) (-832 64 0)"
+                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "uaxis" "[1 0 0 0] 0.25"
+                "vaxis" "[0 -1 0 0] 0.25"
+                "rotation" "0"
+                "lightmapscale" "16"
+                "smoothing_groups" "0"
+            }
+            side
+            {
+                "id" "9"
+                "plane" "(-960 64 64) (-960 -64 64) (-960 -64 0)"
+                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "uaxis" "[0 1 0 0] 0.25"
+                "vaxis" "[0 0 -1 0] 0.25"
+                "rotation" "0"
+                "lightmapscale" "16"
+                "smoothing_groups" "0"
+            }
+            side
+            {
+                "id" "10"
+                "plane" "(-832 64 0) (-832 -64 0) (-832 -64 64)"
+                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "uaxis" "[0 1 0 0] 0.25"
+                "vaxis" "[0 0 -1 0] 0.25"
+                "rotation" "0"
+                "lightmapscale" "16"
+                "smoothing_groups" "0"
+            }
+            side
+            {
+                "id" "11"
+                "plane" "(-832 64 64) (-960 64 64) (-960 64 0)"
+                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "uaxis" "[1 0 0 0] 0.25"
+                "vaxis" "[0 0 -1 0] 0.25"
+                "rotation" "0"
+                "lightmapscale" "16"
+                "smoothing_groups" "0"
+            }
+            side
+            {
+                "id" "12"
+                "plane" "(-832 -64 0) (-960 -64 0) (-960 -64 64)"
+                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "uaxis" "[1 0 0 0] 0.25"
+                "vaxis" "[0 0 -1 0] 0.25"
+                "rotation" "0"
+                "lightmapscale" "16"
+                "smoothing_groups" "0"
+            }
+            editor
+            {
+                "color" "0 177 198"
+                "visgroupshown" "1"
+                "visgroupautoshown" "1"
+            }
+        "#;
+
+        vdf::from_str(input).unwrap()
+    }
+
+    fn assert_face_sorted(face: &[usize], sorted: &[usize], tag: &'static str) {
+        let mut sorted = sorted.to_vec();
+        assert_eq!(
+            face.len(),
+            sorted.len(),
+            "face {} has wrong vertice amount",
+            tag
+        );
+
+        for _ in 0..face.len() {
+            if face.iter().zip(&sorted).all(|(&v_i, &s_i)| v_i == s_i) {
+                return;
+            }
+            sorted.rotate_right(1);
+        }
+
+        assert_eq!(face, sorted, "face {} is not sorted", tag);
+    }
+
+    #[test]
+    fn solid_building() {
+        let solid = get_test_solid();
+        let mut builder = SolidBuilder::new(&solid);
+        builder.intersect_sides();
+        builder.remove_invalid_sides();
+        builder.recenter();
+
+        let expected_vertices = vec![
+            Point3::new(-64.0, 64.0, 32.0),
+            Point3::new(-64.0, -64.0, 32.0),
+            Point3::new(64.0, 64.0, 32.0),
+            Point3::new(64.0, -64.0, 32.0),
+            Point3::new(-64.0, 64.0, -32.0),
+            Point3::new(-64.0, -64.0, -32.0),
+            Point3::new(64.0, 64.0, -32.0),
+            Point3::new(64.0, -64.0, -32.0),
+        ];
+
+        let mut is = vec![0; expected_vertices.len()];
+
+        assert_eq!(builder.vertices.len(), expected_vertices.len());
+
+        for (i, vertice) in builder.vertices.iter().enumerate() {
+            assert!(
+                expected_vertices.iter().enumerate().any(|(j, v)| {
+                    if relative_eq!(v, vertice, epsilon = EPSILON) {
+                        is[i] = j;
+                        true
+                    } else {
+                        false
+                    }
+                }),
+                "unexpected vertice {}",
+                vertice
+            );
+        }
+
+        assert_relative_eq!(
+            builder.center,
+            Point3::new(-896.0, 0.0, 32.0),
+            epsilon = EPSILON
+        );
+
+        builder.sort_vertices();
+
+        assert_face_sorted(
+            &builder.sides[0].vertice_indices,
+            &[is[1], is[3], is[2], is[0]],
+            "+z",
+        );
+        assert_face_sorted(
+            &builder.sides[1].vertice_indices,
+            &[is[6], is[7], is[5], is[4]],
+            "-z",
+        );
+        assert_face_sorted(
+            &builder.sides[2].vertice_indices,
+            &[is[4], is[5], is[1], is[0]],
+            "-x",
+        );
+        assert_face_sorted(
+            &builder.sides[3].vertice_indices,
+            &[is[3], is[7], is[6], is[2]],
+            "+x",
+        );
+        assert_face_sorted(
+            &builder.sides[4].vertice_indices,
+            &[is[2], is[6], is[4], is[0]],
+            "+y",
+        );
+        assert_face_sorted(
+            &builder.sides[5].vertice_indices,
+            &[is[5], is[7], is[3], is[1]],
+            "-y",
+        );
     }
 }
