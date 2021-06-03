@@ -698,6 +698,11 @@ impl<'a> DirEntry<'a> {
         &self.path
     }
 
+    #[must_use]
+    pub fn real_parent(&self) -> &StdPath {
+        self.search_path.path()
+    }
+
     /// Opens the entry if it is a file.
     ///
     /// # Errors
@@ -782,7 +787,6 @@ impl<'a> Seek for GameFile<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[test]
     fn test_gameinfo_deserialization() {
@@ -851,52 +855,5 @@ mod tests {
                 }
             }
         )
-    }
-
-    /// Fails if steam is not installed
-    #[cfg(feature = "steam")]
-    #[test]
-    #[ignore]
-    fn open_discovered_filesystems() {
-        use crate::steam::Libraries;
-
-        let libraries = Libraries::discover().unwrap();
-        for filesystem in libraries.apps().source().filesystems().map(Result::unwrap) {
-            eprintln!("filesystem: {:?}", filesystem);
-            filesystem.open().unwrap();
-        }
-    }
-
-    /// Fails if steam is not installed
-    #[cfg(feature = "steam")]
-    #[test]
-    #[ignore]
-    fn opened_discovered_filesystems_readdir() {
-        use crate::steam::Libraries;
-
-        let libraries = Libraries::discover().unwrap();
-        for filesystem in libraries.apps().source().filesystems().map(Result::unwrap) {
-            eprintln!("filesystem: {:?}", filesystem.name);
-            let opened = filesystem.open().unwrap();
-            let mut encountered = HashSet::new();
-            recurse_readdir(
-                opened.read_dir(Path::from_str("").unwrap()),
-                &mut encountered,
-            );
-        }
-    }
-
-    fn recurse_readdir(readdir: ReadDir, encountered: &mut HashSet<(StdPathBuf, PathBuf)>) {
-        // check that recursing yields no duplicates
-        for entry in readdir.map(Result::unwrap) {
-            let search_path = entry.search_path.path().to_path_buf();
-            let entry_path = entry.path().to_path_buf();
-            if entry.entry_type().is_directory() {
-                recurse_readdir(entry.read_dir(), encountered);
-            }
-            if let Some(old) = encountered.replace((search_path, entry_path)) {
-                panic!("readdir encountered duplicate: {:?}", old);
-            }
-        }
     }
 }

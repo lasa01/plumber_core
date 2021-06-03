@@ -513,27 +513,4 @@ mod tests {
             })
         )
     }
-
-    /// Fails if steam is not installed
-    #[test]
-    #[ignore]
-    fn test_library_discovery() {
-        let libraries = Libraries::discover().unwrap();
-        eprintln!("discovered libraries: {:?}", libraries.paths);
-        let apps: Vec<App> = libraries.apps().map(Result::unwrap).collect();
-        eprintln!("discovered apps: {:?}", apps);
-        let source_apps: Vec<App> = libraries.apps().source().map(Result::unwrap).collect();
-        eprintln!("discovered source apps: {:?}", source_apps);
-    }
-
-    /// Fails if steam is not installed
-    #[cfg(feature = "fs")]
-    #[test]
-    #[ignore]
-    fn test_filesystem_discovery() {
-        let libraries = Libraries::discover().unwrap();
-        for filesystem in libraries.apps().source().filesystems().map(Result::unwrap) {
-            eprintln!("filesystem: {:?}", filesystem);
-        }
-    }
 }
