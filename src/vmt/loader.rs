@@ -87,7 +87,7 @@ pub trait MaterialBuilder: Sized {
         // get material dimensions
         let (width, height) = match get_dimension_reference(&vmt.shader) {
             Some(texture_path) => {
-                let texture_path = texture_path.to_owned().into();
+                let texture_path = texture_path.clone().into();
                 vmt.load_texture(texture_path)
                     .map(|info| (info.width, info.height))
             }
