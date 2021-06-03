@@ -27,8 +27,8 @@ type UncasedString = Uncased<'static>;
 /// # Errors
 ///
 /// Returns `Err` if the deserialization fails.
-pub fn from_str(input: &str) -> vdf::Result<Vmf> {
-    Vmf::from_str(input)
+pub fn from_bytes(input: &[u8]) -> vdf::Result<Vmf> {
+    Vmf::from_bytes(input)
 }
 
 /// # Errors
@@ -56,8 +56,8 @@ impl Vmf {
     /// # Errors
     ///
     /// Returns `Err` if the deserialization fails.
-    pub fn from_str(input: &str) -> vdf::Result<Self> {
-        vdf::from_str(input)
+    pub fn from_bytes(input: &[u8]) -> vdf::Result<Self> {
+        vdf::from_bytes(input)
     }
 
     /// # Errors
