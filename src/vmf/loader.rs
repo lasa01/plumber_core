@@ -125,6 +125,97 @@ impl<'a> SideBuilder<'a> {
             .map(|info| 2 * (info.dimension() - 1).pow(2))
     }
 
+    fn sort_vertices(&mut self, vertices: &mut Vec<Point3<f64>>) {
+        let center: Point3<f64> = polygon_center(self.vertice_indices.iter().map(|&i| vertices[i]));
+
+        for i in 0..self.vertice_indices.len() - 2 {
+            let vertice = &vertices[self.vertice_indices[i]];
+            let to_current: Vector3<f64> = (vertice - center).normalize();
+            let filter_plane =
+                NdPlane::from_points(&vertice, &center, &(center + self.plane.normal));
+
+            if let Some((next_idx, _)) = self.vertice_indices[i + 1..]
+                .iter()
+                .enumerate()
+                .filter(|(_, &vi)| filter_plane.distance_to_point(&vertices[vi]) >= 0.0)
+                .map(|(i, &vi)| {
+                    let to_candidate: Vector3<f64> = (vertices[vi] - center).normalize();
+                    let dot = to_current.dot(&to_candidate);
+                    (i, dot)
+                })
+                // max because smaller angle -> bigger dot product
+                .max_by_key(|(_, d)| FloatOrd(*d))
+            {
+                self.vertice_indices.swap(i + 1, i + 1 + next_idx);
+            }
+        }
+
+        // reverse if the normal is facing the wrong way
+        if polygon_normal(self.vertice_indices.iter().map(|i| vertices[*i])).dot(&self.plane.normal)
+            < 0.0
+        {
+            self.vertice_indices.reverse();
+        }
+    }
+
+    fn build_uvs(
+        &mut self,
+        vertices: &[Point3<f64>],
+        get_material_info: &mut impl FnMut(&Path) -> MaterialInfo,
+    ) {
+        let material_info = get_material_info(&self.side.material);
+        let texture_width = f64::from(material_info.width());
+        let texture_height = f64::from(material_info.height());
+        self.vertice_uvs.reserve_exact(self.vertice_indices.len());
+        let u_axis = self.side.u_axis;
+        let v_axis = self.side.v_axis;
+        for &vi in &self.vertice_indices {
+            let u = vertices[vi].coords.dot(&u_axis.axis) / (texture_width * u_axis.scale)
+                + u_axis.translation / texture_width;
+            let v = vertices[vi].coords.dot(&v_axis.axis) / (texture_height * v_axis.scale)
+                + v_axis.translation / texture_height;
+            self.vertice_uvs.push((u, v));
+        }
+
+        // normalize
+        let mut nearest_u = f64::MAX;
+        let mut nearest_v = f64::MAX;
+        for (u, _) in &self.vertice_uvs {
+            if u.abs() <= 1.0 {
+                nearest_u = 0.0;
+                break;
+            }
+            if u.abs() < nearest_u.abs() {
+                nearest_u = *u;
+            }
+        }
+        nearest_u = if nearest_u > 0.0 {
+            nearest_u.floor()
+        } else {
+            nearest_u.ceil()
+        };
+
+        for (_, v) in &self.vertice_uvs {
+            if v.abs() <= 1.0 {
+                nearest_v = 0.0;
+                break;
+            }
+            if v.abs() < nearest_v.abs() {
+                nearest_v = *v;
+            }
+        }
+        nearest_v = if nearest_v > 0.0 {
+            nearest_v.floor()
+        } else {
+            nearest_v.ceil()
+        };
+
+        for (u, v) in &mut self.vertice_uvs {
+            *u -= nearest_u;
+            *v -= nearest_v;
+        }
+    }
+
     fn verify_displacement(&self) -> Result<(), SolidError> {
         let side_vertices_n = self.vertice_indices.len();
         if side_vertices_n != 4 {
@@ -391,97 +482,14 @@ impl<'a> SolidBuilder<'a> {
     fn sort_vertices(&mut self) {
         let vertices = &mut self.vertices;
         for builder in &mut self.sides {
-            let center: Point3<f64> =
-                polygon_center(builder.vertice_indices.iter().map(|&i| vertices[i]));
-
-            for i in 0..builder.vertice_indices.len() - 2 {
-                let vertice = &vertices[builder.vertice_indices[i]];
-                let to_current: Vector3<f64> = (vertice - center).normalize();
-                let filter_plane =
-                    NdPlane::from_points(&vertice, &center, &(center + builder.plane.normal));
-
-                if let Some((next_idx, _)) = builder.vertice_indices[i + 1..]
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, &vi)| filter_plane.distance_to_point(&vertices[vi]) >= 0.0)
-                    .map(|(i, &vi)| {
-                        let to_candidate: Vector3<f64> = (vertices[vi] - center).normalize();
-                        let dot = to_current.dot(&to_candidate);
-                        (i, dot)
-                    })
-                    // max because smaller angle -> bigger dot product
-                    .max_by_key(|(_, d)| FloatOrd(*d))
-                {
-                    builder.vertice_indices.swap(i + 1, i + 1 + next_idx);
-                }
-            }
-
-            // reverse if the normal is facing the wrong way
-            if polygon_normal(builder.vertice_indices.iter().map(|i| vertices[*i]))
-                .dot(&builder.plane.normal)
-                < 0.0
-            {
-                builder.vertice_indices.reverse();
-            }
+            builder.sort_vertices(vertices);
         }
     }
 
     fn build_uvs(&mut self, mut get_material_info: impl FnMut(&Path) -> MaterialInfo) {
         let vertices = &self.vertices;
         for builder in &mut self.sides {
-            let material_info = get_material_info(&builder.side.material);
-            let texture_width = f64::from(material_info.width());
-            let texture_height = f64::from(material_info.height());
-            builder
-                .vertice_uvs
-                .reserve_exact(builder.vertice_indices.len());
-            let u_axis = builder.side.u_axis;
-            let v_axis = builder.side.v_axis;
-            for &vi in &builder.vertice_indices {
-                let u = vertices[vi].coords.dot(&u_axis.axis) / (texture_width * u_axis.scale)
-                    + u_axis.translation / texture_width;
-                let v = vertices[vi].coords.dot(&v_axis.axis) / (texture_height * v_axis.scale)
-                    + v_axis.translation / texture_height;
-                builder.vertice_uvs.push((u, v));
-            }
-
-            // normalize
-            let mut nearest_u = f64::MAX;
-            let mut nearest_v = f64::MAX;
-            for (u, _) in &builder.vertice_uvs {
-                if u.abs() <= 1.0 {
-                    nearest_u = 0.0;
-                    break;
-                }
-                if u.abs() < nearest_u.abs() {
-                    nearest_u = *u;
-                }
-            }
-            nearest_u = if nearest_u > 0.0 {
-                nearest_u.floor()
-            } else {
-                nearest_u.ceil()
-            };
-
-            for (_, v) in &builder.vertice_uvs {
-                if v.abs() <= 1.0 {
-                    nearest_v = 0.0;
-                    break;
-                }
-                if v.abs() < nearest_v.abs() {
-                    nearest_v = *v;
-                }
-            }
-            nearest_v = if nearest_v > 0.0 {
-                nearest_v.floor()
-            } else {
-                nearest_v.ceil()
-            };
-
-            for (u, v) in &mut builder.vertice_uvs {
-                *u -= nearest_u;
-                *v -= nearest_v;
-            }
+            builder.build_uvs(vertices, &mut get_material_info);
         }
     }
 
