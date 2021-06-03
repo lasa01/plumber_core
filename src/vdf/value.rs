@@ -34,13 +34,13 @@ impl PartialEq<String> for Value {
 }
 
 impl Value {
-    /// Returns `true` if the value is [`String`].
+    /// Returns `true` if the value is a string.
     #[must_use]
     pub fn is_string(&self) -> bool {
         matches!(self, Self::String(..))
     }
 
-    /// Returns `true` if the value is [`Class`].
+    /// Returns `true` if the value is a class.
     #[must_use]
     pub fn is_class(&self) -> bool {
         matches!(self, Self::Class(..))

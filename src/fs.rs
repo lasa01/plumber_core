@@ -161,7 +161,7 @@ pub enum OpenErrorType {
     Vpk(#[from] vpk::DirectoryReadError),
 }
 
-/// A search path in a [`Game`].
+/// A search path in a [`FileSystem`].
 #[derive(Debug, PartialEq)]
 pub enum SearchPath {
     Vpk(StdPathBuf),
@@ -633,13 +633,13 @@ pub enum DirEntryType {
 }
 
 impl DirEntryType {
-    /// Returns `true` if the entry is a [`File`].
+    /// Returns `true` if the entry is a file.
     #[must_use]
     pub fn is_file(&self) -> bool {
         matches!(self, Self::File)
     }
 
-    /// Returns `true` if the entry is a [`Directory`].
+    /// Returns `true` if the entry is a directory.
     #[must_use]
     pub fn is_directory(&self) -> bool {
         matches!(self, Self::Directory)
