@@ -22,7 +22,7 @@ use serde::{
     Deserialize,
 };
 use thiserror::Error;
-use uncased::UncasedStr;
+use uncased::AsUncased;
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(case_insensitive)]
@@ -238,7 +238,7 @@ impl FileSystem {
         let mut search_paths = Vec::new();
 
         for path in &game_info.file_system.search_paths.game_search_paths {
-            let path = UncasedStr::new(path);
+            let path = path.as_uncased();
             let path = if path.starts_with("|gameinfo_path|") {
                 match path[15..].as_str() {
                     "." => game_info_directory.into(),

@@ -6,7 +6,7 @@ use std::{
 
 use image::RgbaImage;
 use thiserror::Error;
-use uncased::UncasedStr;
+use uncased::AsUncased;
 use vtflib::{BoundVtfFile, VtfFile, VtfGuard, VtfLib};
 
 use crate::{
@@ -115,7 +115,7 @@ fn is_nodraw(material_path: &Path, shader: &Shader) -> bool {
         || NODRAW_PARAMS.iter().any(|p| {
             shader
                 .parameters
-                .get(UncasedStr::new(p))
+                .get(p.as_uncased())
                 .map_or(false, |v| v == "1")
         });
     no_draw
@@ -124,7 +124,7 @@ fn is_nodraw(material_path: &Path, shader: &Shader) -> bool {
 fn get_dimension_reference(shader: &Shader) -> Option<&String> {
     DIMENSION_REFERENCE_TEXTURES
         .iter()
-        .find_map(|parameter| shader.parameters.get(UncasedStr::new(parameter)))
+        .find_map(|parameter| shader.parameters.get(parameter.as_uncased()))
 }
 
 /// The default material builder.
