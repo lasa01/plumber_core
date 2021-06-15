@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
-use nalgebra::Vector3;
+use itertools::Itertools;
+use nalgebra::{Point3, Vector3};
 use rgb::RGB8;
 use thiserror::Error;
 use uncased::AsUncased;
@@ -132,27 +133,25 @@ pub trait BaseEntity {
         parameter: &'static str,
     ) -> Result<Option<RGB8>, EntityParseError> {
         if let Some(value) = self.entity().properties.get(parameter.as_uncased()) {
-            let mut split = value.split_ascii_whitespace();
+            let (r, g, b) = value
+                .split_ascii_whitespace()
+                .map(|s| {
+                    s.parse::<u8>()
+                        .map_err(|_| EntityParseError::InvalidParameterValue {
+                            parameter,
+                            reason: "contains an invalid integer (0-255)",
+                        })
+                })
+                .next_tuple()
+                .ok_or(EntityParseError::InvalidParameterValue {
+                    parameter,
+                    reason: "contains less than 3 values",
+                })?;
 
-            let mut next_color = || {
-                let value = split
-                    .next()
-                    .ok_or(EntityParseError::InvalidParameterValue {
-                        parameter,
-                        reason: "contains less than 3 values",
-                    })?;
-
-                value
-                    .parse::<u8>()
-                    .map_err(|_| EntityParseError::InvalidParameterValue {
-                        parameter,
-                        reason: "contains an invalid integer (0-255)",
-                    })
-            };
             Ok(Some(RGB8 {
-                r: (next_color)()?,
-                g: (next_color)()?,
-                b: (next_color)()?,
+                r: r?,
+                g: g?,
+                b: b?,
             }))
         } else {
             Ok(None)
@@ -167,29 +166,22 @@ pub trait BaseEntity {
         parameter: &'static str,
     ) -> Result<Option<Vector3<f64>>, EntityParseError> {
         if let Some(value) = self.entity().properties.get(parameter.as_uncased()) {
-            let mut split = value.split_ascii_whitespace();
+            let (x, y, z) = value
+                .split_ascii_whitespace()
+                .map(|s| {
+                    s.parse::<f64>()
+                        .map_err(|_| EntityParseError::InvalidParameterValue {
+                            parameter,
+                            reason: "contains an invalid float",
+                        })
+                })
+                .next_tuple()
+                .ok_or(EntityParseError::InvalidParameterValue {
+                    parameter,
+                    reason: "contains less than 3 values",
+                })?;
 
-            let mut next_vec = || {
-                let value = split
-                    .next()
-                    .ok_or(EntityParseError::InvalidParameterValue {
-                        parameter,
-                        reason: "contains less than 3 values",
-                    })?;
-
-                value
-                    .parse::<f64>()
-                    .map_err(|_| EntityParseError::InvalidParameterValue {
-                        parameter,
-                        reason: "contains an invalid float",
-                    })
-            };
-
-            Ok(Some(nalgebra::Vector3::new(
-                (next_vec)()?,
-                (next_vec)()?,
-                (next_vec)()?,
-            )))
+            Ok(Some(nalgebra::Vector3::new(x?, y?, z?)))
         } else {
             Ok(None)
         }
@@ -758,7 +750,7 @@ impl<'a> Overlay<'a> {
                 |s| {
                     s.split_ascii_whitespace()
                         .map(str::parse)
-                        .collect::<Result<_, _>>()
+                        .try_collect()
                         .map_err(|_| EntityParseError::InvalidParameterValue {
                             parameter: "sides",
                             reason: "contains an invalid int",
@@ -823,30 +815,24 @@ impl<'a> Overlay<'a> {
             start_v,
             end_u,
             end_v,
-            basis_origin,
+            basis_origin: basis_origin.into(),
             basis_u,
             basis_v,
             basis_normal,
-            uv_0,
-            uv_1,
-            uv_2,
-            uv_3,
+            uvs: [uv_0.into(), uv_1.into(), uv_2.into(), uv_3.into()],
         })
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct OverlayUvInfo {
-    start_u: f64,
-    start_v: f64,
-    end_u: f64,
-    end_v: f64,
-    basis_origin: Vector3<f64>,
-    basis_u: Vector3<f64>,
-    basis_v: Vector3<f64>,
-    basis_normal: Vector3<f64>,
-    uv_0: Vector3<f64>,
-    uv_1: Vector3<f64>,
-    uv_2: Vector3<f64>,
-    uv_3: Vector3<f64>,
+    pub start_u: f64,
+    pub start_v: f64,
+    pub end_u: f64,
+    pub end_v: f64,
+    pub basis_origin: Point3<f64>,
+    pub basis_u: Vector3<f64>,
+    pub basis_v: Vector3<f64>,
+    pub basis_normal: Vector3<f64>,
+    pub uvs: [Point3<f64>; 4],
 }
