@@ -161,8 +161,18 @@ impl<'a> SideBuilder<'a> {
     fn build_uvs(
         &mut self,
         vertices: &[Point3<f64>],
+        materials: &mut Vec<PathBuf>,
         get_material_info: &mut impl FnMut(&Path) -> MaterialInfo,
     ) {
+        self.material_index = materials
+            .iter()
+            .position(|p| p == &self.side.material)
+            .unwrap_or_else(|| {
+                let index = materials.len();
+                materials.push(self.side.material.clone());
+                index
+            });
+
         let material_info = get_material_info(&self.side.material);
         let texture_width = f64::from(material_info.width());
         let texture_height = f64::from(material_info.height());
