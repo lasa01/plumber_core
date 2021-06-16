@@ -11,9 +11,10 @@ use vtflib::{BoundVtfFile, VtfFile, VtfGuard, VtfLib};
 
 use crate::{
     fs::{OpenFileSystem, Path, PathBuf},
-    vdf,
     vmt::Vmt,
 };
+
+use plumber_vdf as vdf;
 
 use super::{Shader, ShaderResolveError};
 

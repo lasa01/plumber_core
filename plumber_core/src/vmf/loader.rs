@@ -1046,7 +1046,7 @@ impl<'a> Overlay<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::vdf;
+    use plumber_vdf as vdf;
 
     use super::*;
     use approx::assert_relative_eq;

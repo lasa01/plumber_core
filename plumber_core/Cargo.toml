@@ -1,0 +1,44 @@
+[package]
+name = "plumber_core"
+description = "Everything you need to work with Valve's Source Engine files"
+version = "0.1.0"
+repository = "https://github.com/lasa01/plumber_core"
+readme = "README.md"
+keywords = ["valve", "source", "vdf", "vmf", "vmt"]
+categories = ["parser-implementations"]
+authors = ["Lassi Säike"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["steam", "vmf", "vmt"]
+steam = ["winreg", "home", "phf"]
+fs = []
+vmt = ["fs", "vtflib", "image"]
+vmf = ["fs", "vmt"]
+
+[dependencies]
+plumber_vdf = { version = "0.1.0", path = "../plumber_vdf" }
+plumber_vpk = { version = "0.1.0", path = "../plumber_vpk", features = ["serde"] }
+approx = "0.4.0"
+float-ord = "0.3.1"
+itertools = "0.10.0"
+nalgebra = "0.25.4"
+ndarray = "0.15.1"
+rgb = "0.8.27"
+serde = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
+serde_derive = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
+thiserror = "1.0.24"
+uncased = { version = "0.9.6", features = ["with-serde-alloc"] }
+phf = { version = "0.8.0", features = ["macros"], optional = true }
+vtflib = { version = "0.2.0", optional = true, features = ["static"] }
+image = { version = "0.23.14", optional = true, default-features = false }
+nom = "6.1.2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = { version = "0.8", optional = true }
+
+[target.'cfg(not(windows))'.dependencies]
+home = { version = "0.5.3", optional = true }

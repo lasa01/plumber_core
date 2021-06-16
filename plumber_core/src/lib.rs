@@ -14,10 +14,7 @@ pub mod fs;
 mod parsers;
 #[cfg(feature = "steam")]
 pub mod steam;
-pub mod vdf;
 #[cfg(feature = "vmf")]
 pub mod vmf;
 #[cfg(feature = "vmt")]
 pub mod vmt;
-#[cfg(feature = "vpk")]
-pub mod vpk;

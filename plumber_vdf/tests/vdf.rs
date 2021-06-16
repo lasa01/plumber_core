@@ -3,8 +3,6 @@ use std::collections::BTreeMap;
 use maplit::btreemap;
 use serde_derive::Deserialize;
 
-use valveflow::vdf;
-
 #[derive(Deserialize, PartialEq, Debug)]
 struct Key7 {}
 
@@ -53,9 +51,9 @@ struct Test {
 
 #[test]
 fn test_vdf_parse() {
-    let input = include_str!("vdf/test.vdf");
+    let input = include_str!("test.vdf");
     assert_eq!(
-        vdf::from_str::<Test>(input).unwrap(),
+        plumber_vdf::from_str::<Test>(input).unwrap(),
         Test {
             key1: "value1".into(),
             key2: "value2".into(),

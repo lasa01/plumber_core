@@ -1,5 +1,5 @@
 #![cfg(feature = "vmf")]
-use valveflow::vmf::Vmf;
+use plumber_core::vmf::Vmf;
 
 #[test]
 fn test_vmf_roundtrip() {

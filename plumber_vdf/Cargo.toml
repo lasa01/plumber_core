@@ -1,0 +1,23 @@
+[package]
+name = "plumber_vdf"
+description = "Very forgiving serde vdf implementation."
+version = "0.1.0"
+repository = "https://github.com/lasa01/plumber_core"
+readme = "README.md"
+keywords = ["valve", "source", "vdf"]
+categories = ["parser-implementations"]
+authors = ["Lassi Säike"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytecount = "0.6.2"
+nom = "6.1.2"
+serde = "1.0.120"
+thiserror = "1.0.24"
+
+[dev-dependencies]
+maplit = "1.0.2"
+serde_derive = "1.0.120"

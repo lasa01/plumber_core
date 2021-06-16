@@ -1,3 +1,7 @@
+#![deny(clippy::all, clippy::pedantic, clippy::cargo)]
+// conflicts with serde's convention of to_string etc. methods
+#![allow(clippy::should_implement_trait)]
+
 mod de;
 mod error;
 mod escape;

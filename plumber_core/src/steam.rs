@@ -4,7 +4,7 @@ use std::{
     slice::Iter,
 };
 
-use crate::vdf;
+use plumber_vdf as vdf;
 
 use phf::phf_set;
 use serde::{

@@ -1,10 +1,10 @@
 #![cfg(feature = "steam")]
 
-use std::{collections::HashSet, path::PathBuf as StdPathBuf};
-use valveflow::{
+use plumber_core::{
     fs::{Path, PathBuf},
     steam::{App, Libraries},
 };
+use std::{collections::HashSet, path::PathBuf as StdPathBuf};
 
 /// Fails if steam is not installed
 #[test]
@@ -52,14 +52,14 @@ fn opened_discovered_filesystems_readdir() {
         let opened = filesystem.open().unwrap();
         let mut encountered = HashSet::new();
         recurse_readdir(
-            opened.read_dir(Path::from_str("").unwrap()),
+            opened.read_dir(Path::try_from_str("").unwrap()),
             &mut encountered,
         );
     }
 }
 
 #[cfg(feature = "fs")]
-use valveflow::fs::ReadDir;
+use plumber_core::fs::ReadDir;
 
 #[cfg(feature = "fs")]
 fn recurse_readdir(readdir: ReadDir, encountered: &mut HashSet<(StdPathBuf, PathBuf)>) {

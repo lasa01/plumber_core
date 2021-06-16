@@ -8,10 +8,9 @@ use std::{
     slice,
 };
 
-use crate::{
-    vdf,
-    vpk::{self, DirectoryReadError},
-};
+use plumber_vdf as vdf;
+use plumber_vpk as vpk;
+use vpk::DirectoryReadError;
 pub use vpk::{Path, PathBuf};
 
 #[cfg(feature = "steam")]

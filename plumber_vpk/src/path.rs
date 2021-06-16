@@ -1,5 +1,6 @@
 use std::{borrow::Borrow, ops::Deref, path::PathBuf as StdPathBuf};
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// A slice of a vpk path.
@@ -19,7 +20,7 @@ impl Path {
 
     /// Checks that the str is lowercase and doesn't contain backslashes.
     #[must_use]
-    pub fn from_str(str: &str) -> Option<&Self> {
+    pub fn try_from_str(str: &str) -> Option<&Self> {
         if str.chars().any(|c| c.is_ascii_uppercase()) {
             return None;
         }
@@ -309,6 +310,7 @@ impl PartialEq<Path> for PathBuf {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for PathBuf {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -319,6 +321,7 @@ impl<'de> Deserialize<'de> for PathBuf {
     }
 }
 
+#[cfg(feature = "serde")]
 impl Serialize for PathBuf {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

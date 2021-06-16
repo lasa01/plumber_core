@@ -1,3 +1,8 @@
+#![deny(clippy::all, clippy::pedantic, clippy::cargo)]
+// this is intentional
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+
 mod path;
 
 pub use path::{Path, PathBuf};
@@ -650,7 +655,6 @@ mod tests {
     fn file_full() {
         let path = StdPath::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
-            .join("vpk")
             .join("test.txt");
 
         let entry = Entry {

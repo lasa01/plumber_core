@@ -1,9 +1,9 @@
 pub mod loader;
 
-use crate::{
-    fs::{self, Path, PathBuf},
-    vdf::{self, Value},
-};
+use crate::fs::{self, Path, PathBuf};
+
+use plumber_vdf as vdf;
+use vdf::Value;
 
 use std::{collections::BTreeMap, fmt, io};
 
@@ -360,7 +360,7 @@ mod tests {
                 Ok(filesystem) => {
                     eprintln!("reading from filesystem: {}", filesystem.name);
                     let filesystem = filesystem.open().unwrap();
-                    recurse(filesystem.read_dir(Path::from_str("materials").unwrap()))
+                    recurse(filesystem.read_dir(Path::try_from_str("materials").unwrap()))
                 }
                 Err(err) => eprintln!("warning: failed filesystem discovery: {}", err),
             }

@@ -1,0 +1,22 @@
+[package]
+name = "plumber_vpk"
+description = "Library for reading vpk archives."
+version = "0.1.0"
+repository = "https://github.com/lasa01/plumber_core"
+readme = "README.md"
+keywords = ["valve", "source", "vpk"]
+categories = ["filesystem"]
+authors = ["Lassi Säike"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+byteorder = { version = "1.4.3" }
+crc = { version = "1.8.1" }
+md5 = { version = "0.7.0" }
+thiserror = "1.0.24"
+zerocopy = { version = "0.5.0"}
+encoding = { version = "0.2.33"}
+serde = { version = "1.0.120", optional = true }

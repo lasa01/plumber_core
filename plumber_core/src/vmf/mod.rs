@@ -2,11 +2,10 @@ pub mod entities;
 pub mod loader;
 mod types;
 
-use nalgebra::{Vector2, Vector3};
-use rgb::RGB8;
+use crate::fs::PathBuf;
 use types::{bracketed_vector2, bracketed_vector3, color, BracketedVector3, Plane, UvAxis};
 
-use crate::{fs::PathBuf, vdf};
+use plumber_vdf as vdf;
 
 use std::{
     collections::BTreeMap,
@@ -15,7 +14,9 @@ use std::{
 };
 
 use itertools::Itertools;
+use nalgebra::{Vector2, Vector3};
 use ndarray::Array2;
+use rgb::RGB8;
 use serde::{
     de::{self, DeserializeSeed, MapAccess, Visitor},
     ser::{SerializeMap, SerializeStruct},
