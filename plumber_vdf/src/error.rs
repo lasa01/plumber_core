@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use super::Deserializer;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum Reason {
     #[error("unexpected eof")]
     UnexpectedEof,
@@ -45,7 +45,7 @@ pub enum Reason {
     Custom(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Position {
     pub line: usize,
     pub column: usize,
@@ -57,7 +57,7 @@ impl Display for Position {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Error {
     reason: Reason,
     position: Option<Position>,

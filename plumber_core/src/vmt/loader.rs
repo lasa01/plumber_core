@@ -38,10 +38,10 @@ const NODRAW_PARAMS: &[&str] = &[
     "$no_draw",
 ];
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum MaterialLoadError {
-    #[error("io error reading `{path}`: {inner}")]
-    Io { path: String, inner: io::Error },
+    #[error("io error reading `{path}`: {kind:?}")]
+    Io { path: String, kind: io::ErrorKind },
     #[error("error loading patch material: {0}")]
     Patch(#[from] ShaderResolveError),
     #[error("error deserializing material: {0}")]
@@ -53,27 +53,27 @@ pub enum MaterialLoadError {
 }
 
 impl MaterialLoadError {
-    fn from_io(err: io::Error, path: &Path) -> Self {
+    fn from_io(err: &io::Error, path: &Path) -> Self {
         Self::Io {
             path: path.as_str().to_string(),
-            inner: err,
+            kind: err.kind(),
         }
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum TextureLoadError {
-    #[error("io error reading `{path}`: {inner}")]
-    Io { path: String, inner: io::Error },
+    #[error("io error reading `{path}`: {kind:?}")]
+    Io { path: String, kind: io::ErrorKind },
     #[error("error loading vtf file: {0}")]
     Vtf(#[from] vtflib::Error),
 }
 
 impl TextureLoadError {
-    fn from_io(err: io::Error, path: &Path) -> Self {
+    fn from_io(err: &io::Error, path: &Path) -> Self {
         Self::Io {
             path: path.as_str().to_string(),
-            inner: err,
+            kind: err.kind(),
         }
     }
 }
@@ -257,7 +257,7 @@ fn get_shader(
     let material_path = material_path.with_extension(".vmt");
     let material_contents = filesystem
         .read(&material_path)
-        .map_err(|err| MaterialLoadError::from_io(err, &material_path))?;
+        .map_err(|err| MaterialLoadError::from_io(&err, &material_path))?;
     let material = Vmt::from_bytes(&material_contents)?;
     Ok(material.resolve_shader(filesystem)?)
 }
@@ -402,7 +402,7 @@ impl LoadedTexture {
         let texture_path = texture_path.with_extension(".vmt");
         let vtf_bytes = filesystem
             .read(&texture_path)
-            .map_err(|err| TextureLoadError::from_io(err, &texture_path))?;
+            .map_err(|err| TextureLoadError::from_io(&err, &texture_path))?;
         let mut vtf = vtf_lib.new_vtf_file().bind(guard);
         vtf.load(&vtf_bytes)?;
         Self::load_vtf(&vtf)

@@ -199,10 +199,10 @@ pub struct Shader {
 
 impl Shader {}
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum ShaderResolveError {
-    #[error("io error reading `{path}`: {inner}")]
-    Io { path: String, inner: io::Error },
+    #[error("io error reading `{path}`: {kind:?}")]
+    Io { path: String, kind: io::ErrorKind },
     #[error("error deserializing included material: {0}")]
     Deserialization(#[from] vdf::Error),
     #[error("included material cannot be a patch material")]
@@ -210,10 +210,10 @@ pub enum ShaderResolveError {
 }
 
 impl ShaderResolveError {
-    fn from_io(err: io::Error, path: &Path) -> Self {
+    fn from_io(err: &io::Error, path: &Path) -> Self {
         Self::Io {
             path: path.as_str().to_string(),
-            inner: err,
+            kind: err.kind(),
         }
     }
 }
@@ -255,7 +255,7 @@ impl Vmt {
             ShaderOrPatch::Patch(mut patch) => {
                 let base_contents = filesystem
                     .read(&patch.include)
-                    .map_err(|err| ShaderResolveError::from_io(err, &patch.include))?;
+                    .map_err(|err| ShaderResolveError::from_io(&err, &patch.include))?;
                 let base_vmt = Self::from_bytes(&base_contents)?;
                 let mut base_shader = base_vmt
                     .into_shader()
