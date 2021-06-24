@@ -199,11 +199,9 @@ impl PathBuf {
             })
     }
 
-    #[allow(clippy::missing_panics_doc)]
     pub fn set_file_name(&mut self, file_name: impl AsRef<str>) {
         if self.file_name().is_some() {
-            let popped = self.pop();
-            debug_assert!(popped)
+            self.pop();
         }
         self.push(Path::new(file_name.as_ref()));
     }
