@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     io,
     sync::{Condvar, Mutex},
+    time::Duration,
 };
 
 use image::RgbaImage;
@@ -129,24 +130,24 @@ fn get_dimension_reference(shader: &Shader) -> Option<&String> {
 }
 
 /// The default material builder.
-/// Returns the loaded dimension reference texture.
+/// Does nothing.
 #[derive(Debug, Default)]
 pub struct DefaultMaterialBuilder;
 
 impl MaterialBuilder for DefaultMaterialBuilder {
-    type Built = Option<LoadedTexture>;
+    type Built = ();
 
-    fn build(&self, mut vmt: LoadedVmt<Self>) -> Result<Self::Built, MaterialLoadError> {
-        Ok(vmt.textures_mut().pop())
+    fn build(&self, _vmt: LoadedVmt<Self>) -> Result<Self::Built, MaterialLoadError> {
+        Ok(())
     }
 }
 
 #[derive(Debug, Default)]
 pub struct Loader<L> {
     material_loader: L,
-    material_cache: Mutex<HashMap<PathBuf, MaterialInfo>>,
+    material_cache: Mutex<HashMap<PathBuf, Result<MaterialInfo, MaterialLoadError>>>,
     material_condvar: Condvar,
-    texture_cache: Mutex<HashMap<PathBuf, TextureInfo>>,
+    texture_cache: Mutex<HashMap<PathBuf, Result<TextureInfo, TextureLoadError>>>,
 }
 
 impl<L> Loader<L>
@@ -165,16 +166,32 @@ where
 
     /// Block the thread until another thread has loaded a given material, and return the info.
     ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the material loading fails or a load was already attempted and it failed.
+    ///
     /// # Panics
     ///
-    /// May panic if the internal mutex is poisoned. This should not happen.
-    pub fn wait_for_material(&self, material_path: impl AsRef<Path>) -> MaterialInfo {
+    /// Panics after 30 seconds if any materials haven't been loaded to prevent deadlocks.
+    pub fn wait_for_material(
+        &self,
+        material_path: impl AsRef<Path>,
+    ) -> Result<MaterialInfo, MaterialLoadError> {
         let material_path = material_path.as_ref();
         let mut guard = self.material_cache.lock().unwrap();
         loop {
             match guard.get(material_path) {
-                None => guard = self.material_condvar.wait(guard).unwrap(),
-                Some(info) => return info.clone(),
+                None => {
+                    let (g, res) = self
+                        .material_condvar
+                        .wait_timeout(guard, Duration::from_secs(30))
+                        .expect("the mutex shouldn't be poisoned");
+                    if res.timed_out() {
+                        panic!("any materials haven't been loaded in 30 seconds while waiting for a material")
+                    }
+                    guard = g;
+                }
+                Some(result) => return result.clone(),
             }
         }
     }
@@ -206,11 +223,33 @@ where
         filesystem: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<(MaterialInfo, Option<<L as MaterialBuilder>::Built>), MaterialLoadError> {
-        if let Some(info) = self.material_cache.lock().unwrap().get(&material_path) {
-            return Ok((info.clone(), None));
+        if let Some(info_result) = self.material_cache.lock().unwrap().get(&material_path) {
+            return info_result.clone().map(|i| (i, None));
         }
 
-        let shader = get_shader(&material_path, filesystem)?;
+        let result = self.load_material_inner(&material_path, filesystem, vtf_lib);
+
+        let info_result = match &result {
+            Ok((info, _)) => Ok(info.clone()),
+            Err(err) => Err(err.clone()),
+        };
+
+        self.material_cache
+            .lock()
+            .unwrap()
+            .insert(material_path, info_result);
+        self.material_condvar.notify_all();
+
+        result.map(|(i, b)| (i, Some(b)))
+    }
+
+    fn load_material_inner(
+        &self,
+        material_path: &PathBuf,
+        filesystem: &OpenFileSystem,
+        vtf_lib: &mut (VtfLib, VtfGuard),
+    ) -> Result<(MaterialInfo, <L as MaterialBuilder>::Built), MaterialLoadError> {
+        let shader = get_shader(material_path, filesystem)?;
 
         let mut loaded_vmt = LoadedVmt {
             shader,
@@ -218,18 +257,12 @@ where
             loader: self,
             vtf_lib,
             filesystem,
-            material_path: &material_path,
+            material_path,
         };
         let info = self.material_loader.info(&mut loaded_vmt)?;
         let loaded_material = self.material_loader.build(loaded_vmt)?;
 
-        self.material_cache
-            .lock()
-            .unwrap()
-            .insert(material_path, info.clone());
-        self.material_condvar.notify_all();
-
-        Ok((info, Some(loaded_material)))
+        Ok((info, loaded_material))
     }
 
     fn load_texture(
@@ -238,15 +271,15 @@ where
         filesystem: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<(TextureInfo, Option<LoadedTexture>), TextureLoadError> {
-        if let Some(info) = self.texture_cache.lock().unwrap().get(&texture_path) {
-            return Ok((info.clone(), None));
+        if let Some(info_result) = self.texture_cache.lock().unwrap().get(&texture_path) {
+            return info_result.clone().map(|i| (i, None));
         }
-        let loaded = LoadedTexture::load(&texture_path, filesystem, vtf_lib)?;
+        let loaded_result = LoadedTexture::load(&texture_path, filesystem, vtf_lib);
         self.texture_cache
             .lock()
             .unwrap()
-            .insert(texture_path, loaded.info.clone());
-        Ok((loaded.info.clone(), Some(loaded)))
+            .insert(texture_path, loaded_result.clone().map(|l| l.info));
+        loaded_result.map(|l| (l.info.clone(), Some(l)))
     }
 }
 
@@ -254,7 +287,8 @@ fn get_shader(
     material_path: &PathBuf,
     filesystem: &OpenFileSystem,
 ) -> Result<Shader, MaterialLoadError> {
-    let material_path = material_path.with_extension(".vmt");
+    let mut material_path = Path::try_from_str("materials").unwrap().join(material_path);
+    material_path.set_extension("vmt");
     let material_contents = filesystem
         .read(&material_path)
         .map_err(|err| MaterialLoadError::from_io(&err, &material_path))?;
@@ -322,6 +356,16 @@ impl MaterialInfo {
     #[must_use]
     pub fn no_draw(&self) -> bool {
         self.no_draw
+    }
+}
+
+impl Default for MaterialInfo {
+    fn default() -> Self {
+        Self {
+            width: 512,
+            height: 512,
+            no_draw: false,
+        }
     }
 }
 
@@ -399,7 +443,8 @@ impl LoadedTexture {
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<Self, TextureLoadError> {
         let (vtf_lib, guard) = vtf_lib;
-        let texture_path = texture_path.with_extension(".vmt");
+        let mut texture_path = Path::try_from_str("materials").unwrap().join(texture_path);
+        texture_path.set_extension("vtf");
         let vtf_bytes = filesystem
             .read(&texture_path)
             .map_err(|err| TextureLoadError::from_io(&err, &texture_path))?;

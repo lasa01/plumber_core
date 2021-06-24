@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use itertools::Itertools;
 use nalgebra::{Point3, Vector3};
+use plumber_vpk::PathBuf;
 use rgb::RGB8;
 use thiserror::Error;
 use uncased::AsUncased;
@@ -730,11 +731,11 @@ impl<'a> Overlay<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `material` doesn't exist.
-    pub fn material(&self) -> Result<&str, EntityParseError> {
+    pub fn material(&self) -> Result<PathBuf, EntityParseError> {
         self.entity
             .properties
             .get("material".as_uncased())
-            .map(String::as_str)
+            .map(|s| PathBuf::from(s.clone()))
             .ok_or(EntityParseError::MissingParameter("material"))
     }
 

@@ -1,0 +1,21 @@
+"GameInfo"
+{
+	game    "Game"
+	title   "Game"
+    FileSystem
+    {
+        SteamAppId  12345
+        // Test comment.
+
+        SearchPaths
+        {
+            game+mod    game/custom/*
+
+            game        |gameinfo_path|.
+            game        |all_source_engine_paths|test
+
+            // this should be ignored
+            platform    |all_source_engine_paths|platform
+        }
+    }
+}

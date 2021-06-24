@@ -1,0 +1,15 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "ar_dizzy\dizzy_facade_color"
+
+	"$bumpmap"                "ar_dizzy\dizzy_facade_normal"
+	"$surfaceprop"            "glass"
+//	"$envmap"                 "environment maps/nuke2"
+	"$envmap"		  "env_cubemap"
+	"$envmapmask"             "ar_dizzy\dizzy_facade_mask"
+	"$envmaplightscale"       "1"
+	"$envmaplightscaleminmax" "[0 1]"
+	"$envmapcontrast"         ".5"
+	"$fresnelreflection"      "0.2"
+
+}
