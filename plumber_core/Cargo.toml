@@ -28,7 +28,7 @@ itertools = "0.10.0"
 nalgebra = "0.25.4"
 ndarray = "0.15.1"
 rgb = "0.8.27"
-serde = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
+serde = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr", features = ["derive"] }
 serde_derive = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
 thiserror = "1.0.24"
 uncased = { version = "0.9.6", features = ["with-serde-alloc"] }
