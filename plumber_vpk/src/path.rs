@@ -285,7 +285,7 @@ impl From<String> for PathBuf {
                 *byte = b'/';
             }
         }
-        Self(String::from_utf8(s).unwrap())
+        Self(String::from_utf8(s).expect("should still be valid utf8"))
     }
 }
 
@@ -298,7 +298,7 @@ impl From<&str> for PathBuf {
                 *byte = b'/';
             }
         }
-        Self(String::from_utf8(s).unwrap())
+        Self(String::from_utf8(s).expect("should still be valid utf8"))
     }
 }
 

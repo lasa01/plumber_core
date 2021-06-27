@@ -178,7 +178,10 @@ where
         material_path: impl AsRef<Path>,
     ) -> Result<MaterialInfo, MaterialLoadError> {
         let material_path = material_path.as_ref();
-        let mut guard = self.material_cache.lock().unwrap();
+        let mut guard = self
+            .material_cache
+            .lock()
+            .expect("the mutex shouldn't be poisoned");
         loop {
             match guard.get(material_path) {
                 None => {
@@ -212,7 +215,7 @@ where
         LoadMaterials {
             loader: self,
             filesystem,
-            vtf_lib: VtfLib::initialize().unwrap(),
+            vtf_lib: VtfLib::initialize().expect("vtflib is already initialized"),
             material_paths: material_paths.into_iter(),
         }
     }
@@ -223,7 +226,12 @@ where
         filesystem: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<(MaterialInfo, Option<<L as MaterialBuilder>::Built>), MaterialLoadError> {
-        if let Some(info_result) = self.material_cache.lock().unwrap().get(&material_path) {
+        if let Some(info_result) = self
+            .material_cache
+            .lock()
+            .expect("the mutex shouldn't be poisoned")
+            .get(&material_path)
+        {
             return info_result.clone().map(|i| (i, None));
         }
 
@@ -236,7 +244,7 @@ where
 
         self.material_cache
             .lock()
-            .unwrap()
+            .expect("the mutex shouldn't be poisoned")
             .insert(material_path, info_result);
         self.material_condvar.notify_all();
 
@@ -271,13 +279,18 @@ where
         filesystem: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<(TextureInfo, Option<LoadedTexture>), TextureLoadError> {
-        if let Some(info_result) = self.texture_cache.lock().unwrap().get(&texture_path) {
+        if let Some(info_result) = self
+            .texture_cache
+            .lock()
+            .expect("the mutex shouldn't be poisoned")
+            .get(&texture_path)
+        {
             return info_result.clone().map(|i| (i, None));
         }
         let loaded_result = LoadedTexture::load(&texture_path, filesystem, vtf_lib);
         self.texture_cache
             .lock()
-            .unwrap()
+            .expect("the mutex shouldn't be poisoned")
             .insert(texture_path, loaded_result.clone().map(|l| l.info));
         loaded_result.map(|l| (l.info.clone(), Some(l)))
     }
@@ -461,7 +474,8 @@ impl LoadedTexture {
         let data = VtfFile::convert_image_to_rgba8888(source, width, height, format)?;
         Ok(Self {
             info: TextureInfo { width, height },
-            data: RgbaImage::from_raw(width, height, data).unwrap(),
+            data: RgbaImage::from_raw(width, height, data)
+                .expect("vtflib should return valid images"),
         })
     }
 

@@ -162,8 +162,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         if self.escaped {
             self.serialize_escaped_str(v);
         } else {
-            // write to string is infallible
-            write!(self.output, "\"{}\"", v).unwrap();
+            write!(self.output, "\"{}\"", v).expect("write to string should be infallible");
         }
         Ok(())
     }
@@ -310,8 +309,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         if self.escaped {
             self.serialize_escaped_str(&value.to_string());
         } else {
-            // write to string is infallible
-            write!(self.output, "\"{}\"", value).unwrap();
+            write!(self.output, "\"{}\"", value).expect("write to string should be infallible");
         }
         Ok(())
     }

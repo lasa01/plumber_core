@@ -101,7 +101,7 @@ impl<'a> OverlayBuilder<'a> {
         side_faces_map: &Mutex<SideFacesMap>,
     ) -> Result<(), OverlayError> {
         for side_i in self.overlay.sides()? {
-            let side_faces_map = side_faces_map.lock().unwrap();
+            let side_faces_map = side_faces_map.lock().expect("mutex shouldn't be poisoned");
             let faces = side_faces_map
                 .get(&side_i)
                 .ok_or(OverlayError::SideNotFound { id: side_i })?;

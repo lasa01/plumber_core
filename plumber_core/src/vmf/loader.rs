@@ -94,7 +94,7 @@ impl<'a> Scene<'a> {
             for side in &solid.sides {
                 self.material_job_sender
                     .send(side.material.clone())
-                    .unwrap();
+                    .expect("material job channel shouldn't be disconnected");
             }
         }
         for entity in &self.vmf.entities {
@@ -102,7 +102,7 @@ impl<'a> Scene<'a> {
                 for side in &solid.sides {
                     self.material_job_sender
                         .send(side.material.clone())
-                        .unwrap();
+                        .expect("material job channel shouldn't be disconnected");
                 }
             }
         }
@@ -111,7 +111,10 @@ impl<'a> Scene<'a> {
         for entity in &self.vmf.entities {
             if let TypedEntity::Overlay(overlay) = entity.typed() {
                 match overlay.material() {
-                    Ok(material) => self.material_job_sender.send(material).unwrap(),
+                    Ok(material) => self
+                        .material_job_sender
+                        .send(material)
+                        .expect("material job channel shouldn't be disconnected"),
                     Err(err) => todo!("handle err: {}", err),
                 }
             }

@@ -227,7 +227,7 @@ impl<'a> SideBuilder<'a> {
                     let vertice = old_vertices[vertice_i];
                     FloatOrd(vertice.coords.metric_distance(&start_position))
                 })
-                .unwrap();
+                .expect("vertice_indices shouldn't be empty");
 
             let top_left_i = start_i;
             let top_right_i = (start_i + 3) % 4;
@@ -483,7 +483,7 @@ impl<'a> SolidBuilder<'a> {
     }
 
     fn extend_side_faces_map(&self, map: &Mutex<SideFacesMap>) {
-        let mut map = map.lock().unwrap();
+        let mut map = map.lock().expect("mutex shouldn't be poisoned");
         for builder in &self.sides {
             map.entry(builder.side.id).or_default().push(
                 builder
