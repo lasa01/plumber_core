@@ -166,7 +166,7 @@ impl<'a> OverlayBuilder<'a> {
 
         // cut faces partially outside uv borders
         for (side_vert_a, side_vert_b) in self.uv_info.uvs.iter().circular_tuple_windows() {
-            let cut_plane_normal = up.cross(&(side_vert_a - side_vert_b));
+            let cut_plane_normal = up.cross(&(side_vert_b - side_vert_a));
             let cut_plane = NdPlane::from_point_normal(*side_vert_a, cut_plane_normal);
 
             let outside_vertice_is = uv_space_vertices
@@ -263,7 +263,7 @@ impl<'a> OverlayBuilder<'a> {
         let up = Vector3::new(0.0, 0.0, 1.0);
 
         for (side_vert_a, side_vert_b) in self.uv_info.uvs.iter().circular_tuple_windows() {
-            let cut_plane_normal = up.cross(&(side_vert_a - side_vert_b));
+            let cut_plane_normal = up.cross(&(side_vert_b - side_vert_a));
             let cut_plane = NdPlane::from_point_normal(*side_vert_a, cut_plane_normal);
             for (i, _) in self
                 .uv_space_vertices
