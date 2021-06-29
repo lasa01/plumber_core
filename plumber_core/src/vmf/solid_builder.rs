@@ -36,7 +36,7 @@ pub struct BuiltSolid<'a> {
 #[derive(Debug)]
 pub struct BuiltSide {
     pub vertice_indices: Vec<usize>,
-    pub vertice_uvs: Vec<(f64, f64)>,
+    pub vertice_uvs: Vec<[f64; 2]>,
     pub material_index: usize,
 }
 
@@ -44,7 +44,7 @@ struct SideBuilder<'a> {
     side: &'a Side,
     plane: NdPlane,
     vertice_indices: Vec<usize>,
-    vertice_uvs: Vec<(f64, f64)>,
+    vertice_uvs: Vec<[f64; 2]>,
     material_index: usize,
 }
 
@@ -153,13 +153,13 @@ impl<'a> SideBuilder<'a> {
             let v = (vertices[vi].coords + center.coords).dot(&v_axis.axis)
                 / (texture_height * v_axis.scale)
                 + v_axis.translation / texture_height;
-            self.vertice_uvs.push((u, v));
+            self.vertice_uvs.push([u, v]);
         }
 
         // normalize
         let mut nearest_u = f64::MAX;
         let mut nearest_v = f64::MAX;
-        for (u, _) in &self.vertice_uvs {
+        for [u, _] in &self.vertice_uvs {
             if u.abs() <= 1.0 {
                 nearest_u = 0.0;
                 break;
@@ -174,7 +174,7 @@ impl<'a> SideBuilder<'a> {
             nearest_u.ceil()
         };
 
-        for (_, v) in &self.vertice_uvs {
+        for [_, v] in &self.vertice_uvs {
             if v.abs() <= 1.0 {
                 nearest_v = 0.0;
                 break;
@@ -189,7 +189,7 @@ impl<'a> SideBuilder<'a> {
             nearest_v.ceil()
         };
 
-        for (u, v) in &mut self.vertice_uvs {
+        for [u, v] in &mut self.vertice_uvs {
             *u -= nearest_u;
             *v -= nearest_v;
         }
@@ -801,13 +801,13 @@ mod tests {
             .collect_vec();
         for (uv, expected_uv) in side.vertice_uvs.iter().zip(&expected_uvs) {
             assert!(
-                relative_eq!(uv.0, expected_uv.0, epsilon = EPSILON),
+                relative_eq!(uv[0], expected_uv.0, epsilon = EPSILON),
                 "got {:?}, expected {:?}",
                 side.vertice_uvs,
                 expected_uvs
             );
             assert!(
-                relative_eq!(uv.1, expected_uv.1, epsilon = EPSILON),
+                relative_eq!(uv[1], expected_uv.1, epsilon = EPSILON),
                 "got {:?}, expected {:?}",
                 side.vertice_uvs,
                 expected_uvs

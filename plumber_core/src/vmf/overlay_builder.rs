@@ -38,12 +38,12 @@ pub struct BuiltOverlay<'a> {
 #[derive(Debug)]
 pub struct BuiltOverlayFace {
     pub vertice_indices: Vec<usize>,
-    pub vertice_uvs: Vec<(f64, f64)>,
+    pub vertice_uvs: Vec<[f64; 2]>,
 }
 
 struct OverlayFaceBuilder {
     vertice_indices: Vec<usize>,
-    vertice_uvs: Vec<(f64, f64)>,
+    vertice_uvs: Vec<[f64; 2]>,
 }
 
 impl OverlayFaceBuilder {
@@ -385,7 +385,7 @@ impl<'a> OverlayBuilder<'a> {
                 };
 
                 let uv = affine_matrix.remove_column(2) * uv_vert + affine_matrix.column(2);
-                builder.vertice_uvs.push((uv.x, uv.y));
+                builder.vertice_uvs.push([uv.x, uv.y]);
             }
         }
         Ok(())

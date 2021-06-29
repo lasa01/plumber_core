@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use super::{ Plane};
+use super::Plane;
 
 use approx::abs_diff_eq;
 use itertools::Itertools;
@@ -107,6 +107,6 @@ pub(crate) fn lerp(lhs: f64, rhs: f64, t: f64) -> f64 {
     lhs + (lhs - rhs) * t
 }
 
-pub(crate) fn lerp_uv(lhs: (f64, f64), rhs: (f64, f64), t: f64) -> (f64, f64) {
-    (lerp(lhs.0, rhs.0, t), lerp(lhs.1, rhs.1, t))
+pub(crate) fn lerp_uv(lhs: [f64; 2], rhs: [f64; 2], t: f64) -> [f64; 2] {
+    [lerp(lhs[0], rhs[0], t), lerp(lhs[1], rhs[1], t)]
 }
