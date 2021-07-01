@@ -104,9 +104,87 @@ where
 }
 
 pub(crate) fn lerp(lhs: f64, rhs: f64, t: f64) -> f64 {
-    lhs + (lhs - rhs) * t
+    lhs * (1.0 - t) + rhs * t
 }
 
 pub(crate) fn lerp_uv(lhs: [f64; 2], rhs: [f64; 2], t: f64) -> [f64; 2] {
     [lerp(lhs[0], rhs[0], t), lerp(lhs[1], rhs[1], t)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn plane_creation() {
+        let plane_1 = NdPlane::from_points(
+            &Point3::new(-1.0, 0.0, 0.0),
+            &Point3::new(0.0, 3.0, 0.0),
+            &Point3::new(0.0, 0.0, 2.0),
+        );
+        let plane_2 = NdPlane {
+            point: Point3::new(-1.0, 0.0, 0.0),
+            normal: Vector3::new(6.0, -2.0, -3.0).normalize(),
+            distance: 0.857_142_857_142_857,
+        };
+        assert_relative_eq!(plane_1.normal, plane_2.normal, epsilon = EPSILON);
+        assert_relative_eq!(plane_1.distance, plane_2.distance, epsilon = EPSILON);
+
+        let distance = plane_1.distance_to_point(&Point3::new(0.0, -2.0, 0.0));
+        assert_relative_eq!(distance, 1.428_571_428_571_428, epsilon = EPSILON);
+    }
+
+    #[test]
+    fn plane_intersection() {
+        let a = Point3::new(1.0, 2.0, -1.0);
+        let b = Point3::new(3.0, -2.0, 1.0);
+        let c = Point3::new(2.0, 3.0, 0.0);
+        let d = Point3::new(-3.0, 2.0, 4.0);
+
+        let plane_1 = NdPlane::from_points(&a, &b, &c);
+        let plane_2 = NdPlane::from_points(&a, &c, &d);
+        let plane_3 = NdPlane::from_points(&c, &b, &d);
+
+        let intersection = NdPlane::intersect(&plane_1, &plane_2, &plane_3).unwrap();
+
+        assert_relative_eq!(intersection, c, epsilon = EPSILON);
+    }
+
+    #[test]
+    fn center_calculation() {
+        let points = vec![
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 1.0),
+            Point3::new(-2.0, 0.0, 2.0),
+            Point3::new(0.0, -2.0, 1.0),
+        ];
+
+        let center = polygon_center(points.into_iter());
+
+        assert_relative_eq!(center, Point3::new(0.0, 0.0, 1.0), epsilon = EPSILON);
+    }
+
+    #[test]
+    fn normal_calculation() {
+        let points = vec![
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 1.0),
+            Point3::new(-2.0, 0.0, 2.0),
+            Point3::new(0.0, -2.0, 1.0),
+        ];
+
+        let normal = polygon_normal(points.into_iter());
+
+        assert_relative_eq!(
+            normal,
+            Vector3::new(0.447_213_595, 0.0, 0.894_427_191),
+            epsilon = EPSILON
+        );
+    }
+
+    #[test]
+    fn lerping() {
+        assert_relative_eq!(5.0, lerp(-5.0, 10.0, 2.0 / 3.0));
+    }
 }
