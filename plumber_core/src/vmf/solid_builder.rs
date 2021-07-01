@@ -230,9 +230,9 @@ impl<'a> SideBuilder<'a> {
                 .expect("vertice_indices shouldn't be empty");
 
             let top_left_i = start_i;
-            let top_right_i = (start_i + 3) % 4;
+            let top_right_i = (start_i + 1) % 4;
             let btm_right_i = (start_i + 2) % 4;
-            let btm_left_i = (start_i + 1) % 4;
+            let btm_left_i = (start_i + 3) % 4;
 
             let top_left_vert = old_vertices[self.vertice_indices[top_left_i]];
             let top_right_vert = old_vertices[self.vertice_indices[top_right_i]];
