@@ -187,4 +187,21 @@ mod tests {
     fn lerping() {
         assert_relative_eq!(5.0, lerp(-5.0, 10.0, 2.0 / 3.0));
     }
+
+    #[test]
+    fn plane_line_intersection() {
+        let plane = NdPlane::from_points(
+            &Point3::new(0.0, -3.0, 0.0),
+            &Point3::new(0.0, 0.0, 3.0),
+            &Point3::new(2.0, 0.0, 0.0),
+        );
+
+        assert_relative_eq!(
+            plane
+                .intersect_line(&Point3::new(-1.0, 0.0, 0.0), &Vector3::new(1.0, 0.0, 2.0))
+                .unwrap(),
+            Point3::new(0.285_714_285_7, 0.0, 2.571_428_571_4),
+            epsilon = EPSILON,
+        );
+    }
 }
