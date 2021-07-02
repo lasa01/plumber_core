@@ -9,7 +9,7 @@ use super::{
 
 use approx::relative_eq;
 use itertools::Itertools;
-use nalgebra::{geometry::Point3, Matrix2x3, Matrix3, Point2, Vector3};
+use nalgebra::{geometry::Point3, Matrix2x3, Matrix3, Point2, Unit, Vector3};
 use thiserror::Error;
 
 pub(crate) type SideFacesMap = BTreeMap<i32, Vec<Vec<Point3<f64>>>>;
@@ -166,7 +166,7 @@ impl<'a> OverlayBuilder<'a> {
 
         // cut faces partially outside uv borders
         for (side_vert_a, side_vert_b) in self.uv_info.uvs.iter().circular_tuple_windows() {
-            let cut_plane_normal = up.cross(&(side_vert_b - side_vert_a));
+            let cut_plane_normal = Unit::new_normalize(up.cross(&(side_vert_b - side_vert_a)));
             let cut_plane = NdPlane::from_point_normal(*side_vert_a, cut_plane_normal);
 
             let outside_vertice_is = uv_space_vertices
@@ -248,7 +248,7 @@ impl<'a> OverlayBuilder<'a> {
                 // replace the face vertices that were outside the uv border with the 2 newly created ones
                 builder.vertice_indices.splice(
                     first_outside_i..=last_outside_i,
-                    [first_new_i, last_new_i].iter().copied(),
+                    IntoIterator::into_iter([first_new_i, last_new_i]),
                 );
             }
         }
@@ -263,7 +263,7 @@ impl<'a> OverlayBuilder<'a> {
         let up = Vector3::new(0.0, 0.0, 1.0);
 
         for (side_vert_a, side_vert_b) in self.uv_info.uvs.iter().circular_tuple_windows() {
-            let cut_plane_normal = up.cross(&(side_vert_b - side_vert_a));
+            let cut_plane_normal = Unit::new_normalize(up.cross(&(side_vert_b - side_vert_a)));
             let cut_plane = NdPlane::from_point_normal(*side_vert_a, cut_plane_normal);
             for (i, _) in self
                 .uv_space_vertices

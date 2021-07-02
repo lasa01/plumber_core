@@ -98,7 +98,7 @@ impl<'a> SideBuilder<'a> {
             let vertice = &vertices[self.vertice_indices[i]];
             let to_current: Vector3<f64> = (vertice - center).normalize();
             let filter_plane =
-                NdPlane::from_points(&vertice, &center, &(center + self.plane.normal));
+                NdPlane::from_points(&vertice, &center, &(center + self.plane.normal.as_ref()));
 
             if let Some((next_idx, _)) = self.vertice_indices[i + 1..]
                 .iter()
@@ -278,7 +278,7 @@ impl<'a> SideBuilder<'a> {
                 .and(&info.distances.data)
                 .for_each(|&v_i, offset, normal, &distance| {
                     vertices[v_i] +=
-                        offset + distance * normal + self.plane.normal * info.elevation;
+                        offset + distance * normal + self.plane.normal.as_ref() * info.elevation;
                 });
 
             let mut disp_uvs = Array2::default((dimension, dimension));

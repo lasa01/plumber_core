@@ -4,7 +4,7 @@ use super::Plane;
 
 use approx::abs_diff_eq;
 use itertools::Itertools;
-use nalgebra::{geometry::Point3, Vector3};
+use nalgebra::{geometry::Point3, Unit, Vector3};
 
 pub(crate) const EPSILON: f64 = 1e-3;
 pub(crate) const CUT_THRESHOLD: f64 = 1e-3;
@@ -14,7 +14,7 @@ pub(crate) const CUT_THRESHOLD: f64 = 1e-3;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct NdPlane {
     pub point: Point3<f64>,
-    pub normal: Vector3<f64>,
+    pub normal: Unit<Vector3<f64>>,
     pub distance: f64,
 }
 
@@ -30,7 +30,7 @@ impl NdPlane {
     }
 
     pub fn from_points(a: &Point3<f64>, b: &Point3<f64>, c: &Point3<f64>) -> Self {
-        let normal = (b - a).cross(&(c - a)).normalize();
+        let normal = Unit::new_normalize((b - a).cross(&(c - a)));
         let distance = -a.coords.dot(&normal);
         Self {
             point: *a,
@@ -39,7 +39,7 @@ impl NdPlane {
         }
     }
 
-    pub fn from_point_normal(point: Point3<f64>, normal: Vector3<f64>) -> Self {
+    pub fn from_point_normal(point: Point3<f64>, normal: Unit<Vector3<f64>>) -> Self {
         let distance = -point.coords.dot(&normal);
         Self {
             point,
@@ -125,7 +125,7 @@ mod tests {
         );
         let plane_2 = NdPlane {
             point: Point3::new(-1.0, 0.0, 0.0),
-            normal: Vector3::new(6.0, -2.0, -3.0).normalize(),
+            normal: Unit::new_normalize(Vector3::new(6.0, -2.0, -3.0)),
             distance: 0.857_142_857_142_857,
         };
         assert_relative_eq!(plane_1.normal, plane_2.normal, epsilon = EPSILON);
