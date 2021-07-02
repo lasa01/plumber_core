@@ -1024,6 +1024,16 @@ mod tests {
             builder.center,
             Point3::new(146.974, 0.0, 131.398),
             epsilon = EPSILON
-        )
+        );
+
+        for side in &builder.sides {
+            for &i in &side.vertice_indices {
+                assert!(
+                    builder.vertices.len() > i,
+                    "face has invalid vertice index {}",
+                    i
+                );
+            }
+        }
     }
 }

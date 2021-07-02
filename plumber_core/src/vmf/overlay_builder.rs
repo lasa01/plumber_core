@@ -41,6 +41,7 @@ pub struct BuiltOverlayFace {
     pub vertice_uvs: Vec<[f64; 2]>,
 }
 
+#[derive(Debug)]
 struct OverlayFaceBuilder {
     vertice_indices: Vec<usize>,
     vertice_uvs: Vec<[f64; 2]>,
@@ -439,5 +440,345 @@ impl<'a> Overlay<'a> {
         builder.create_uvs()?;
         builder.recenter();
         builder.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::f64::consts::FRAC_1_SQRT_2;
+
+    use plumber_vdf as vdf;
+
+    use crate::{
+        vmf::{entities::TypedEntity, Entity, Solid},
+        vmt::loader::MaterialInfo,
+    };
+
+    use super::*;
+
+    #[allow(clippy::too_many_lines)]
+    fn get_test_solids() -> Vec<Solid> {
+        let input = r#"
+        solid
+	    {
+	    	"id" "3"
+	    	side
+	    	{
+	    		"id" "7"
+	    		"plane" "(-960 64 64) (-832 64 64) (-832 -64 64)"
+	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"uaxis" "[1 0 0 0] 0.25"
+	    		"vaxis" "[0 -1 0 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "8"
+	    		"plane" "(-960 -64 0) (-832 -64 0) (-832 64 0)"
+	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"uaxis" "[1 0 0 0] 0.25"
+	    		"vaxis" "[0 -1 0 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "9"
+	    		"plane" "(-960 64 64) (-960 -64 64) (-960 -64 0)"
+	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"uaxis" "[0 1 0 0] 0.25"
+	    		"vaxis" "[0 0 -1 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "10"
+	    		"plane" "(-832 64 0) (-832 -64 0) (-832 -64 64)"
+	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"uaxis" "[0 1 0 0] 0.25"
+	    		"vaxis" "[0 0 -1 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "11"
+	    		"plane" "(-832 64 64) (-960 64 64) (-960 64 0)"
+	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"uaxis" "[1 0 0 0] 0.25"
+	    		"vaxis" "[0 0 -1 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "12"
+	    		"plane" "(-832 -64 0) (-960 -64 0) (-960 -64 64)"
+	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"uaxis" "[1 0 0 0] 0.25"
+	    		"vaxis" "[0 0 -1 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	editor
+	    	{
+	    		"color" "0 177 198"
+	    		"visgroupshown" "1"
+	    		"visgroupautoshown" "1"
+	    	}
+        }
+        solid
+	    {
+	    	"id" "2"
+	    	side
+	    	{
+	    		"id" "1"
+	    		"plane" "(-1088 -64 64) (-1088 64 64) (-960 64 64)"
+	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"uaxis" "[0 1 0 0] 0.25"
+	    		"vaxis" "[1 0 0 0] 0.25"
+	    		"rotation" "90"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "2"
+	    		"plane" "(-1088 64 0) (-1088 -64 0) (-960 -64 0)"
+	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"uaxis" "[1 0 0 0] 0.25"
+	    		"vaxis" "[0 -1 0 0] 1"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "3"
+	    		"plane" "(-1088 -64 0) (-1088 64 0) (-1088 64 64)"
+	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"uaxis" "[0 1 0 0] 0.25"
+	    		"vaxis" "[0 0 -1 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "4"
+	    		"plane" "(-960 64 0) (-960 -64 0) (-960 -64 64)"
+	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"uaxis" "[0 1 0 0] 0.25"
+	    		"vaxis" "[0 0 -1 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "5"
+	    		"plane" "(-1088 64 0) (-960 64 0) (-960 64 64)"
+	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"uaxis" "[1 0 0 0] 0.25"
+	    		"vaxis" "[0 0 -1 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	side
+	    	{
+	    		"id" "6"
+	    		"plane" "(-960 -64 0) (-1088 -64 0) (-1088 -64 64)"
+	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"uaxis" "[1 0 0 64] 0.25"
+	    		"vaxis" "[0 0 -1 0] 0.25"
+	    		"rotation" "0"
+	    		"lightmapscale" "16"
+	    		"smoothing_groups" "0"
+	    	}
+	    	editor
+	    	{
+	    		"color" "0 201 230"
+	    		"visgroupshown" "1"
+	    		"visgroupautoshown" "1"
+	    	}
+	    }
+        "#;
+        vdf::from_str(input).unwrap()
+    }
+
+    fn get_test_overlay() -> Entity {
+        let input = r#"
+        	"id" "327"
+        	"classname" "info_overlay"
+        	"angles" "0 0 33.5"
+        	"basisNormal" "0 -0.551937 0.833886"
+        	"BasisOrigin" "-890.426 -40.7746 76.5506"
+        	"BasisU" "1 0 0"
+        	"BasisV" "0 0.833886 0.551937"
+        	"Endu" "1"
+        	"Endv" "0"
+        	"fademindist" "-1"
+        	"material" "decals/bombsite_a"
+        	"sides" "7 12"
+        	"StartU" "0"
+        	"StartV" "1"
+        	"uv0" "-35.3834 -48.1264 0"
+        	"uv1" "-36.3596 41.648 0"
+        	"uv2" "32.6082 62.2508 0"
+        	"uv3" "39.1349 -55.7724 0"
+        	"origin" "-890.426 -32.4675 64"
+        	editor
+        	{
+        		"color" "80 150 225"
+        		"visgroupshown" "1"
+        		"visgroupautoshown" "1"
+        		"logicalpos" "[0 3500]"
+        	}
+        "#;
+        vdf::from_str(input).unwrap()
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn overlay_building() {
+        let solids = get_test_solids();
+        let side_faces_map = Mutex::new(SideFacesMap::new());
+        for solid in &solids {
+            solid
+                .build_mesh(
+                    |_| Ok(MaterialInfo::new(1024, 1024, false)),
+                    &side_faces_map,
+                )
+                .unwrap();
+        }
+
+        let entity = get_test_overlay();
+        let overlay = match entity.typed() {
+            TypedEntity::Overlay(o) => o,
+            _ => unreachable!(),
+        };
+        let mut builder = OverlayBuilder::new(overlay).unwrap();
+        builder.create_vertices(&side_faces_map).unwrap();
+
+        let expected_vertices = vec![
+            Point3::new(-960.0, 64.0, 64.0),
+            Point3::new(-960.0, -64.0, 64.0),
+            Point3::new(-832.0, 64.0, 64.0),
+            Point3::new(-832.0, -64.0, 64.0),
+            Point3::new(-960.0, -64.0, 0.0),
+            Point3::new(-832.0, -64.0, 0.0),
+        ];
+
+        assert_eq!(builder.vertices.len(), expected_vertices.len());
+
+        for vertice in &builder.vertices {
+            assert!(
+                expected_vertices
+                    .iter()
+                    .any(|v| relative_eq!(v, vertice, epsilon = EPSILON)),
+                "unexpected vertice {}",
+                vertice
+            );
+        }
+
+        builder.offset_vertices().unwrap();
+
+        let expected_vertices = vec![
+            Point3::new(-960.0, 64.0, 64.0 + 0.1),
+            Point3::new(
+                -960.0,
+                -64.0 - FRAC_1_SQRT_2 * 0.1,
+                64.0 + FRAC_1_SQRT_2 * 0.1,
+            ),
+            Point3::new(-832.0, 64.0, 64.0 + 0.1),
+            Point3::new(
+                -832.0,
+                -64.0 - FRAC_1_SQRT_2 * 0.1,
+                64.0 + FRAC_1_SQRT_2 * 0.1,
+            ),
+            Point3::new(-960.0, -64.0 - 0.1, 0.0),
+            Point3::new(-832.0, -64.0 - 0.1, 0.0),
+        ];
+
+        for vertice in &builder.vertices {
+            assert!(
+                expected_vertices
+                    .iter()
+                    .any(|v| relative_eq!(v, vertice, epsilon = EPSILON)),
+                "unexpected vertice {}",
+                vertice
+            );
+        }
+
+        builder.cut_faces().unwrap();
+        builder.remove_vertices_outside();
+        builder.ensure_not_empty().unwrap();
+        builder.recenter();
+
+        let expected_vertices = vec![
+            Point3::new(
+                -35.934_752_225_875_854,
+                -31.288_081_407_546_997,
+                15.476_860_105_991_364,
+            ),
+            Point3::new(
+                -36.673_888_564_109_8,
+                50.222_676_992_416_38,
+                15.476_852_655_410_767,
+            ),
+            Point3::new(
+                32.293_945_550_918_58,
+                74.929_660_558_700_56,
+                15.476_860_105_991_364,
+            ),
+            Point3::new(
+                37.192_076_444_625_854,
+                -31.288_081_407_546_997,
+                15.476_860_105_991_364,
+            ),
+            Point3::new(
+                38.820_615_410_804_75,
+                -31.288_081_407_546_997,
+                -37.880_241_870_880_13,
+            ),
+            Point3::new(
+                -35.697_692_632_675_17,
+                -31.288_081_407_546_997,
+                -24.027_198_553_085_327,
+            ),
+        ];
+
+        assert_eq!(builder.vertices.len(), expected_vertices.len());
+
+        for vertice in &builder.vertices {
+            assert!(
+                expected_vertices.iter().any(|v| relative_eq!(
+                    v,
+                    vertice,
+                    epsilon = EPSILON * 100.0 // reference data probably inprecise
+                )),
+                "unexpected vertice {}",
+                vertice
+            );
+        }
+
+        for face in &builder.faces {
+            for &i in &face.vertice_indices {
+                assert!(
+                    builder.vertices.len() > i,
+                    "face has invalid vertice index {}",
+                    i
+                );
+            }
+        }
     }
 }
