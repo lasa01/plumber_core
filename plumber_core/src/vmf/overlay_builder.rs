@@ -156,10 +156,11 @@ impl<'a> OverlayBuilder<'a> {
     fn cut_faces(&mut self) -> Result<(), OverlayError> {
         let vertices = &mut self.vertices;
         let global_to_uv_matrix = &self.global_to_uv_matrix;
+        let origin = &self.origin;
 
         let mut uv_space_vertices = vertices
             .iter()
-            .map(|v| global_to_uv_matrix * v)
+            .map(|v| Point3::from(global_to_uv_matrix * (v - origin)))
             .collect_vec();
 
         let up = Vector3::new(0.0, 0.0, 1.0);
