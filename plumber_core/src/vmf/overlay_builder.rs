@@ -285,6 +285,9 @@ impl<'a> OverlayBuilder<'a> {
             if vertices_to_remove.contains(&i) {
                 // remove faces referencing the vertice
                 faces.retain(|f| !f.vertice_indices.contains(&i));
+                i += 1;
+                false
+            } else {
                 // fix other faces' vertice indices
                 for builder in faces.iter_mut() {
                     for f_i in &mut builder.vertice_indices {
@@ -293,9 +296,6 @@ impl<'a> OverlayBuilder<'a> {
                         }
                     }
                 }
-                i += 1;
-                false
-            } else {
                 i += 1;
                 new_i += 1;
                 true
@@ -397,7 +397,8 @@ impl<'a> OverlayBuilder<'a> {
         for vertice in &mut self.vertices {
             *vertice -= center;
         }
-        self.origin += center;
+        // vertices are global space before this point
+        self.origin = center.into();
     }
 
     fn finish(self) -> Result<BuiltOverlay<'a>, OverlayError> {
