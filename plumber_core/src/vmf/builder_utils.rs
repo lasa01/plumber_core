@@ -4,7 +4,7 @@ use super::Plane;
 
 use approx::abs_diff_eq;
 use itertools::Itertools;
-use nalgebra::{geometry::Point3, Unit, Vector3};
+use nalgebra::{geometry::Point3, Matrix2x3, Matrix3, Point2, Unit, Vector3};
 
 pub(crate) const EPSILON: f64 = 1e-3;
 pub(crate) const CUT_THRESHOLD: f64 = 1e-3;
@@ -111,6 +111,48 @@ pub(crate) fn lerp_uv(lhs: [f64; 2], rhs: [f64; 2], t: f64) -> [f64; 2] {
     [lerp(lhs[0], rhs[0], t), lerp(lhs[1], rhs[1], t)]
 }
 
+pub(crate) fn affine_matrix(
+    src_points: [Point2<f64>; 3],
+    dst_points: [Point2<f64>; 3],
+) -> Option<Matrix2x3<f64>> {
+    let src_matrix = Matrix3::new(
+        src_points[0].x,
+        src_points[1].x,
+        src_points[2].x,
+        src_points[0].y,
+        src_points[1].y,
+        src_points[2].y,
+        1.0,
+        1.0,
+        1.0,
+    )
+    .try_inverse()?;
+
+    let dst_matrix = Matrix2x3::new(
+        dst_points[0].x,
+        dst_points[1].x,
+        dst_points[2].x,
+        dst_points[0].y,
+        dst_points[1].y,
+        dst_points[2].y,
+    );
+
+    Some(dst_matrix * src_matrix)
+}
+
+pub(crate) fn affine_transform_point(matrix: &Matrix2x3<f64>, point: Point2<f64>) -> Point2<f64> {
+    matrix.remove_column(2) * point + matrix.column(2)
+}
+
+pub(crate) fn is_point_left_of_line(
+    line_a: &Point2<f64>,
+    line_b: &Point2<f64>,
+    point: &Point2<f64>,
+) -> bool {
+    (point.x - line_a.x) * (line_b.y - line_a.y) - (point.y - line_a.y) * (line_b.x - line_a.x)
+        < 0.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,5 +245,40 @@ mod tests {
             Point3::new(0.285_714_285_7, 0.0, 2.571_428_571_4),
             epsilon = EPSILON,
         );
+    }
+
+    #[test]
+    fn affine_transformation() {
+        let affine_matrix = affine_matrix(
+            [
+                Point2::new(-35.3834, -48.1264),
+                Point2::new(-36.3596, 41.648),
+                Point2::new(32.6082, 62.2508),
+            ],
+            [
+                Point2::new(0.0, 1.0),
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            ],
+        )
+        .unwrap();
+
+        assert_relative_eq!(
+            affine_transform_point(&affine_matrix, Point2::new(-35.3834, -48.1264)),
+            Point2::new(0.0, 1.0),
+        )
+    }
+
+    #[test]
+    fn point_line_side() {
+        let line_a = Point2::new(-2.0, -1.0);
+        let line_b = Point2::new(1.0, 0.0);
+        let point = Point2::new(-1.0, 1.0);
+
+        assert!(is_point_left_of_line(&line_a, &line_b, &point));
+
+        let point = Point2::new(2.0, 0.0);
+
+        assert!(!is_point_left_of_line(&line_a, &line_b, &point));
     }
 }

@@ -3,13 +3,16 @@ use std::{collections::BTreeMap, fmt::Debug, sync::Mutex};
 use crate::fs::PathBuf;
 
 use super::{
-    builder_utils::{polygon_center, polygon_normal, NdPlane, CUT_THRESHOLD, EPSILON},
+    builder_utils::{
+        affine_matrix, affine_transform_point, is_point_left_of_line, polygon_center,
+        polygon_normal, NdPlane, CUT_THRESHOLD, EPSILON,
+    },
     entities::{EntityParseError, Overlay, OverlayUvInfo},
 };
 
 use approx::relative_eq;
 use itertools::Itertools;
-use nalgebra::{geometry::Point3, Matrix2x3, Matrix3, Point2, Unit, Vector3};
+use nalgebra::{geometry::Point3, Matrix3, Point2, Unit, Vector3};
 use thiserror::Error;
 
 pub(crate) type SideFacesMap = BTreeMap<i32, Vec<Vec<Point3<f64>>>>;
@@ -322,78 +325,51 @@ impl<'a> OverlayBuilder<'a> {
         for builder in &mut self.faces {
             // uv calculations are 2 affine transformations of triangles
 
-            // calculate matrix for first triangle (vertices 0, 1, 2)
-            let mut src_matrix_a = Matrix3::new(
-                self.uv_info.uvs[0].x,
-                self.uv_info.uvs[1].x,
-                self.uv_info.uvs[2].x,
-                self.uv_info.uvs[0].y,
-                self.uv_info.uvs[1].y,
-                self.uv_info.uvs[2].y,
-                1.0,
-                1.0,
-                1.0,
-            );
+            // calculate matrix for first triangle (uv points 0, 1, 2)
+            let affine_matrix_a = affine_matrix(
+                [
+                    self.uv_info.uvs[0].xy(),
+                    self.uv_info.uvs[1].xy(),
+                    self.uv_info.uvs[2].xy(),
+                ],
+                [
+                    Point2::new(self.uv_info.start_u, self.uv_info.start_v),
+                    Point2::new(self.uv_info.start_u, self.uv_info.end_v),
+                    Point2::new(self.uv_info.end_u, self.uv_info.end_v),
+                ],
+            )
+            .ok_or(OverlayError::InvalidUvData)?;
 
-            let dst_matrix_a = Matrix2x3::new(
-                self.uv_info.start_u,
-                self.uv_info.start_u,
-                self.uv_info.end_u,
-                self.uv_info.end_v,
-                self.uv_info.start_v,
-                self.uv_info.start_v,
-            );
-
-            if !src_matrix_a.try_inverse_mut() {
-                return Err(OverlayError::InvalidUvData);
-            }
-
-            let affine_matrix_a = dst_matrix_a * src_matrix_a;
-
-            // same for second triangle (vertices 2, 3, 0)
-            let mut src_matrix_b = Matrix3::new(
-                self.uv_info.uvs[2].x,
-                self.uv_info.uvs[3].x,
-                self.uv_info.uvs[0].x,
-                self.uv_info.uvs[2].y,
-                self.uv_info.uvs[3].y,
-                self.uv_info.uvs[0].y,
-                1.0,
-                1.0,
-                1.0,
-            );
-
-            let dst_matrix_b = Matrix2x3::new(
-                self.uv_info.end_u,
-                self.uv_info.end_u,
-                self.uv_info.start_u,
-                self.uv_info.start_v,
-                self.uv_info.end_v,
-                self.uv_info.end_v,
-            );
-
-            if !src_matrix_b.try_inverse_mut() {
-                return Err(OverlayError::InvalidUvData);
-            }
-
-            let affine_matrix_b = dst_matrix_b * src_matrix_b;
+            // same for second triangle (uv points 2, 3, 0)
+            let affine_matrix_b = affine_matrix(
+                [
+                    self.uv_info.uvs[2].xy(),
+                    self.uv_info.uvs[3].xy(),
+                    self.uv_info.uvs[0].xy(),
+                ],
+                [
+                    Point2::new(self.uv_info.end_u, self.uv_info.end_v),
+                    Point2::new(self.uv_info.end_u, self.uv_info.start_v),
+                    Point2::new(self.uv_info.start_u, self.uv_info.start_v),
+                ],
+            )
+            .ok_or(OverlayError::InvalidUvData)?;
 
             for &vert_i in &builder.vertice_indices {
                 let uv_vert = self.uv_space_vertices[vert_i].xy();
 
                 // determine which triangle this vertice is inside of
-                let affine_matrix = if distance_point_to_line(
+                let affine_matrix = if is_point_left_of_line(
                     &self.uv_info.uvs[0].xy(),
                     &self.uv_info.uvs[2].xy(),
                     &uv_vert,
-                ) > 0.0
-                {
-                    &affine_matrix_b
-                } else {
+                ) {
                     &affine_matrix_a
+                } else {
+                    &affine_matrix_b
                 };
 
-                let uv = affine_matrix.remove_column(2) * uv_vert + affine_matrix.column(2);
+                let uv = affine_transform_point(affine_matrix, uv_vert);
                 builder.vertice_uvs.push([uv.x, uv.y]);
             }
         }
@@ -424,10 +400,6 @@ impl<'a> OverlayBuilder<'a> {
             material,
         })
     }
-}
-
-fn distance_point_to_line(line_a: &Point2<f64>, line_b: &Point2<f64>, point: &Point2<f64>) -> f64 {
-    (point.x - line_a.x) * (line_b.y - line_a.y) - (point.y - line_a.y) * (line_b.x - line_a.x)
 }
 
 impl<'a> Overlay<'a> {
@@ -729,7 +701,10 @@ mod tests {
         builder.cut_faces().unwrap();
         builder.remove_vertices_outside();
         builder.ensure_not_empty().unwrap();
+        builder.create_uvs().unwrap();
         builder.recenter();
+
+        let mut is = vec![0; expected_vertices.len()];
 
         let expected_vertices = vec![
             Point3::new(
@@ -766,13 +741,17 @@ mod tests {
 
         assert_eq!(builder.vertices.len(), expected_vertices.len());
 
-        for vertice in &builder.vertices {
+        for (i, vertice) in builder.vertices.iter().enumerate() {
             assert!(
-                expected_vertices.iter().any(|v| relative_eq!(
-                    v,
-                    vertice,
-                    epsilon = EPSILON * 100.0 // reference data probably inprecise
-                )),
+                expected_vertices.iter().enumerate().any(|(j, v)| {
+                    // test data has different offset algorithm, need large epsilon
+                    if relative_eq!(v, vertice, epsilon = EPSILON * 100.0) {
+                        is[j] = i;
+                        true
+                    } else {
+                        false
+                    }
+                }),
                 "unexpected vertice {}",
                 vertice
             );
@@ -786,6 +765,35 @@ mod tests {
                     i
                 );
             }
+        }
+
+        let side = &builder.faces[0];
+        let expected_uvs = side
+            .vertice_indices
+            .iter()
+            .map(|&i| match is.iter().position(|&j| j == i).unwrap() {
+                0 => (0.0, 1.0 - 0.232_844),
+                1 => (0.0, 0.0),
+                2 => (1.0, 0.0),
+                3 => (1.0, 1.0 - 0.236_098),
+                _ => unreachable!(),
+            })
+            .collect_vec();
+        for (uv, expected_uv) in side.vertice_uvs.iter().zip(&expected_uvs) {
+            assert!(
+                // test data has different offset algorithm, need large epsilon
+                relative_eq!(uv[0], expected_uv.0, epsilon = EPSILON * 100.0),
+                "got {:?}, expected {:?}",
+                side.vertice_uvs,
+                expected_uvs
+            );
+            assert!(
+                // test data has different offset algorithm, need large epsilon
+                relative_eq!(uv[1], expected_uv.1, epsilon = EPSILON * 100.0),
+                "got {:?}, expected {:?}",
+                side.vertice_uvs,
+                expected_uvs
+            );
         }
     }
 }
