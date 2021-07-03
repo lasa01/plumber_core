@@ -302,6 +302,13 @@ impl<'a> OverlayBuilder<'a> {
                 true
             }
         });
+
+        i = 0;
+        self.uv_space_vertices.retain(|_| {
+            let retain = !vertices_to_remove.contains(&i);
+            i += 1;
+            retain
+        });
     }
 
     fn ensure_not_empty(&self) -> Result<(), OverlayError> {
