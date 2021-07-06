@@ -11,6 +11,8 @@
 
 #[cfg(feature = "fs")]
 pub mod fs;
+#[cfg(feature = "mdl")]
+pub mod mdl;
 mod parsers;
 #[cfg(feature = "steam")]
 pub mod steam;
