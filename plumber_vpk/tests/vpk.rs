@@ -14,8 +14,8 @@ fn test_vpk_single_file() {
     let mut file = vpk
         .open_file(Path::try_from_str("test.vdf").unwrap())
         .unwrap();
-    let contents = String::from_utf8(file.verify_contents().unwrap()).unwrap();
-    assert_eq!(&contents, include_str!("test.vdf"));
+    let contents = String::from_utf8(file.verify_contents().unwrap()).unwrap().replace("\r\n", "\n");
+    assert_eq!(contents, include_str!("test.vdf").replace("\r\n", "\n"));
 }
 
 #[test]
