@@ -65,7 +65,7 @@ use plumber_core::fs::ReadDir;
 fn recurse_readdir(readdir: ReadDir, encountered: &mut HashSet<(StdPathBuf, PathBuf)>) {
     // check that recursing yields no duplicates
     for entry in readdir.map(Result::unwrap) {
-        let search_path = entry.real_parent().to_path_buf();
+        let search_path = entry.search_path().to_path_buf();
         let entry_path = entry.path().to_path_buf();
         if entry.entry_type().is_directory() {
             recurse_readdir(entry.read_dir(), encountered);

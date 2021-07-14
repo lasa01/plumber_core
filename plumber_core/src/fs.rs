@@ -550,10 +550,7 @@ impl OpenFileSystem {
                 return Ok(file);
             }
         }
-        Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            file_path.as_str().to_string(),
-        ))
+        Err(io::Error::new(io::ErrorKind::NotFound, "no such file"))
     }
 
     /// Reads the specified file into a [`Vec`].
@@ -698,7 +695,7 @@ impl<'a> DirEntry<'a> {
     }
 
     #[must_use]
-    pub fn real_parent(&self) -> &StdPath {
+    pub fn search_path(&self) -> &StdPath {
         self.search_path.path()
     }
 
@@ -711,8 +708,7 @@ impl<'a> DirEntry<'a> {
         self.search_path
             .try_open_file(&self.path())
             .and_then(|maybe_file| {
-                maybe_file
-                    .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, self.path.as_str()))
+                maybe_file.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such file"))
             })
     }
 
@@ -757,7 +753,8 @@ pub enum GameFile<'a> {
 }
 
 impl<'a> GameFile<'a> {
-    fn size(&self) -> Option<usize> {
+    #[must_use]
+    pub fn size(&self) -> Option<usize> {
         match self {
             GameFile::Fs(f) => f.metadata().map_or(None, |m| Some(m.len() as usize)),
             GameFile::Vpk(f) => Some(f.size()),
