@@ -5,11 +5,7 @@ use crate::{
     vmt::loader::{MaterialInfo, MaterialLoadError},
 };
 
-use super::{
-    builder_utils::{lerp_uv, polygon_center, polygon_normal, NdPlane, CUT_THRESHOLD, EPSILON},
-    overlay_builder::SideFacesMap,
-    Side, Solid,
-};
+use super::{Side, Solid, builder_utils::{NdPlane, GeometrySettings, lerp_uv, polygon_center, polygon_normal}, overlay_builder::SideFacesMap};
 
 use approx::relative_eq;
 use float_ord::FloatOrd;
@@ -383,12 +379,13 @@ impl<'a> SolidBuilder<'a> {
         }
     }
 
-    fn intersect_sides(&mut self) {
+    fn intersect_sides(&mut self, epsilon: f64, cut_threshold: f64) {
         for (i1, i2, i3) in (0..self.sides.len()).tuple_combinations() {
             if let Some(point) = NdPlane::intersect(
                 &self.sides[i1].plane,
                 &self.sides[i2].plane,
                 &self.sides[i3].plane,
+                epsilon,
             ) {
                 // check if vertice is outside the brush
                 if self
@@ -396,7 +393,7 @@ impl<'a> SolidBuilder<'a> {
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| *i != i1 && *i != i2 && *i != i3)
-                    .any(|(_, builder)| builder.plane.distance_to_point(&point) > CUT_THRESHOLD)
+                    .any(|(_, builder)| builder.plane.distance_to_point(&point) > cut_threshold)
                 {
                     continue;
                 }
@@ -404,7 +401,7 @@ impl<'a> SolidBuilder<'a> {
                 let vertice_i = self
                     .vertices
                     .iter()
-                    .position(|v| relative_eq!(*v, &point, epsilon = EPSILON))
+                    .position(|v| relative_eq!(*v, &point, epsilon = epsilon))
                     .unwrap_or_else(|| {
                         // if not, create it
                         self.vertices.push(point);
@@ -522,9 +519,10 @@ impl Solid {
         &self,
         get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
+        settings: &GeometrySettings,
     ) -> Result<BuiltSolid, SolidError> {
         let mut builder = SolidBuilder::new(self);
-        builder.intersect_sides();
+        builder.intersect_sides(settings.epsilon, settings.cut_threshold);
         builder.remove_invalid_sides();
         builder.sort_vertices();
         builder.build_uvs(get_material_info);
@@ -645,7 +643,7 @@ mod tests {
     fn solid_building() {
         let solid = get_test_solid();
         let mut builder = SolidBuilder::new(&solid);
-        builder.intersect_sides();
+        builder.intersect_sides(1e-3, 1e-3);
         builder.remove_invalid_sides();
         builder.recenter();
 
@@ -667,7 +665,7 @@ mod tests {
         for (i, vertice) in builder.vertices.iter().enumerate() {
             assert!(
                 expected_vertices.iter().enumerate().any(|(j, v)| {
-                    if relative_eq!(v, vertice, epsilon = EPSILON) {
+                    if relative_eq!(v, vertice, epsilon = 1e-3) {
                         is[j] = i;
                         true
                     } else {
@@ -682,7 +680,7 @@ mod tests {
         assert_relative_eq!(
             builder.center,
             Point3::new(-896.0, 0.0, 32.0),
-            epsilon = EPSILON
+            epsilon = 1e-3
         );
 
         builder.sort_vertices();
@@ -734,13 +732,13 @@ mod tests {
             .collect_vec();
         for (uv, expected_uv) in side.vertice_uvs.iter().zip(&expected_uvs) {
             assert!(
-                relative_eq!(uv[0], expected_uv.0, epsilon = EPSILON),
+                relative_eq!(uv[0], expected_uv.0, epsilon = 1e-3),
                 "got {:?}, expected {:?}",
                 side.vertice_uvs,
                 expected_uvs
             );
             assert!(
-                relative_eq!(uv[1], expected_uv.1, epsilon = EPSILON),
+                relative_eq!(uv[1], expected_uv.1, epsilon = 1e-3),
                 "got {:?}, expected {:?}",
                 side.vertice_uvs,
                 expected_uvs
@@ -917,7 +915,7 @@ mod tests {
     fn displacement_building() {
         let solid = get_test_displacement();
         let mut builder = SolidBuilder::new(&solid);
-        builder.intersect_sides();
+        builder.intersect_sides(1e-3, 1e-3);
         builder.remove_invalid_sides();
         builder.sort_vertices();
         builder.build_uvs(|_| Ok(MaterialInfo::new(1024, 1024, false)));
@@ -1014,7 +1012,7 @@ mod tests {
             assert!(
                 expected_vertices
                     .iter()
-                    .any(|v| relative_eq!(v, vertice, epsilon = EPSILON)),
+                    .any(|v| relative_eq!(v, vertice, epsilon = 1e-3)),
                 "unexpected vertice {}",
                 vertice
             );
@@ -1023,7 +1021,7 @@ mod tests {
         assert_relative_eq!(
             builder.center,
             Point3::new(146.974, 0.0, 131.398),
-            epsilon = EPSILON
+            epsilon = 1e-3
         );
 
         for side in &builder.sides {

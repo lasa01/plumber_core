@@ -3,6 +3,7 @@ use std::{
     io,
     sync::{Condvar, Mutex},
     time::Duration,
+    fmt::Debug,
 };
 
 use image::RgbaImage;
@@ -79,8 +80,8 @@ impl TextureLoadError {
     }
 }
 
-pub trait MaterialBuilder: Sized {
-    type Built;
+pub trait MaterialBuilder: Sized + Clone + Send + Sync + 'static {
+    type Built: Debug + Send + Sync + 'static;
 
     /// # Errors
     ///
@@ -131,7 +132,7 @@ fn get_dimension_reference(shader: &Shader) -> Option<&String> {
 
 /// The default material builder.
 /// Does nothing.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DefaultMaterialBuilder;
 
 impl MaterialBuilder for DefaultMaterialBuilder {

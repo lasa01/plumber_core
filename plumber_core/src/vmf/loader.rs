@@ -12,16 +12,35 @@ use crate::{
     vmt::loader::{DefaultMaterialBuilder, Loader, MaterialBuilder, MaterialLoadError},
 };
 
+pub use super::builder_utils::GeometrySettings as GeometrySettings;
 pub use super::overlay_builder::{BuiltOverlay, BuiltOverlayFace, OverlayError};
 pub use super::solid_builder::{BuiltSide, BuiltSolid, SolidError};
 
 use super::{entities::TypedEntity, overlay_builder::SideFacesMap, Vmf};
 
+#[derive(Debug, Clone)]
+pub struct Settings<M: MaterialBuilder> {
+    material_loader: M,
+    geometry_settings: GeometrySettings,
+}
+
+impl Default for Settings<DefaultMaterialBuilder> {
+    fn default() -> Self {
+        Self {
+            material_loader: DefaultMaterialBuilder,
+            geometry_settings: GeometrySettings::default(),
+        }
+    }
+}
+
 impl Vmf {
     #[must_use]
-    pub fn scene(&self, file_system: OpenFileSystem) -> Scene {
+    pub fn scene<M>(&self, file_system: OpenFileSystem, settings: Settings<M>) -> Scene<M>
+    where
+        M: MaterialBuilder,
+    {
         let file_system = Arc::new(file_system);
-        let material_loader = Arc::new(Loader::new(DefaultMaterialBuilder));
+        let material_loader = Arc::new(Loader::new(settings.material_loader.clone()));
         let (material_job_sender, material_job_receiver) = crossbeam_channel::unbounded();
         let (material_result_sender, material_result_receiver) = crossbeam_channel::bounded(10);
 
@@ -40,13 +59,6 @@ impl Vmf {
 
         let side_faces_map = Arc::new(Mutex::new(BTreeMap::new()));
 
-        // this is 1 less than number of cpus since one thread is for material loading only
-        let num_threads = (num_cpus::get() - 1).max(1);
-        // ignore the error if the thread pool is already built
-        let _res = ThreadPoolBuilder::new()
-            .num_threads(num_threads)
-            .build_global();
-
         Scene {
             vmf: self,
             file_system,
@@ -54,39 +66,28 @@ impl Vmf {
             material_job_sender,
             material_result_receiver,
             side_faces_map,
+            settings,
         }
     }
 }
 
 #[derive(Debug)]
-pub struct Scene<'a> {
+pub struct Scene<'a, M: MaterialBuilder> {
     vmf: &'a Vmf,
     file_system: Arc<OpenFileSystem>,
-    material_loader: Arc<Loader<DefaultMaterialBuilder>>,
+    material_loader: Arc<Loader<M>>,
     material_job_sender: crossbeam_channel::Sender<PathBuf>,
-    material_result_receiver: crossbeam_channel::Receiver<
-        Result<<DefaultMaterialBuilder as MaterialBuilder>::Built, MaterialLoadError>,
-    >,
+    material_result_receiver:
+        crossbeam_channel::Receiver<Result<<M as MaterialBuilder>::Built, MaterialLoadError>>,
     side_faces_map: Arc<Mutex<SideFacesMap>>,
+    settings: Settings<M>,
 }
 
-impl<'a> Scene<'a> {
+impl<'a, M> Scene<'a, M>
+where
+    M: MaterialBuilder,
+{
     /// This should be called first when loading the scene.
-    /// Material loading starts as soon as this is called.
-    ///
-    /// The returned channel is bounded, so items must be receiver from it
-    /// concurrently with loading other assets to prevent deadlocks.
-    #[must_use]
-    pub fn load_materials(
-        &self,
-    ) -> &crossbeam_channel::Receiver<
-        Result<<DefaultMaterialBuilder as MaterialBuilder>::Built, MaterialLoadError>,
-    > {
-        self.send_material_jobs();
-
-        &self.material_result_receiver
-    }
-
     fn send_material_jobs(&self) {
         // make sure solids' materials are loaded first
         // because solid loading later requires the material info to be available
@@ -136,17 +137,23 @@ impl<'a> Scene<'a> {
     }
 
     fn load_brushes(
-        material_loader: Arc<Loader<DefaultMaterialBuilder>>,
+        material_loader: Arc<Loader<M>>,
         side_faces_map: Arc<Mutex<SideFacesMap>>,
         vmf: &'a Vmf,
+        geometry_settings: GeometrySettings,
     ) -> impl ParallelIterator<Item = Result<BuiltSolid, SolidError>> {
         let world_solids_iter = {
             vmf.world.solids.par_iter().map_with(
-                (material_loader.clone(), side_faces_map.clone()),
-                |(material_loader, side_faces_map), s| {
+                (
+                    material_loader.clone(),
+                    side_faces_map.clone(),
+                    geometry_settings.clone(),
+                ),
+                |(material_loader, side_faces_map, geometry_settings), s| {
                     s.build_mesh(
                         |path| material_loader.wait_for_material(path),
                         side_faces_map,
+                        &geometry_settings,
                     )
                 },
             )
@@ -157,11 +164,12 @@ impl<'a> Scene<'a> {
                 .par_iter()
                 .flat_map_iter(|e| &e.solids)
                 .map_with(
-                    (material_loader, side_faces_map),
-                    |(material_loader, side_faces_map), s| {
+                    (material_loader, side_faces_map, geometry_settings),
+                    |(material_loader, side_faces_map, geometry_settings), s| {
                         s.build_mesh(
                             |path| material_loader.wait_for_material(path),
                             side_faces_map,
+                            &geometry_settings,
                         )
                     },
                 )
@@ -173,6 +181,7 @@ impl<'a> Scene<'a> {
     fn load_overlays(
         side_faces_map: Arc<Mutex<SideFacesMap>>,
         vmf: &'a Vmf,
+        geometry_settings: GeometrySettings,
     ) -> impl ParallelIterator<Item = Result<BuiltOverlay, OverlayError>> {
         vmf.entities
             .par_iter()
@@ -183,21 +192,31 @@ impl<'a> Scene<'a> {
                     None
                 }
             })
-            .map_with(side_faces_map, |side_faces_map, o| {
-                o.build_mesh(&side_faces_map)
-            })
+            .map_with(
+                (side_faces_map, geometry_settings),
+                |(side_faces_map, geometry_settings), o| {
+                    o.build_mesh(&side_faces_map, &geometry_settings)
+                },
+            )
     }
 
-    pub fn load_assets_sequential(self, mut asset_callback: impl FnMut(Asset)) {
-        let material_receiver = self.load_materials().clone();
+    pub fn load_assets_sequential(self, mut asset_callback: impl FnMut(Asset<M>)) {
+        self.send_material_jobs();
+        let material_receiver = self.material_result_receiver;
         let (asset_sender, asset_receiver) = crossbeam_channel::bounded(10);
 
         let vmf = self.vmf;
         let material_loader = self.material_loader;
         let side_faces_map = self.side_faces_map;
         let material_job_sender = self.material_job_sender;
+        let settings = self.settings;
 
-        crossbeam_utils::thread::scope(|s| {
+        // this is 2 less than number of cpus since one thread is for material loading and one for asset callback
+        // rest of the cpus are used for parallel asset loading
+        let num_threads = num_cpus::get().saturating_sub(2).max(1);
+        let pool = ThreadPoolBuilder::new().num_threads(num_threads).build().expect("thread pool building shouldn't fail");
+
+        pool.in_place_scope(|s| {
             s.spawn(|_| {
                 Self::load_other_entities(vmf).for_each_with(
                     asset_sender.clone(),
@@ -207,22 +226,23 @@ impl<'a> Scene<'a> {
                             .expect("the channel should outlive the thread")
                     },
                 );
-                Self::load_brushes(material_loader, side_faces_map.clone(), vmf).for_each_with(
-                    asset_sender.clone(),
-                    |asset_sender, r| {
-                        asset_sender
-                            .send(Asset::Solid(r))
-                            .expect("the channel should outlive the thread")
-                    },
-                );
-                Self::load_overlays(side_faces_map, vmf).for_each_with(
-                    asset_sender,
-                    |asset_sender, r| {
+                Self::load_brushes(
+                    material_loader,
+                    side_faces_map.clone(),
+                    vmf,
+                    settings.geometry_settings.clone(),
+                )
+                .for_each_with(asset_sender.clone(), |asset_sender, r| {
+                    asset_sender
+                        .send(Asset::Solid(r))
+                        .expect("the channel should outlive the thread")
+                });
+                Self::load_overlays(side_faces_map, vmf, settings.geometry_settings.clone())
+                    .for_each_with(asset_sender, |asset_sender, r| {
                         asset_sender
                             .send(Asset::Overlay(r))
                             .expect("the channel should outlive the thread")
-                    },
-                );
+                    });
                 // at this point no more materials to load, signal the thread to stop
                 // this will also cause the loop below to terminate
                 drop(material_job_sender);
@@ -263,14 +283,13 @@ impl<'a> Scene<'a> {
                     unreachable!()
                 };
             }
-        })
-        .expect("asset loader thread shouldn't panic");
+        });
     }
 }
 
 #[derive(Debug)]
-pub enum Asset<'a> {
-    Material(Result<<DefaultMaterialBuilder as MaterialBuilder>::Built, MaterialLoadError>),
+pub enum Asset<'a, M: MaterialBuilder> {
+    Material(Result<<M as MaterialBuilder>::Built, MaterialLoadError>),
     Entity(TypedEntity<'a>),
     Solid(Result<BuiltSolid<'a>, SolidError>),
     Overlay(Result<BuiltOverlay<'a>, OverlayError>),
@@ -294,7 +313,7 @@ mod tests {
 
         let parsed = Vmf::from_bytes(vmf).unwrap();
         let file_system = FileSystem::from_paths(root_path, game_info_path).unwrap();
-        let scene = parsed.scene(file_system.open().unwrap());
+        let scene = parsed.scene(file_system.open().unwrap(), Settings::default());
         scene.load_assets_sequential(|asset| {
             dbg!(asset);
         });

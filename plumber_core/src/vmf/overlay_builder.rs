@@ -2,13 +2,7 @@ use std::{collections::BTreeMap, fmt::Debug, sync::Mutex};
 
 use crate::fs::PathBuf;
 
-use super::{
-    builder_utils::{
-        affine_matrix, affine_transform_point, is_point_left_of_line, polygon_center,
-        polygon_normal, NdPlane, CUT_THRESHOLD, EPSILON,
-    },
-    entities::{EntityParseError, Overlay, OverlayUvInfo},
-};
+use super::{builder_utils::{NdPlane, GeometrySettings, affine_matrix, affine_transform_point, is_point_left_of_line, polygon_center, polygon_normal}, entities::{EntityParseError, Overlay, OverlayUvInfo}};
 
 use approx::relative_eq;
 use itertools::Itertools;
@@ -103,6 +97,7 @@ impl<'a> OverlayBuilder<'a> {
     fn create_vertices(
         &mut self,
         side_faces_map: &Mutex<SideFacesMap>,
+        epsilon: f64,
     ) -> Result<(), OverlayError> {
         for side_i in self.overlay.sides()? {
             let side_faces_map = side_faces_map.lock().expect("mutex shouldn't be poisoned");
@@ -117,7 +112,7 @@ impl<'a> OverlayBuilder<'a> {
                         // check if vertice already exists
                         self.vertices
                             .iter()
-                            .position(|v| relative_eq!(v, vertice, epsilon = EPSILON))
+                            .position(|v| relative_eq!(v, vertice, epsilon = epsilon))
                             .unwrap_or_else(|| {
                                 // if not, create it
                                 self.vertices.push(*vertice);
@@ -157,7 +152,7 @@ impl<'a> OverlayBuilder<'a> {
         Ok(())
     }
 
-    fn cut_faces(&mut self) -> Result<(), OverlayError> {
+    fn cut_faces(&mut self, epsilon: f64, cut_threshold: f64) -> Result<(), OverlayError> {
         let vertices = &mut self.vertices;
         let global_to_uv_matrix = &self.global_to_uv_matrix;
         let origin = &self.origin;
@@ -176,7 +171,7 @@ impl<'a> OverlayBuilder<'a> {
 
             let outside_vertice_is = uv_space_vertices
                 .iter()
-                .positions(|v| cut_plane.distance_to_point(v) > CUT_THRESHOLD)
+                .positions(|v| cut_plane.distance_to_point(v) > cut_threshold)
                 .collect_vec();
 
             for builder in &mut self.faces {
@@ -210,14 +205,14 @@ impl<'a> OverlayBuilder<'a> {
 
                 // create new vertice on the uv border by intersecting the first edge crossing the uv border with the uv border plane
                 let new_uv_space_vertice = cut_plane
-                    .intersect_line(&first_line_a, &(first_line_b - first_line_a))
+                    .intersect_line(&first_line_a, &(first_line_b - first_line_a), epsilon)
                     .ok_or(OverlayError::InvalidUvData)?;
                 let new_vertice =
                     self.origin + self.uv_to_global_matrix * new_uv_space_vertice.coords;
 
                 let first_new_i = vertices
                     .iter()
-                    .position(|v| relative_eq!(v, &new_vertice, epsilon = EPSILON))
+                    .position(|v| relative_eq!(v, &new_vertice, epsilon = epsilon))
                     .unwrap_or_else(|| {
                         uv_space_vertices.push(new_uv_space_vertice);
                         vertices.push(new_vertice);
@@ -236,14 +231,14 @@ impl<'a> OverlayBuilder<'a> {
                 let last_line_b = uv_space_vertices[builder.vertice_indices[last_outside_i]];
 
                 let new_uv_space_vertice = cut_plane
-                    .intersect_line(&last_line_a, &(last_line_b - last_line_a))
+                    .intersect_line(&last_line_a, &(last_line_b - last_line_a), epsilon)
                     .ok_or(OverlayError::InvalidUvData)?;
                 let new_vertice =
                     self.origin + self.uv_to_global_matrix * new_uv_space_vertice.coords;
 
                 let last_new_i = vertices
                     .iter()
-                    .position(|v| relative_eq!(v, &new_vertice, epsilon = EPSILON))
+                    .position(|v| relative_eq!(v, &new_vertice, epsilon = epsilon))
                     .unwrap_or_else(|| {
                         uv_space_vertices.push(new_uv_space_vertice);
                         vertices.push(new_vertice);
@@ -263,7 +258,7 @@ impl<'a> OverlayBuilder<'a> {
         Ok(())
     }
 
-    fn remove_vertices_outside(&mut self) {
+    fn remove_vertices_outside(&mut self, cut_threshold: f64) {
         let mut vertices_to_remove = Vec::new();
         let up = Vector3::new(0.0, 0.0, 1.0);
 
@@ -274,7 +269,7 @@ impl<'a> OverlayBuilder<'a> {
                 .uv_space_vertices
                 .iter()
                 .enumerate()
-                .filter(|(_, v)| cut_plane.distance_to_point(v) > CUT_THRESHOLD)
+                .filter(|(_, v)| cut_plane.distance_to_point(v) > cut_threshold)
             {
                 if !vertices_to_remove.contains(&i) {
                     vertices_to_remove.push(i);
@@ -409,12 +404,13 @@ impl<'a> Overlay<'a> {
     pub fn build_mesh(
         self,
         side_faces_map: &Mutex<SideFacesMap>,
+        settings: &GeometrySettings,
     ) -> Result<BuiltOverlay<'a>, OverlayError> {
         let mut builder = OverlayBuilder::new(self)?;
-        builder.create_vertices(side_faces_map)?;
+        builder.create_vertices(side_faces_map, settings.epsilon)?;
         builder.offset_vertices()?;
-        builder.cut_faces()?;
-        builder.remove_vertices_outside();
+        builder.cut_faces(settings.epsilon, settings.cut_threshold)?;
+        builder.remove_vertices_outside(settings.cut_threshold);
         builder.ensure_not_empty()?;
         builder.create_uvs()?;
         builder.recenter();
@@ -636,6 +632,7 @@ mod tests {
                 .build_mesh(
                     |_| Ok(MaterialInfo::new(1024, 1024, false)),
                     &side_faces_map,
+                    &GeometrySettings::default(),
                 )
                 .unwrap();
         }
@@ -646,7 +643,7 @@ mod tests {
             _ => unreachable!(),
         };
         let mut builder = OverlayBuilder::new(overlay).unwrap();
-        builder.create_vertices(&side_faces_map).unwrap();
+        builder.create_vertices(&side_faces_map, 1e-3).unwrap();
 
         let expected_vertices = vec![
             Point3::new(-960.0, 64.0, 64.0),
@@ -663,7 +660,7 @@ mod tests {
             assert!(
                 expected_vertices
                     .iter()
-                    .any(|v| relative_eq!(v, vertice, epsilon = EPSILON)),
+                    .any(|v| relative_eq!(v, vertice, epsilon = 1e-3)),
                 "unexpected vertice {}",
                 vertice
             );
@@ -692,14 +689,14 @@ mod tests {
             assert!(
                 expected_vertices
                     .iter()
-                    .any(|v| relative_eq!(v, vertice, epsilon = EPSILON)),
+                    .any(|v| relative_eq!(v, vertice, epsilon = 1e-3)),
                 "unexpected vertice {}",
                 vertice
             );
         }
 
-        builder.cut_faces().unwrap();
-        builder.remove_vertices_outside();
+        builder.cut_faces(1e-3, 1e-3).unwrap();
+        builder.remove_vertices_outside(1e-3);
         builder.ensure_not_empty().unwrap();
         builder.create_uvs().unwrap();
         builder.recenter();
@@ -745,7 +742,7 @@ mod tests {
             assert!(
                 expected_vertices.iter().enumerate().any(|(j, v)| {
                     // test data has different offset algorithm, need large epsilon
-                    if relative_eq!(v, vertice, epsilon = EPSILON * 100.0) {
+                    if relative_eq!(v, vertice, epsilon = 0.1) {
                         is[j] = i;
                         true
                     } else {
@@ -782,14 +779,14 @@ mod tests {
         for (uv, expected_uv) in side.vertice_uvs.iter().zip(&expected_uvs) {
             assert!(
                 // test data has different offset algorithm, need large epsilon
-                relative_eq!(uv[0], expected_uv.0, epsilon = EPSILON * 100.0),
+                relative_eq!(uv[0], expected_uv.0, epsilon = 0.1),
                 "got {:?}, expected {:?}",
                 side.vertice_uvs,
                 expected_uvs
             );
             assert!(
                 // test data has different offset algorithm, need large epsilon
-                relative_eq!(uv[1], expected_uv.1, epsilon = EPSILON * 100.0),
+                relative_eq!(uv[1], expected_uv.1, epsilon = 0.1),
                 "got {:?}, expected {:?}",
                 side.vertice_uvs,
                 expected_uvs
