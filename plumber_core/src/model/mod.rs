@@ -181,6 +181,6 @@ impl<'a> Verified<'a> {
     }
 
     pub fn models(&self) -> Result<(), Error> {
-        Ok(())
+        todo!();
     }
 }

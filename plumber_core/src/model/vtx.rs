@@ -217,6 +217,21 @@ impl<'a> HeaderRef<'a> {
             bytes: self.bytes,
         })
     }
+
+    pub fn iter_body_parts(&self) -> Option<impl Iterator<Item = BodyPartRef>> {
+        let body_parts = self.body_parts()?;
+        Some(
+            body_parts
+                .body_parts
+                .into_iter()
+                .enumerate()
+                .map(move |(i, body_part)| BodyPartRef {
+                    body_part,
+                    offset: body_parts.offset + i * size_of::<BodyPart>(),
+                    bytes: body_parts.bytes,
+                }),
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -256,6 +271,21 @@ impl<'a> BodyPartRef<'a> {
             offset,
             bytes: self.bytes,
         })
+    }
+
+    pub fn iter_models(&self) -> Option<impl Iterator<Item = ModelRef>> {
+        let models = self.models()?;
+        Some(
+            models
+                .models
+                .into_iter()
+                .enumerate()
+                .map(move |(i, model)| ModelRef {
+                    model,
+                    offset: models.offset + i * size_of::<Model>(),
+                    bytes: models.bytes,
+                }),
+        )
     }
 }
 
@@ -337,6 +367,21 @@ impl<'a> LodRef<'a> {
             bytes: self.bytes,
         })
     }
+
+    pub fn iter_meshes(&self) -> Option<impl Iterator<Item = MeshRef>> {
+        let meshes = self.meshes()?;
+        Some(
+            meshes
+                .meshes
+                .into_iter()
+                .enumerate()
+                .map(move |(i, mesh)| MeshRef {
+                    mesh,
+                    offset: meshes.offset + i * size_of::<Mesh>(),
+                    bytes: meshes.bytes,
+                }),
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -376,6 +421,44 @@ impl<'a> MeshRef<'a> {
             offset,
             bytes: self.bytes,
         })
+    }
+
+    pub fn iter_strip_groups(&self) -> Option<impl Iterator<Item = StripGroupRef>> {
+        let strip_groups = self.strip_groups()?;
+        Some(
+            strip_groups
+                .strip_groups
+                .into_iter()
+                .enumerate()
+                .map(move |(i, strip_group)| StripGroupRef {
+                    strip_group,
+                    offset: strip_groups.offset + i * size_of::<StripGroup>(),
+                    bytes: strip_groups.bytes,
+                }),
+        )
+    }
+
+    pub fn merged_strip_groups(&self) -> Option<(Vec<usize>, Vec<usize>, usize)> {
+        let mut indices = Vec::new();
+        let mut vertices = Vec::new();
+        let mut offset: usize = 0;
+
+        for strip_group in self.iter_strip_groups()? {
+            indices.extend(strip_group.indices()?.iter().map(|&i| i as usize + offset));
+            vertices.extend(
+                strip_group
+                    .vertices()?
+                    .iter()
+                    .map(|v| v.original_mesh_vertex_index as usize),
+            );
+            offset += strip_group
+                .strips()?
+                .iter()
+                .map(|s| s.vertex_count as usize)
+                .sum::<usize>();
+        }
+
+        Some((indices, vertices, offset))
     }
 }
 

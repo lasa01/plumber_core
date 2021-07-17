@@ -417,6 +417,57 @@ struct BodyPart {
 
 #[derive(Debug, PartialEq, FromBytes)]
 #[repr(C)]
+struct Model {
+    name: [u8; 64],
+    kind: i32,
+    bounding_radius: f32,
+
+    mesh_count: i32,
+    mesh_offset: i32,
+
+    vertex_count: i32,
+    vertex_offset: i32,
+    tangent_offset: i32,
+
+    attachment_count: i32,
+    attachment_offset: i32,
+
+    eye_ball_count: i32,
+    eye_ball_offset: i32,
+
+    vertex_data_p: i32,
+    tangent_data_p: i32,
+
+    unused: [i32; 8],
+}
+
+#[derive(Debug, PartialEq, FromBytes)]
+#[repr(C)]
+struct Mesh {
+    material_index: i32,
+    model_offset: i32,
+    
+    vertex_count: i32,
+    vertex_index_start: i32,
+
+    flex_count: i32,
+    flex_offset: i32,
+
+    material_type: i32,
+    material_param: i32,
+    
+    id: i32,
+    center: [f32; 3],
+
+    vertex_data_p: i32,
+    
+    lod_vertex_counts: [i32; 8],
+    
+    unused: [i32; 8],
+}
+
+#[derive(Debug, PartialEq, FromBytes)]
+#[repr(C)]
 struct FlexController {
     type_offset: i32,
     name_offset: i32,
@@ -717,6 +768,18 @@ impl<'a> HeaderRef<'a> {
         )
     }
 
+    pub fn body_parts(&self) -> Option<BodyPartsRef> {
+        let offset = self.header_1.body_part_offset.try_into().ok()?;
+        let count = self.header_1.body_part_count.try_into().ok()?;
+        let body_parts = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?.0.into_slice();
+
+        Some(BodyPartsRef {
+            body_parts,
+            offset,
+            bytes: self.bytes,
+        })
+    }
+
     pub fn surface_prop(&self) -> Option<&str> {
         if self.header_1.surface_prop_offset > 0 {
             str::from_utf8(null_terminated_prefix(
@@ -857,6 +920,111 @@ impl<'a> TextureRef<'a> {
         let offset = self.offset as isize + self.texture.name_offset as isize;
         str::from_utf8(null_terminated_prefix(self.bytes.get(offset as usize..)?)?).ok()
     }
+}
+
+
+#[derive(Debug, Clone)]
+pub struct BodyPartsRef<'a> {
+    body_parts: &'a [BodyPart],
+    offset: usize,
+    bytes: &'a [u8],
+}
+
+impl<'a> BodyPartsRef<'a> {
+    pub fn get(&self, index: usize) -> Option<BodyPartRef> {
+        self.body_parts.get(index).map(|body_part| BodyPartRef {
+            body_part,
+            offset: self.offset + index * size_of::<BodyPart>(),
+            bytes: self.bytes,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BodyPartRef<'a> {
+    body_part: &'a BodyPart,
+    offset: usize,
+    bytes: &'a [u8],
+}
+
+impl<'a> BodyPartRef<'a> {
+    pub fn models(&self) -> Option<ModelsRef> {
+        let offset = (self.offset as isize + self.body_part.model_offset as isize) as usize;
+        let count = self.body_part.model_count.try_into().ok()?;
+        let models = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
+            .0
+            .into_slice();
+
+        Some(ModelsRef {
+            models,
+            offset,
+            bytes: self.bytes,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelsRef<'a> {
+    models: &'a [Model],
+    offset: usize,
+    bytes: &'a [u8],
+}
+
+impl<'a> ModelsRef<'a> {
+    pub fn get(&self, index: usize) -> Option<ModelRef> {
+        self.models.get(index).map(|model| ModelRef {
+            model,
+            offset: self.offset + index * size_of::<Model>(),
+            bytes: self.bytes,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelRef<'a> {
+    model: &'a Model,
+    offset: usize,
+    bytes: &'a [u8],
+}
+
+impl<'a> ModelRef<'a> {
+    pub fn meshes(&self) -> Option<MeshesRef> {
+        let offset = (self.offset as isize + self.model.mesh_offset as isize) as usize;
+        let count = self.model.mesh_count.try_into().ok()?;
+        let meshes = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
+            .0
+            .into_slice();
+
+        Some(MeshesRef {
+            meshes,
+            offset,
+            bytes: self.bytes,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MeshesRef<'a> {
+    meshes: &'a [Mesh],
+    offset: usize,
+    bytes: &'a [u8],
+}
+
+impl<'a> MeshesRef<'a> {
+    pub fn get(&self, index: usize) -> Option<MeshRef> {
+        self.meshes.get(index).map(|mesh| MeshRef {
+            mesh,
+            offset: self.offset + index * size_of::<Mesh>(),
+            bytes: self.bytes,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MeshRef<'a> {
+    mesh: &'a Mesh,
+    offset: usize,
+    bytes: &'a [u8],
 }
 
 #[cfg(all(test, feature = "steam"))]
