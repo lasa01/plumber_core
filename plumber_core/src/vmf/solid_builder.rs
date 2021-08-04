@@ -136,7 +136,9 @@ impl<'a> SideBuilder<'a> {
                 index
             });
 
-        let material_info = get_material_info(&self.side.material).unwrap_or_default();
+        let mut material_path = PathBuf::from("materials");
+        material_path.push(&self.side.material);
+        let material_info = get_material_info(&material_path).unwrap_or_default();
         let texture_width = f64::from(material_info.width());
         let texture_height = f64::from(material_info.height());
         self.vertice_uvs.reserve_exact(self.vertice_indices.len());

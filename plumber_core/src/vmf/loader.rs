@@ -94,16 +94,20 @@ where
         // because solid loading later requires the material info to be available
         for solid in &self.vmf.world.solids {
             for side in &solid.sides {
+                let mut material = PathBuf::from("materials");
+                material.push(&side.material);
                 self.material_job_sender
-                    .send(side.material.clone())
+                    .send(material)
                     .expect("material job channel shouldn't be disconnected");
             }
         }
         for entity in &self.vmf.entities {
             for solid in &entity.solids {
                 for side in &solid.sides {
+                    let mut material = PathBuf::from("materials");
+                    material.push(&side.material);
                     self.material_job_sender
-                        .send(side.material.clone())
+                        .send(material)
                         .expect("material job channel shouldn't be disconnected");
                 }
             }
@@ -113,10 +117,13 @@ where
         for entity in &self.vmf.entities {
             if let TypedEntity::Overlay(overlay) = entity.typed() {
                 match overlay.material() {
-                    Ok(material) => self
-                        .material_job_sender
-                        .send(material)
-                        .expect("material job channel shouldn't be disconnected"),
+                    Ok(material) => {
+                        let mut path = PathBuf::from("materials");
+                        path.push(&material);
+                        self.material_job_sender
+                            .send(path)
+                            .expect("material job channel shouldn't be disconnected")
+                    }
                     Err(err) => todo!("handle err: {}", err),
                 }
             }

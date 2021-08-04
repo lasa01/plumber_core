@@ -1,9 +1,9 @@
 use std::{
     collections::HashMap,
+    fmt::Debug,
     io,
     sync::{Condvar, Mutex},
     time::Duration,
-    fmt::Debug,
 };
 
 use image::RgbaImage;
@@ -301,8 +301,7 @@ fn get_shader(
     material_path: &PathBuf,
     filesystem: &OpenFileSystem,
 ) -> Result<Shader, MaterialLoadError> {
-    let mut material_path = Path::try_from_str("materials").unwrap().join(material_path);
-    material_path.set_extension("vmt");
+    let material_path = material_path.with_extension("vmt");
     let material_contents = filesystem
         .read(&material_path)
         .map_err(|err| MaterialLoadError::from_io(&err, &material_path))?;
