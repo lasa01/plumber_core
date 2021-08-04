@@ -47,11 +47,11 @@ pub fn to_string(vmf: &Vmf) -> vdf::Result<String> {
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(expecting = "a vmf file")]
 pub struct Vmf {
-    #[serde(rename = "versioninfo")]
+    #[serde(default, rename = "versioninfo")]
     pub version_info: VersionInfo,
-    #[serde(rename = "visgroups")]
+    #[serde(default, rename = "visgroups")]
     pub vis_groups: VisGroups,
-    #[serde(rename = "viewsettings")]
+    #[serde(default, rename = "viewsettings")]
     pub view_settings: ViewSettings,
     pub world: World,
     #[serde(default, rename = "entity", skip_serializing_if = "Vec::is_empty")]
@@ -100,7 +100,7 @@ impl Default for VersionInfo {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
 #[serde(expecting = "class visgroups")]
 pub struct VisGroups {
     #[serde(default, rename = "visgroup", skip_serializing_if = "Vec::is_empty")]
@@ -113,7 +113,7 @@ pub struct VisGroup {
     pub name: String,
     #[serde(rename = "visgroupid")]
     pub vis_group_id: i32,
-    #[serde(with = "color")]
+    #[serde(default, with = "color")]
     pub color: RGB8,
 }
 
@@ -181,9 +181,11 @@ pub struct Side {
     pub u_axis: UvAxis,
     #[serde(rename = "vaxis")]
     pub v_axis: UvAxis,
+    #[serde(default)]
     pub rotation: f64,
     #[serde(rename = "lightmapscale")]
     pub light_map_scale: i32,
+    #[serde(default)]
     pub smoothing_groups: i32,
     #[serde(rename = "dispinfo", skip_serializing_if = "Option::is_none")]
     pub disp_info: Option<DispInfo>,
@@ -384,20 +386,23 @@ impl<'de> Deserialize<'de> for DispInfo {
                     }
                 }
                 let power = power.ok_or_else(|| de::Error::missing_field("power"))?;
+                let dimension = dimension.unwrap();
                 let start_position =
                     start_position.ok_or_else(|| de::Error::missing_field("startposition"))?;
-                let elevation = elevation.ok_or_else(|| de::Error::missing_field("elevation"))?;
-                let subdiv = subdiv.ok_or_else(|| de::Error::missing_field("subdiv"))?;
-                let normals = normals.ok_or_else(|| de::Error::missing_field("normals"))?;
-                let distances = distances.ok_or_else(|| de::Error::missing_field("distances"))?;
-                let offsets = offsets.ok_or_else(|| de::Error::missing_field("offsets"))?;
+                let elevation = elevation.unwrap_or_default();
+                let subdiv = subdiv.unwrap_or_default();
+                let normals = normals.unwrap_or_else(|| Vector3DispData::new(dimension));
+                let distances =
+                    distances.unwrap_or_else(|| NumDispData::new((dimension, dimension)));
+                let offsets = offsets.unwrap_or_else(|| Vector3DispData::new(dimension));
                 let offset_normals =
-                    offset_normals.ok_or_else(|| de::Error::missing_field("offset_normals"))?;
-                let alphas = alphas.ok_or_else(|| de::Error::missing_field("alphas"))?;
-                let triangle_tags =
-                    triangle_tags.ok_or_else(|| de::Error::missing_field("triangle_tags"))?;
-                let allowed_verts =
-                    allowed_verts.ok_or_else(|| de::Error::missing_field("allowed_verts"))?;
+                    offset_normals.unwrap_or_else(|| Vector3DispData::new(dimension));
+                let alphas = alphas.unwrap_or_else(|| NumDispData::new((dimension, dimension)));
+                let triangle_tags = triangle_tags.unwrap_or_else(|| {
+                    let dimension = 2_usize.pow(power.into());
+                    NumDispData::new((dimension, 2 * dimension))
+                });
+                let allowed_verts = allowed_verts.unwrap_or_default();
                 Ok(DispInfo {
                     power,
                     start_position,
@@ -747,7 +752,7 @@ impl Default for AllowedVerts {
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
 #[serde(expecting = "class editor")]
 pub struct Editor {
-    #[serde(with = "color")]
+    #[serde(default, with = "color")]
     pub color: RGB8,
     #[serde(default, rename = "groupid")]
     pub group_id: i32,
