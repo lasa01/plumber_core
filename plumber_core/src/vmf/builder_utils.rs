@@ -6,8 +6,31 @@ use approx::abs_diff_eq;
 use itertools::Itertools;
 use nalgebra::{geometry::Point3, Matrix2x3, Matrix3, Point2, Unit, Vector3};
 
-pub(crate) const EPSILON: f64 = 1e-3;
-pub(crate) const CUT_THRESHOLD: f64 = 1e-3;
+#[derive(Debug, Clone)]
+pub struct GeometrySettings {
+    pub(crate) epsilon: f64,
+    pub(crate) cut_threshold: f64,
+    pub(crate) solids: bool,
+    pub(crate) overlays: bool,
+}
+
+impl GeometrySettings {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for GeometrySettings {
+    fn default() -> Self {
+        Self {
+            epsilon: 1e-3,
+            cut_threshold: 1e-3,
+            solids: true,
+            overlays: true,
+        }
+    }
+}
 
 /// A plane defined by a normal vector and a distance to the origin.
 /// Also keeps a point on the plane for convenience.
@@ -56,9 +79,10 @@ impl NdPlane {
         &self,
         line_point: &Point3<f64>,
         line_direction: &Vector3<f64>,
+        epsilon: f64,
     ) -> Option<Point3<f64>> {
         let line_direction = line_direction.normalize();
-        if abs_diff_eq!(self.normal.dot(&line_direction), 0.0, epsilon = EPSILON) {
+        if abs_diff_eq!(self.normal.dot(&line_direction), 0.0, epsilon = epsilon) {
             return None;
         }
         let t = (self.normal.dot(&self.point.coords) - self.normal.dot(&line_point.coords))
@@ -66,9 +90,9 @@ impl NdPlane {
         Some(line_point + line_direction * t)
     }
 
-    pub fn intersect(a: &NdPlane, b: &NdPlane, c: &NdPlane) -> Option<Point3<f64>> {
+    pub fn intersect(a: &NdPlane, b: &NdPlane, c: &NdPlane, epsilon: f64) -> Option<Point3<f64>> {
         let denominator = a.normal.dot(&b.normal.cross(&c.normal));
-        if abs_diff_eq!(denominator, 0.0, epsilon = EPSILON) {
+        if abs_diff_eq!(denominator, 0.0, epsilon = epsilon) {
             return None;
         }
         Some(
@@ -170,11 +194,11 @@ mod tests {
             normal: Unit::new_normalize(Vector3::new(6.0, -2.0, -3.0)),
             distance: 0.857_142_857_142_857,
         };
-        assert_relative_eq!(plane_1.normal, plane_2.normal, epsilon = EPSILON);
-        assert_relative_eq!(plane_1.distance, plane_2.distance, epsilon = EPSILON);
+        assert_relative_eq!(plane_1.normal, plane_2.normal, epsilon = 1e-3);
+        assert_relative_eq!(plane_1.distance, plane_2.distance, epsilon = 1e-3);
 
         let distance = plane_1.distance_to_point(&Point3::new(0.0, -2.0, 0.0));
-        assert_relative_eq!(distance, 1.428_571_428_571_428, epsilon = EPSILON);
+        assert_relative_eq!(distance, 1.428_571_428_571_428, epsilon = 1e-3);
     }
 
     #[test]
@@ -188,9 +212,9 @@ mod tests {
         let plane_2 = NdPlane::from_points(&a, &c, &d);
         let plane_3 = NdPlane::from_points(&c, &b, &d);
 
-        let intersection = NdPlane::intersect(&plane_1, &plane_2, &plane_3).unwrap();
+        let intersection = NdPlane::intersect(&plane_1, &plane_2, &plane_3, 1e-3).unwrap();
 
-        assert_relative_eq!(intersection, c, epsilon = EPSILON);
+        assert_relative_eq!(intersection, c, epsilon = 1e-3);
     }
 
     #[test]
@@ -204,7 +228,7 @@ mod tests {
 
         let center = polygon_center(points.into_iter());
 
-        assert_relative_eq!(center, Point3::new(0.0, 0.0, 1.0), epsilon = EPSILON);
+        assert_relative_eq!(center, Point3::new(0.0, 0.0, 1.0), epsilon = 1e-3);
     }
 
     #[test]
@@ -221,7 +245,7 @@ mod tests {
         assert_relative_eq!(
             normal,
             Vector3::new(0.447_213_595, 0.0, 0.894_427_191),
-            epsilon = EPSILON
+            epsilon = 1e-3
         );
     }
 
@@ -240,10 +264,14 @@ mod tests {
 
         assert_relative_eq!(
             plane
-                .intersect_line(&Point3::new(-1.0, 0.0, 0.0), &Vector3::new(1.0, 0.0, 2.0))
+                .intersect_line(
+                    &Point3::new(-1.0, 0.0, 0.0),
+                    &Vector3::new(1.0, 0.0, 2.0),
+                    1e-3
+                )
                 .unwrap(),
             Point3::new(0.285_714_285_7, 0.0, 2.571_428_571_4),
-            epsilon = EPSILON,
+            epsilon = 1e-3,
         );
     }
 
