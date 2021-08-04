@@ -1,12 +1,19 @@
-use std::convert::TryInto;
 use std::io;
 use std::mem::size_of;
+use std::{convert::TryInto, fmt};
 
+use byteorder::NativeEndian;
+use itertools::Itertools;
 use maligned::A4;
-use zerocopy::{FromBytes, LayoutVerified};
+use zerocopy::{
+    byteorder::{I16, I32, U16},
+    FromBytes, LayoutVerified, Unaligned,
+};
 
 use crate::binary_utils::read_file_aligned;
 use crate::fs::GameFile;
+
+use super::{mdl, Error, FileType, Result};
 
 #[derive(Debug, Clone, FromBytes)]
 #[repr(C)]
@@ -50,106 +57,188 @@ struct ModelLod {
     switch_point: f32,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Unaligned)]
 #[repr(C)]
 struct Mesh {
-    strip_group_count: i32,
-    strip_group_offset: i32,
+    strip_group_count: I32<NativeEndian>,
+    strip_group_offset: I32<NativeEndian>,
     flags: u8,
 }
+pub trait StripGroup: FromBytes + Unaligned {
+    type Strip: Strip;
 
-#[derive(Debug, Clone, FromBytes)]
+    fn vertex_offset(&self) -> i32;
+    fn vertex_count(&self) -> i32;
+    fn index_offset(&self) -> i32;
+    fn index_count(&self) -> i32;
+    fn strip_offset(&self) -> i32;
+    fn strip_count(&self) -> i32;
+}
+
+pub trait Strip: FromBytes + Unaligned {
+    fn vertex_count(&self) -> i32;
+}
+
+#[derive(Debug, Clone, FromBytes, Unaligned)]
 #[repr(C)]
-struct StripGroup {
-    vertex_count: i32,
-    vertex_offset: i32,
-    index_count: i32,
-    index_offset: i32,
-    strip_count: i32,
-    strip_offset: i32,
+struct StripGroupNormal {
+    vertex_count: I32<NativeEndian>,
+    vertex_offset: I32<NativeEndian>,
+    index_count: I32<NativeEndian>,
+    index_offset: I32<NativeEndian>,
+    strip_count: I32<NativeEndian>,
+    strip_offset: I32<NativeEndian>,
     flags: u8,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+impl StripGroup for StripGroupNormal {
+    type Strip = StripNormal;
+
+    fn vertex_offset(&self) -> i32 {
+        self.vertex_offset.get()
+    }
+
+    fn vertex_count(&self) -> i32 {
+        self.vertex_count.get()
+    }
+
+    fn index_offset(&self) -> i32 {
+        self.index_offset.get()
+    }
+
+    fn index_count(&self) -> i32 {
+        self.index_count.get()
+    }
+
+    fn strip_offset(&self) -> i32 {
+        self.strip_offset.get()
+    }
+
+    fn strip_count(&self) -> i32 {
+        self.strip_count.get()
+    }
+}
+
+#[derive(Debug, Clone, FromBytes, Unaligned)]
 #[repr(C)]
-struct StripGroupMdl49 {
-    vertex_count: i32,
-    vertex_offset: i32,
-    index_count: i32,
-    index_offset: i32,
-    strip_count: i32,
-    strip_offset: i32,
+struct StripGroupAlternate {
+    vertex_count: I32<NativeEndian>,
+    vertex_offset: I32<NativeEndian>,
+    index_count: I32<NativeEndian>,
+    index_offset: I32<NativeEndian>,
+    strip_count: I32<NativeEndian>,
+    strip_offset: I32<NativeEndian>,
     flags: u8,
-    topology_index_count: i32,
-    topology_index_offset: i32,
+    topology_index_count: I32<NativeEndian>,
+    topology_index_offset: I32<NativeEndian>,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+impl StripGroup for StripGroupAlternate {
+    type Strip = StripAlternate;
+
+    fn vertex_offset(&self) -> i32 {
+        self.vertex_offset.get()
+    }
+
+    fn vertex_count(&self) -> i32 {
+        self.vertex_count.get()
+    }
+
+    fn index_offset(&self) -> i32 {
+        self.index_offset.get()
+    }
+
+    fn index_count(&self) -> i32 {
+        self.index_count.get()
+    }
+
+    fn strip_offset(&self) -> i32 {
+        self.strip_offset.get()
+    }
+
+    fn strip_count(&self) -> i32 {
+        self.strip_count.get()
+    }
+}
+
+#[derive(Debug, Clone, FromBytes, Unaligned)]
 #[repr(C)]
 pub struct Vertex {
     bone_weight_indices: [u8; 3],
     bone_count: u8,
-    original_mesh_vertex_index: u16,
+    original_mesh_vertex_index: U16<NativeEndian>,
     bone_ids: [u8; 3],
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Unaligned)]
 #[repr(C)]
-pub struct Strip {
-    index_count: i32,
-    index_offset: i32,
+pub struct StripNormal {
+    index_count: I32<NativeEndian>,
+    index_offset: I32<NativeEndian>,
 
-    vertex_count: i32,
-    vertex_offset: i32,
+    vertex_count: I32<NativeEndian>,
+    vertex_offset: I32<NativeEndian>,
 
-    bone_count: i16,
+    bone_count: I16<NativeEndian>,
     flags: u8,
 
-    bone_state_change_count: i32,
-    bone_state_change_offset: i32,
+    bone_state_change_count: I32<NativeEndian>,
+    bone_state_change_offset: I32<NativeEndian>,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+impl Strip for StripNormal {
+    fn vertex_count(&self) -> i32 {
+        self.vertex_count.get()
+    }
+}
+
+#[derive(Debug, Clone, FromBytes, Unaligned)]
 #[repr(C)]
-struct StripMdl49 {
-    index_count: i32,
-    index_offset: i32,
+struct StripAlternate {
+    index_count: I32<NativeEndian>,
+    index_offset: I32<NativeEndian>,
 
-    vertex_count: i32,
-    vertex_offset: i32,
+    vertex_count: I32<NativeEndian>,
+    vertex_offset: I32<NativeEndian>,
 
-    bone_count: i16,
+    bone_count: I16<NativeEndian>,
     flags: u8,
 
-    bone_state_change_count: i32,
-    bone_state_change_offset: i32,
+    bone_state_change_count: I32<NativeEndian>,
+    bone_state_change_offset: I32<NativeEndian>,
 
-    unknown_1: i32,
-    unknown_2: i32,
+    unknown_1: I32<NativeEndian>,
+    unknown_2: I32<NativeEndian>,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+impl Strip for StripAlternate {
+    fn vertex_count(&self) -> i32 {
+        self.vertex_count.get()
+    }
+}
+
+#[derive(Debug, Clone, FromBytes, Unaligned)]
 #[repr(C)]
 struct BoneStateChange {
-    hardware_id: i32,
-    new_bone_id: i32,
+    hardware_id: I32<NativeEndian>,
+    new_bone_id: I32<NativeEndian>,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Unaligned)]
 #[repr(C)]
 struct MaterialReplacementList {
-    replacement_count: i32,
-    replacement_offset: i32,
+    replacement_count: I32<NativeEndian>,
+    replacement_offset: I32<NativeEndian>,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Unaligned)]
 #[repr(C)]
 struct MaterialReplacement {
-    material_index: i16,
-    name_offset: i32,
+    material_index: I16<NativeEndian>,
+    name_offset: I32<NativeEndian>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Vtx {
     bytes: Vec<u8>,
 }
@@ -160,40 +249,52 @@ impl Vtx {
         Ok(Self { bytes })
     }
 
-    pub fn version(&self) -> Option<i32> {
+    pub fn version(&self) -> Result<i32> {
         if self.bytes.len() < 4 {
-            return None;
+            return Err(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "eof reading version",
+            });
         }
-        Some(i32::from_ne_bytes(self.bytes[0..4].try_into().unwrap()))
+        Ok(i32::from_ne_bytes(self.bytes[0..4].try_into().unwrap()))
     }
 
-    pub fn check_version(&self) -> Result<i32, Option<i32>> {
-        let version = if let Some(v) = self.version() {
-            v
-        } else {
-            return Err(None);
-        };
+    pub fn check_version(&self) -> Result<i32> {
+        let version = self.version()?;
 
         if version == 7 {
             Ok(version)
         } else {
-            Err(Some(version))
+            Err(Error::UnsupportedVersion {
+                ty: FileType::Vtx,
+                version,
+            })
         }
     }
 
-    pub fn header(&self) -> Option<HeaderRef> {
-        let header = LayoutVerified::<_, Header>::new_from_prefix(self.bytes.as_ref())?
+    pub fn header(&self) -> Result<HeaderRef> {
+        let header = LayoutVerified::<_, Header>::new_from_prefix(self.bytes.as_ref())
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "eof reading header",
+            })?
             .0
             .into_ref();
 
-        Some(HeaderRef {
+        Ok(HeaderRef {
             header,
             bytes: &self.bytes,
         })
     }
 }
 
-#[derive(Debug, Clone)]
+impl fmt::Debug for Vtx {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Vtx").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct HeaderRef<'a> {
     header: &'a Header,
     bytes: &'a [u8],
@@ -204,54 +305,64 @@ impl<'a> HeaderRef<'a> {
         self.header.checksum
     }
 
-    pub fn body_parts(&self) -> Option<BodyPartsRef> {
-        let offset = self.header.body_part_offset.try_into().ok()?;
-        let count = self.header.body_part_count.try_into().ok()?;
-        let body_parts = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
+    pub fn body_parts(&self) -> Result<BodyPartsRef> {
+        let offset = self
+            .header
+            .body_part_offset
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "body part offset is negative",
+            })?;
+        let count = self
+            .header
+            .body_part_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "body part count is negative",
+            })?;
+
+        let body_parts = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "body parts out of bounds or misaligned",
+            })?
             .0
             .into_slice();
 
-        Some(BodyPartsRef {
+        Ok(BodyPartsRef {
             body_parts,
             offset,
             bytes: self.bytes,
         })
     }
 
-    pub fn iter_body_parts(&self) -> Option<impl Iterator<Item = BodyPartRef>> {
+    pub fn iter_body_parts(&self) -> Result<impl Iterator<Item = BodyPartRef> + ExactSizeIterator> {
         let body_parts = self.body_parts()?;
-        Some(
-            body_parts
-                .body_parts
-                .into_iter()
-                .enumerate()
-                .map(move |(i, body_part)| BodyPartRef {
-                    body_part,
-                    offset: body_parts.offset + i * size_of::<BodyPart>(),
-                    bytes: body_parts.bytes,
-                }),
-        )
+        Ok(body_parts
+            .body_parts
+            .iter()
+            .enumerate()
+            .map(move |(i, body_part)| BodyPartRef {
+                body_part,
+                offset: body_parts.offset + i * size_of::<BodyPart>(),
+                bytes: body_parts.bytes,
+            }))
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BodyPartsRef<'a> {
     body_parts: &'a [BodyPart],
     offset: usize,
     bytes: &'a [u8],
 }
 
-impl<'a> BodyPartsRef<'a> {
-    pub fn get(&self, index: usize) -> Option<BodyPartRef> {
-        self.body_parts.get(index).map(|body_part| BodyPartRef {
-            body_part,
-            offset: self.offset + index * size_of::<BodyPart>(),
-            bytes: self.bytes,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BodyPartRef<'a> {
     body_part: &'a BodyPart,
     offset: usize,
@@ -259,54 +370,57 @@ pub struct BodyPartRef<'a> {
 }
 
 impl<'a> BodyPartRef<'a> {
-    pub fn models(&self) -> Option<ModelsRef> {
+    pub fn models(&self) -> Result<ModelsRef> {
         let offset = (self.offset as isize + self.body_part.model_offset as isize) as usize;
-        let count = self.body_part.model_count.try_into().ok()?;
-        let models = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
+        let count = self
+            .body_part
+            .model_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "body part models count is negative",
+            })?;
+
+        let models = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "body part models out of bounds or misaligned",
+            })?
             .0
             .into_slice();
 
-        Some(ModelsRef {
+        Ok(ModelsRef {
             models,
             offset,
             bytes: self.bytes,
         })
     }
 
-    pub fn iter_models(&self) -> Option<impl Iterator<Item = ModelRef>> {
+    pub fn iter_models(&self) -> Result<impl Iterator<Item = ModelRef> + ExactSizeIterator> {
         let models = self.models()?;
-        Some(
-            models
-                .models
-                .into_iter()
-                .enumerate()
-                .map(move |(i, model)| ModelRef {
-                    model,
-                    offset: models.offset + i * size_of::<Model>(),
-                    bytes: models.bytes,
-                }),
-        )
+        Ok(models
+            .models
+            .iter()
+            .enumerate()
+            .map(move |(i, model)| ModelRef {
+                model,
+                offset: models.offset + i * size_of::<Model>(),
+                bytes: models.bytes,
+            }))
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ModelsRef<'a> {
     models: &'a [Model],
     offset: usize,
     bytes: &'a [u8],
 }
 
-impl<'a> ModelsRef<'a> {
-    pub fn get(&self, index: usize) -> Option<ModelRef> {
-        self.models.get(index).map(|model| ModelRef {
-            model,
-            offset: self.offset + index * size_of::<Model>(),
-            bytes: self.bytes,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ModelRef<'a> {
     model: &'a Model,
     offset: usize,
@@ -314,14 +428,29 @@ pub struct ModelRef<'a> {
 }
 
 impl<'a> ModelRef<'a> {
-    pub fn lods(&self) -> Option<LodsRef> {
+    pub fn lods(&self) -> Result<LodsRef> {
         let offset = (self.offset as isize + self.model.lod_offset as isize) as usize;
-        let count = self.model.lod_count.try_into().ok()?;
-        let lods = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
+        let count = self
+            .model
+            .lod_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "model lod count is negative",
+            })?;
+
+        let lods = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "model lods out of bounds or misaligned",
+            })?
             .0
             .into_slice();
 
-        Some(LodsRef {
+        Ok(LodsRef {
             lods,
             offset,
             bytes: self.bytes,
@@ -329,7 +458,7 @@ impl<'a> ModelRef<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct LodsRef<'a> {
     lods: &'a [ModelLod],
     offset: usize,
@@ -346,7 +475,7 @@ impl<'a> LodsRef<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct LodRef<'a> {
     lod: &'a ModelLod,
     offset: usize,
@@ -354,54 +483,105 @@ pub struct LodRef<'a> {
 }
 
 impl<'a> LodRef<'a> {
-    pub fn meshes(&self) -> Option<MeshesRef> {
+    fn meshes(&self) -> Result<MeshesRef> {
         let offset = (self.offset as isize + self.lod.mesh_offset as isize) as usize;
-        let count = self.lod.mesh_count.try_into().ok()?;
-        let meshes = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
+        let count = self
+            .lod
+            .mesh_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "lod mesh count is negative",
+            })?;
+
+        let meshes = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "lod meshes out of bounds",
+            })?
             .0
             .into_slice();
 
-        Some(MeshesRef {
+        Ok(MeshesRef {
             meshes,
             offset,
             bytes: self.bytes,
         })
     }
 
-    pub fn iter_meshes(&self) -> Option<impl Iterator<Item = MeshRef>> {
+    fn iter_meshes(&self) -> Result<impl Iterator<Item = MeshRef> + ExactSizeIterator> {
         let meshes = self.meshes()?;
-        Some(
-            meshes
-                .meshes
-                .into_iter()
-                .enumerate()
-                .map(move |(i, mesh)| MeshRef {
-                    mesh,
-                    offset: meshes.offset + i * size_of::<Mesh>(),
-                    bytes: meshes.bytes,
-                }),
-        )
+        Ok(meshes
+            .meshes
+            .iter()
+            .enumerate()
+            .map(move |(i, mesh)| MeshRef {
+                mesh,
+                offset: meshes.offset + i * size_of::<Mesh>(),
+                bytes: meshes.bytes,
+            }))
+    }
+
+    pub fn merged_meshes(&self, mdl_model: mdl::ModelRef) -> Result<(Vec<usize>, Vec<Face>)> {
+        let mut vertice_indices = Vec::new();
+        let mut faces = Vec::new();
+        let mut index_offset = 0_usize;
+
+        for (vtx_mesh, mdl_mesh) in self.iter_meshes()?.zip(mdl_model.iter_meshes()?) {
+            let vertex_index_start: usize =
+                mdl_mesh
+                    .vertex_index_start
+                    .try_into()
+                    .map_err(|_| Error::Corrupted {
+                        ty: FileType::Mdl,
+                        error: "mesh vertex index start is negative",
+                    })?;
+            let material_index: usize =
+                mdl_mesh
+                    .material_index
+                    .try_into()
+                    .map_err(|_| Error::Corrupted {
+                        ty: FileType::Mdl,
+                        error: "mesh material index is negative",
+                    })?;
+
+            let (mesh_face_indices, mesh_vertices, mesh_index_offset) = vtx_mesh
+                .merged_strip_groups::<StripGroupNormal>()
+                .or_else(|_| vtx_mesh.merged_strip_groups::<StripGroupAlternate>())?;
+
+            faces.extend(
+                mesh_face_indices
+                    .into_iter()
+                    .tuples()
+                    .map(|(i_1, i_2, i_3)| Face {
+                        vertice_indices: [
+                            i_1 + index_offset,
+                            i_2 + index_offset,
+                            i_3 + index_offset,
+                        ],
+                        material_index,
+                    }),
+            );
+            index_offset += mesh_index_offset;
+
+            vertice_indices.extend(mesh_vertices.into_iter().map(|i| i + vertex_index_start));
+        }
+
+        Ok((vertice_indices, faces))
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MeshesRef<'a> {
     meshes: &'a [Mesh],
     offset: usize,
     bytes: &'a [u8],
 }
 
-impl<'a> MeshesRef<'a> {
-    pub fn get(&self, index: usize) -> Option<MeshRef> {
-        self.meshes.get(index).map(|mesh| MeshRef {
-            mesh,
-            offset: self.offset + index * size_of::<Mesh>(),
-            bytes: self.bytes,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MeshRef<'a> {
     mesh: &'a Mesh,
     offset: usize,
@@ -409,113 +589,191 @@ pub struct MeshRef<'a> {
 }
 
 impl<'a> MeshRef<'a> {
-    pub fn strip_groups(&self) -> Option<StripGroupsRef> {
-        let offset = (self.offset as isize + self.mesh.strip_group_offset as isize) as usize;
-        let count = self.mesh.strip_group_count.try_into().ok()?;
-        let strip_groups = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
-            .0
-            .into_slice();
+    fn strip_groups<S: StripGroup>(&self) -> Result<StripGroupsRef<S>> {
+        let offset = (self.offset as isize + self.mesh.strip_group_offset.get() as isize) as usize;
+        let count = self
+            .mesh
+            .strip_group_count
+            .get()
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "mesh strip group count is negative",
+            })?;
 
-        Some(StripGroupsRef {
-            strip_groups,
-            offset,
-            bytes: self.bytes,
-        })
+        StripGroupsRef::new(self.bytes, offset, count)
     }
 
-    pub fn iter_strip_groups(&self) -> Option<impl Iterator<Item = StripGroupRef>> {
-        let strip_groups = self.strip_groups()?;
-        Some(
-            strip_groups
-                .strip_groups
-                .into_iter()
-                .enumerate()
-                .map(move |(i, strip_group)| StripGroupRef {
-                    strip_group,
-                    offset: strip_groups.offset + i * size_of::<StripGroup>(),
-                    bytes: strip_groups.bytes,
-                }),
-        )
+    fn iter_strip_groups<'s, S: StripGroup + Clone + 's>(
+        &'s self,
+    ) -> Result<impl Iterator<Item = StripGroupRef<'s, S>> + ExactSizeIterator + Clone> {
+        let strip_groups_ref = self.strip_groups()?;
+        let strip_groups = strip_groups_ref.strip_groups;
+        Ok(strip_groups
+            .iter()
+            .enumerate()
+            .map(move |(i, strip_group)| StripGroupRef {
+                strip_group,
+                offset: strip_groups_ref.offset + i * size_of::<S>(),
+                bytes: strip_groups_ref.bytes,
+            }))
     }
 
-    pub fn merged_strip_groups(&self) -> Option<(Vec<usize>, Vec<usize>, usize)> {
-        let mut indices = Vec::new();
+    fn merged_strip_groups<S: StripGroup + Clone>(
+        &self,
+    ) -> Result<(Vec<usize>, Vec<usize>, usize)> {
+        let mut face_indices = Vec::new();
         let mut vertices = Vec::new();
-        let mut offset: usize = 0;
+        let mut index_offset: usize = 0;
 
-        for strip_group in self.iter_strip_groups()? {
-            indices.extend(strip_group.indices()?.iter().map(|&i| i as usize + offset));
+        for strip_group in self.iter_strip_groups::<S>()? {
+            face_indices.extend(
+                strip_group
+                    .indices()?
+                    .iter()
+                    .map(|&i| i.get() as usize + index_offset),
+            );
             vertices.extend(
                 strip_group
                     .vertices()?
                     .iter()
-                    .map(|v| v.original_mesh_vertex_index as usize),
+                    .map(|v| v.original_mesh_vertex_index.get() as usize),
             );
-            offset += strip_group
+            index_offset += strip_group
                 .strips()?
                 .iter()
-                .map(|s| s.vertex_count as usize)
+                .map(|s| s.vertex_count() as usize)
                 .sum::<usize>();
         }
 
-        Some((indices, vertices, offset))
+        Ok((face_indices, vertices, index_offset))
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct StripGroupsRef<'a> {
-    strip_groups: &'a [StripGroup],
+#[derive(Debug, Clone, Copy)]
+pub struct StripGroupsRef<'a, S> {
+    strip_groups: &'a [S],
     offset: usize,
     bytes: &'a [u8],
 }
 
-impl<'a> StripGroupsRef<'a> {
-    pub fn get(&self, index: usize) -> Option<StripGroupRef> {
-        self.strip_groups
-            .get(index)
-            .map(|strip_group| StripGroupRef {
-                strip_group,
-                offset: self.offset + index * size_of::<StripGroup>(),
-                bytes: self.bytes,
+impl<'a, S> StripGroupsRef<'a, S>
+where
+    S: StripGroup,
+{
+    fn new(bytes: &'a [u8], offset: usize, count: usize) -> Result<Self> {
+        let strip_groups: &[S] = bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "mesh strip groups out of bounds",
+            })?
+            .0
+            .into_slice();
+
+        // validate strip groups to check if the current format is correct
+        for strip_group in strip_groups {
+            if strip_group.index_count() % 3 != 0
+                || strip_group.index_count() < 0
+                || strip_group.vertex_count() < 0
+                || strip_group.strip_count() < 0
+                || (offset as isize + strip_group.index_offset() as isize) as usize >= bytes.len()
+                || (offset as isize + strip_group.vertex_offset() as isize) as usize >= bytes.len()
+                || (offset as isize + strip_group.vertex_offset() as isize) as usize >= bytes.len()
+            {
+                return Err(Error::Corrupted {
+                    ty: FileType::Vtx,
+                    error: "mesh strip groups are invalid",
+                });
+            }
+        }
+
+        Ok(StripGroupsRef {
+            strip_groups,
+            offset,
+            bytes,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StripGroupRef<'a, S> {
+    strip_group: &'a S,
+    offset: usize,
+    bytes: &'a [u8],
+}
+
+impl<'a, S> StripGroupRef<'a, S>
+where
+    S: StripGroup,
+{
+    pub fn vertices(&self) -> Result<&[Vertex]> {
+        let offset = (self.offset as isize + self.strip_group.vertex_offset() as isize) as usize;
+        let count = self
+            .strip_group
+            .vertex_count()
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "strip group vertices count is negative",
+            })?;
+
+        self.bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
+            .map(|(verified, _)| verified.into_slice())
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "strip group vertices out of bounds",
+            })
+    }
+
+    pub fn indices(&self) -> Result<&[U16<NativeEndian>]> {
+        let offset = (self.offset as isize + self.strip_group.index_offset() as isize) as usize;
+        let count = self
+            .strip_group
+            .index_count()
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "strip group indices count is negative",
+            })?;
+
+        self.bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
+            .map(|(verified, _)| verified.into_slice())
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "strip group indices out of bounds",
+            })
+    }
+
+    pub fn strips(&self) -> Result<&[<S as StripGroup>::Strip]> {
+        let offset = (self.offset as isize + self.strip_group.strip_offset() as isize) as usize;
+        let count = self
+            .strip_group
+            .strip_count()
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "strip groups strips count is negative",
+            })?;
+
+        self.bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
+            .map(|(verified, _)| verified.into_slice())
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vtx,
+                error: "strip group strips out of bounds",
             })
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct StripGroupRef<'a> {
-    strip_group: &'a StripGroup,
-    offset: usize,
-    bytes: &'a [u8],
-}
-
-impl<'a> StripGroupRef<'a> {
-    pub fn vertices(&self) -> Option<&[Vertex]> {
-        let offset = (self.offset as isize + self.strip_group.vertex_offset as isize) as usize;
-        let count = self.strip_group.vertex_count.try_into().ok()?;
-        Some(
-            LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
-                .0
-                .into_slice(),
-        )
-    }
-
-    pub fn indices(&self) -> Option<&[u16]> {
-        let offset = (self.offset as isize + self.strip_group.index_offset as isize) as usize;
-        let count = self.strip_group.vertex_count.try_into().ok()?;
-        Some(
-            LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
-                .0
-                .into_slice(),
-        )
-    }
-
-    pub fn strips(&self) -> Option<&[Strip]> {
-        let offset = (self.offset as isize + self.strip_group.strip_offset as isize) as usize;
-        let count = self.strip_group.strip_count.try_into().ok()?;
-        Some(
-            LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
-                .0
-                .into_slice(),
-        )
-    }
+#[derive(Debug, PartialEq, Clone)]
+pub struct Face {
+    pub vertice_indices: [usize; 3],
+    pub material_index: usize,
 }

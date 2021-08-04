@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub use super::overlay_builder::{BuiltOverlay, BuiltOverlayFace, OverlayError};
+pub use super::prop_loader::{LoadedProp, PropError};
 pub use super::solid_builder::{BuiltSide, BuiltSolid, SolidError};
 
 use super::{entities::TypedEntity, overlay_builder::SideFacesMap, Vmf};
@@ -121,14 +122,46 @@ impl<'a> Scene<'a> {
         }
     }
 
+    fn load_props(
+        file_system: Arc<OpenFileSystem>,
+        material_job_sender: crossbeam_channel::Sender<PathBuf>,
+        vmf: &'a Vmf,
+    ) -> impl ParallelIterator<Item = Result<LoadedProp<'a>, PropError>> {
+        vmf.entities
+            .par_iter()
+            .filter_map(|e| {
+                if !e.solids.is_empty() {
+                    return None;
+                }
+                let typed = e.typed();
+                if let TypedEntity::Prop(prop) = typed {
+                    Some(prop)
+                } else {
+                    None
+                }
+            })
+            .map_with(
+                (file_system, material_job_sender),
+                |(file_system, material_job_sender), prop| {
+                    let loaded = prop.load(file_system)?;
+                    for material in &loaded.materials {
+                        material_job_sender
+                            .send(material.clone())
+                            .expect("material job channel shouldn't be disconnected");
+                    }
+                    Ok(loaded)
+                },
+            )
+    }
+
     fn load_other_entities(vmf: &'a Vmf) -> impl ParallelIterator<Item = TypedEntity<'a>> {
         vmf.entities.par_iter().filter_map(|e| {
             if !e.solids.is_empty() {
                 return None;
             }
             let typed = e.typed();
-            // overlays must be loaded after brushes
-            if let TypedEntity::Overlay(..) = &typed {
+            // overlays must be loaded after brushes, props need asset loading
+            if let TypedEntity::Overlay(..) | &TypedEntity::Prop(..) = &typed {
                 return None;
             }
             Some(typed)
@@ -196,9 +229,18 @@ impl<'a> Scene<'a> {
         let material_loader = self.material_loader;
         let side_faces_map = self.side_faces_map;
         let material_job_sender = self.material_job_sender;
+        let file_system = self.file_system;
 
         crossbeam_utils::thread::scope(|s| {
             s.spawn(|_| {
+                Self::load_props(file_system, material_job_sender, vmf).for_each_with(
+                    asset_sender.clone(),
+                    |asset_sender, r| {
+                        asset_sender
+                            .send(Asset::Prop(r))
+                            .expect("the channel should outlive the thread")
+                    },
+                );
                 Self::load_other_entities(vmf).for_each_with(
                     asset_sender.clone(),
                     |asset_sender, e| {
@@ -223,9 +265,6 @@ impl<'a> Scene<'a> {
                             .expect("the channel should outlive the thread")
                     },
                 );
-                // at this point no more materials to load, signal the thread to stop
-                // this will also cause the loop below to terminate
-                drop(material_job_sender);
             });
 
             let mut select = crossbeam_channel::Select::new();
@@ -269,11 +308,13 @@ impl<'a> Scene<'a> {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Asset<'a> {
     Material(Result<<DefaultMaterialBuilder as MaterialBuilder>::Built, MaterialLoadError>),
     Entity(TypedEntity<'a>),
     Solid(Result<BuiltSolid<'a>, SolidError>),
     Overlay(Result<BuiltOverlay<'a>, OverlayError>),
+    Prop(Result<LoadedProp<'a>, PropError>),
 }
 
 #[cfg(test)]

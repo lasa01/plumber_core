@@ -17,8 +17,8 @@ default = ["steam", "vmf", "vmt", "model"]
 steam = ["winreg", "home", "phf"]
 fs = []
 vmt = ["fs", "vtflib", "image"]
-vmf = ["fs", "vmt"]
-model = ["fs", "zerocopy", "maligned", "bitflags"]
+vmf = ["fs", "vmt", "model"]
+model = ["fs", "zerocopy", "byteorder", "maligned", "bitflags"]
 
 [dependencies]
 plumber_vdf = { version = "0.1.0", path = "../plumber_vdf" }
@@ -42,6 +42,7 @@ rayon = "1.5.1"
 crossbeam-channel = "0.5.1"
 crossbeam-utils = "0.8.5"
 zerocopy = { version = "0.5.0", optional = true }
+byteorder = { version = "1.4.3", optional = true }
 maligned = { version = "0.2.1", optional = true }
 bitflags = { version = "1.2.1", optional = true }
 

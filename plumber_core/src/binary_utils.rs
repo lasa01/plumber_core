@@ -1,6 +1,7 @@
 use std::io::{self, Read};
 use std::mem::align_of;
 
+#[cfg(feature = "fs")]
 use crate::fs::GameFile;
 
 pub fn null_terminated_prefix(bytes: &[u8]) -> Option<&[u8]> {
@@ -8,16 +9,6 @@ pub fn null_terminated_prefix(bytes: &[u8]) -> Option<&[u8]> {
         return None;
     }
     bytes.splitn(2, |&b| b == 0).next()
-}
-
-pub fn parse_null_terminated_prefix<'a>(bytes: &mut &'a [u8]) -> Option<&'a [u8]> {
-    if bytes.is_empty() {
-        return None;
-    }
-    let mut split = bytes.splitn(2, |&b| b == 0);
-    let str_bytes = split.next()?;
-    *bytes = split.next().unwrap_or_default();
-    Some(str_bytes)
 }
 
 #[cfg(all(feature = "maligned", feature = "fs"))]

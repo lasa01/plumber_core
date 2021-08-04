@@ -2,6 +2,7 @@ mod builder_utils;
 pub mod entities;
 pub mod loader;
 mod overlay_builder;
+mod prop_loader;
 mod solid_builder;
 mod types;
 
@@ -199,7 +200,7 @@ pub struct DispInfo {
     pub distances: NumDispData<f64>,
     pub offsets: Vector3DispData,
     pub offset_normals: Vector3DispData,
-    pub alphas: NumDispData<u8>,
+    pub alphas: NumDispData<f64>,
     pub triangle_tags: NumDispData<u8>,
     pub allowed_verts: AllowedVerts,
 }

@@ -1,11 +1,13 @@
-use std::convert::TryInto;
 use std::io;
+use std::{convert::TryInto, fmt};
 
 use maligned::A4;
 use zerocopy::{FromBytes, LayoutVerified};
 
 use crate::binary_utils::read_file_aligned;
 use crate::fs::GameFile;
+
+use super::{Error, FileType, Result};
 
 #[derive(Debug, Clone, FromBytes)]
 #[repr(C)]
@@ -24,18 +26,18 @@ struct Header {
 #[derive(Debug, Clone, FromBytes)]
 #[repr(C)]
 pub struct BoneWeight {
-    weights: [f32; 3],
-    bones: [u8; 3],
-    bone_count: u8,
+    pub weights: [f32; 3],
+    pub bones: [u8; 3],
+    pub bone_count: u8,
 }
 
 #[derive(Debug, Clone, FromBytes)]
 #[repr(C)]
 pub struct Vertex {
-    bone_weight: BoneWeight,
-    position: [f32; 3],
-    normal: [f32; 3],
-    tex_coord: [f32; 2],
+    pub bone_weight: BoneWeight,
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub tex_coord: [f32; 2],
 }
 
 #[derive(Debug, Clone, FromBytes)]
@@ -46,7 +48,7 @@ pub struct Fixup {
     vertex_count: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Vvd {
     bytes: Vec<u8>,
 }
@@ -57,54 +59,68 @@ impl Vvd {
         Ok(Self { bytes })
     }
 
-    pub fn check_signature(&self) -> Result<(), Option<&[u8]>> {
-        if self.bytes.len() < 4 {
-            return Err(None);
-        }
-
-        let signature = &self.bytes[0..4];
+    pub fn check_signature(&self) -> Result<()> {
+        let signature = self.bytes.get(0..4).ok_or(Error::Corrupted {
+            ty: FileType::Mdl,
+            error: "eof reading signature",
+        })?;
 
         if signature == b"IDSV" {
             Ok(())
         } else {
-            Err(Some(signature))
+            Err(Error::InvalidSignature {
+                ty: FileType::Vvd,
+                signature: String::from_utf8_lossy(signature).into_owned(),
+            })
         }
     }
 
-    pub fn version(&self) -> Option<i32> {
+    pub fn version(&self) -> Result<i32> {
         if self.bytes.len() < 8 {
-            return None;
+            return Err(Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "eof reading version",
+            });
         }
-        Some(i32::from_ne_bytes(self.bytes[4..8].try_into().unwrap()))
+        Ok(i32::from_ne_bytes(self.bytes[4..8].try_into().unwrap()))
     }
 
-    pub fn check_version(&self) -> Result<i32, Option<i32>> {
-        let version = if let Some(v) = self.version() {
-            v
-        } else {
-            return Err(None);
-        };
+    pub fn check_version(&self) -> Result<i32> {
+        let version = self.version()?;
 
         if version == 4 {
             Ok(version)
         } else {
-            Err(Some(version))
+            Err(Error::UnsupportedVersion {
+                ty: FileType::Vvd,
+                version,
+            })
         }
     }
 
-    pub fn header(&self) -> Option<HeaderRef> {
-        let header = LayoutVerified::<_, Header>::new_from_prefix(self.bytes.as_ref())?
+    pub fn header(&self) -> Result<HeaderRef> {
+        let header = LayoutVerified::<_, Header>::new_from_prefix(self.bytes.as_ref())
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "eof reading header",
+            })?
             .0
             .into_ref();
 
-        Some(HeaderRef {
+        Ok(HeaderRef {
             header,
             bytes: &self.bytes,
         })
     }
 }
 
-#[derive(Debug, Clone)]
+impl fmt::Debug for Vvd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Vvd").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct HeaderRef<'a> {
     header: &'a Header,
     bytes: &'a [u8],
@@ -115,23 +131,57 @@ impl<'a> HeaderRef<'a> {
         self.header.checksum
     }
 
-    pub fn vertices(&self) -> Option<&[Vertex]> {
-        let offset = self.header.vertex_data_offset.try_into().ok()?;
-        let count = self.header.lod_vertex_counts[0].try_into().ok()?;
-        Some(
-            LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
-                .0
-                .into_slice(),
-        )
+    pub fn vertices(&self) -> Result<&[Vertex]> {
+        let offset = self
+            .header
+            .vertex_data_offset
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "vertex offset is negative",
+            })?;
+        let count = self.header.lod_vertex_counts[0]
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "vertex count is negative",
+            })?;
+
+        self.bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .map(|(verified, _)| verified.into_slice())
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "vertices out of bounds or misaligned",
+            })
     }
 
-    pub fn fixups(&self) -> Option<&[Fixup]> {
-        let offset = self.header.fixup_count.try_into().ok()?;
-        let count = self.header.fixup_table_offset.try_into().ok()?;
-        Some(
-            LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
-                .0
-                .into_slice(),
-        )
+    pub fn fixups(&self) -> Result<&[Fixup]> {
+        let offset = self
+            .header
+            .fixup_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "fixup offset is negative",
+            })?;
+        let count = self
+            .header
+            .fixup_table_offset
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "fixup count is negative",
+            })?;
+
+        self.bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .map(|(verified, _)| verified.into_slice())
+            .ok_or(Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "fixups out of bounds or misaligned",
+            })
     }
 }

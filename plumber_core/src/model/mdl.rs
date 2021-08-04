@@ -1,15 +1,18 @@
+use std::fmt;
+use std::ops::Deref;
 use std::{convert::TryInto, io, mem::size_of, str, usize};
 
 use bitflags::bitflags;
+use itertools::Itertools;
 use maligned::A4;
 use nalgebra::{Matrix3x4, Point3, Quaternion, Vector3};
 use ndarray::Array2;
 use zerocopy::{FromBytes, LayoutVerified};
 
-use crate::binary_utils::{
-    null_terminated_prefix, parse_null_terminated_prefix, read_file_aligned,
-};
+use crate::binary_utils::{null_terminated_prefix, read_file_aligned};
 use crate::fs::GameFile;
+
+use super::{Error, FileType, Result};
 
 #[derive(Debug, PartialEq, FromBytes)]
 #[repr(C)]
@@ -105,12 +108,12 @@ struct Header1 {
     anim_block_count: i32,
     anim_block_offset: i32,
 
-    anim_block_model: i32,
+    anim_block_model_p: i32,
 
     bone_table_name_offset: i32,
 
-    vertex_base: i32,
-    offset_base: i32,
+    vertex_base_p: i32,
+    offset_base_p: i32,
 
     directional_dot_product: u8,
     root_lod: u8,
@@ -417,16 +420,16 @@ struct BodyPart {
 
 #[derive(Debug, PartialEq, FromBytes)]
 #[repr(C)]
-struct Model {
+pub struct Model {
     name: [u8; 64],
-    kind: i32,
-    bounding_radius: f32,
+    pub kind: i32,
+    pub bounding_radius: f32,
 
     mesh_count: i32,
     mesh_offset: i32,
 
-    vertex_count: i32,
-    vertex_offset: i32,
+    pub vertex_count: i32,
+    pub vertex_offset: i32,
     tangent_offset: i32,
 
     attachment_count: i32,
@@ -443,26 +446,26 @@ struct Model {
 
 #[derive(Debug, PartialEq, FromBytes)]
 #[repr(C)]
-struct Mesh {
-    material_index: i32,
-    model_offset: i32,
-    
-    vertex_count: i32,
-    vertex_index_start: i32,
+pub struct Mesh {
+    pub material_index: i32,
+    pub model_offset: i32,
 
-    flex_count: i32,
-    flex_offset: i32,
+    pub vertex_count: i32,
+    pub vertex_index_start: i32,
 
-    material_type: i32,
-    material_param: i32,
-    
-    id: i32,
-    center: [f32; 3],
+    pub flex_count: i32,
+    pub flex_offset: i32,
+
+    pub material_type: i32,
+    pub material_param: i32,
+
+    pub id: i32,
+    pub center: [f32; 3],
 
     vertex_data_p: i32,
-    
-    lod_vertex_counts: [i32; 8],
-    
+
+    pub lod_vertex_counts: [i32; 8],
+
     unused: [i32; 8],
 }
 
@@ -591,7 +594,7 @@ struct FlexControllerUi {
     unused: [u8; 2],
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Mdl {
     bytes: Vec<u8>,
 }
@@ -602,59 +605,71 @@ impl Mdl {
         Ok(Self { bytes })
     }
 
-    pub fn check_signature(&self) -> Result<(), Option<&[u8]>> {
-        if self.bytes.len() < 4 {
-            return Err(None);
-        }
-
-        let signature = &self.bytes[0..4];
+    pub fn check_signature(&self) -> Result<()> {
+        let signature = self.bytes.get(0..4).ok_or(Error::Corrupted {
+            ty: FileType::Mdl,
+            error: "eof reading signature",
+        })?;
 
         if signature == b"IDST" {
             Ok(())
         } else {
-            Err(Some(signature))
+            Err(Error::InvalidSignature {
+                ty: FileType::Mdl,
+                signature: String::from_utf8_lossy(signature).into_owned(),
+            })
         }
     }
 
-    pub fn version(&self) -> Option<i32> {
+    pub fn version(&self) -> Result<i32> {
         if self.bytes.len() < 8 {
-            return None;
+            return Err(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "eof reading version",
+            });
         }
-        Some(i32::from_ne_bytes(self.bytes[4..8].try_into().unwrap()))
+        Ok(i32::from_ne_bytes(self.bytes[4..8].try_into().unwrap()))
     }
 
-    pub fn check_version(&self) -> Result<i32, Option<i32>> {
-        let version = if let Some(v) = self.version() {
-            v
-        } else {
-            return Err(None);
-        };
+    pub fn check_version(&self) -> Result<i32> {
+        let version = self.version()?;
 
         if let 44 | 45 | 46 | 47 | 48 | 49 = version {
             Ok(version)
         } else {
-            Err(Some(version))
+            Err(Error::UnsupportedVersion {
+                ty: FileType::Mdl,
+                version,
+            })
         }
     }
 
-    pub fn header(&self) -> Option<HeaderRef> {
-        let header_1 = LayoutVerified::<_, Header1>::new_from_prefix(self.bytes.as_ref())?
+    pub fn header(&self) -> Result<HeaderRef> {
+        let header_1 = LayoutVerified::<_, Header1>::new_from_prefix(self.bytes.as_ref())
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "eof reading header",
+            })?
             .0
             .into_ref();
 
         let header_2 = if header_1.header_2_offset > 0 {
             Some(
-                LayoutVerified::<_, Header2>::new_from_prefix(
-                    self.bytes.get(header_1.header_2_offset as usize..)?,
-                )?
-                .0
-                .into_ref(),
+                self.bytes
+                    .get(header_1.header_2_offset as usize..)
+                    .and_then(LayoutVerified::<_, Header2>::new_from_prefix)
+                    .ok_or(Error::Corrupted {
+                        ty: FileType::Mdl,
+                        error: "header 2 out of bounds or misaligned",
+                    })?
+                    .0
+                    .into_ref(),
             )
         } else {
             None
         };
 
-        Some(HeaderRef {
+        Ok(HeaderRef {
             header_1,
             header_2,
             bytes: &self.bytes,
@@ -662,7 +677,13 @@ impl Mdl {
     }
 }
 
-#[derive(Debug, Clone)]
+impl fmt::Debug for Mdl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Mdl").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct HeaderRef<'a> {
     header_1: &'a Header1,
     header_2: Option<&'a Header2>,
@@ -674,30 +695,39 @@ impl<'a> HeaderRef<'a> {
         self.header_1.checksum
     }
 
-    pub fn name(&self) -> Option<&str> {
+    pub fn name(&self) -> Result<&'a str> {
         if let Some(header_2) = self.header_2 {
             if header_2.name_offset > 0 {
-                let offset =
-                    size_of::<Header1>() + size_of::<Header2>() + header_2.name_offset as usize;
-                return str::from_utf8(null_terminated_prefix(self.bytes.get(offset..)?)?).ok();
+                let offset = self.header_1.header_2_offset as usize
+                    + size_of::<Header2>()
+                    + header_2.name_offset as usize;
+                return str::from_utf8(
+                    null_terminated_prefix(self.bytes.get(offset..).ok_or(Error::Corrupted {
+                        ty: FileType::Mdl,
+                        error: "header 2 name offset out of bounds",
+                    })?)
+                    .ok_or(Error::Corrupted {
+                        ty: FileType::Mdl,
+                        error: "eof reading header 2 name",
+                    })?,
+                )
+                .map_err(|_| Error::Corrupted {
+                    ty: FileType::Mdl,
+                    error: "header 2 name is not valid utf8",
+                });
             }
         }
-        str::from_utf8(&self.header_1.name).ok()
-    }
-
-    pub fn data_len(&self) -> Option<usize> {
-        self.header_1.data_length.try_into().ok()
-    }
-
-    pub fn eye_position(&self) -> Point3<f32> {
-        self.header_1.eye_position.into()
+        str::from_utf8(&self.header_1.name).map_err(|_| Error::Corrupted {
+            ty: FileType::Mdl,
+            error: "header name is not valid utf8",
+        })
     }
 
     pub fn flags(&self) -> HeaderFlags {
         HeaderFlags::from_bits_truncate(self.header_1.flags)
     }
 
-    pub fn bones(&self) -> Option<BonesRef> {
+    pub fn bones(&self) -> Option<BonesRef<'a>> {
         let offset: usize = self.header_1.bone_offset.try_into().ok()?;
         let bones_bytes = self.bytes.get(offset..)?;
         let count = self.header_1.bone_count.try_into().ok()?;
@@ -722,32 +752,111 @@ impl<'a> HeaderRef<'a> {
         )
     }
 
-    pub fn textures(&self) -> Option<TexturesRef> {
-        let offset: usize = self.header_1.texture_offset.try_into().ok()?;
-        let count = self.header_1.texture_count.try_into().ok()?;
-        let textures = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
+    pub fn textures(&self) -> Result<TexturesRef<'a>> {
+        let offset: usize =
+            self.header_1
+                .texture_offset
+                .try_into()
+                .map_err(|_| Error::Corrupted {
+                    ty: FileType::Mdl,
+                    error: "texture offset is negative",
+                })?;
+        let count = self
+            .header_1
+            .texture_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "texture count is negative",
+            })?;
+
+        let textures = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "textures out of bounds or misaligned",
+            })?
             .0
             .into_slice();
 
-        Some(TexturesRef {
+        Ok(TexturesRef {
             textures,
             offset,
-            bytes: &self.bytes,
+            bytes: self.bytes,
         })
     }
 
-    pub fn texture_paths(&self) -> Option<Vec<&str>> {
-        let offset: usize = self.header_1.texture_dir_offset.try_into().ok()?;
-        let count: usize = self.header_1.texture_dir_count.try_into().ok()?;
-        let mut bytes = &self.bytes[offset..];
+    pub fn iter_textures(&self) -> Result<impl Iterator<Item = TextureRef<'a>>> {
+        let textures = self.textures()?;
+        Ok(textures
+            .textures
+            .iter()
+            .enumerate()
+            .map(move |(i, texture)| TextureRef {
+                texture,
+                offset: textures.offset + i * size_of::<Texture>(),
+                bytes: textures.bytes,
+            }))
+    }
 
-        let mut paths = Vec::with_capacity(count);
+    pub fn texture_paths(&self) -> Result<Vec<&str>> {
+        let offset = self
+            .header_1
+            .texture_dir_offset
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "texture paths offset is negative",
+            })?;
+        let count = self
+            .header_1
+            .texture_dir_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "texture paths count is negative",
+            })?;
 
-        for _ in 0..count {
-            paths.push(str::from_utf8(parse_null_terminated_prefix(&mut bytes)?).ok()?);
-        }
+        let path_offsets: &[i32] = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "texture paths out of bounds or misaligned",
+            })?
+            .0
+            .into_slice();
 
-        Some(paths)
+        path_offsets
+            .iter()
+            .map(|&offset| {
+                let offset = offset.try_into().map_err(|_| Error::Corrupted {
+                    ty: FileType::Mdl,
+                    error: "a texture path offset is negative",
+                })?;
+
+                if offset == 0 {
+                    Ok("")
+                } else {
+                    let bytes = self.bytes.get(offset..).ok_or(Error::Corrupted {
+                        ty: FileType::Mdl,
+                        error: "a texture path is out of bounds",
+                    })?;
+
+                    str::from_utf8(null_terminated_prefix(bytes).ok_or(Error::Corrupted {
+                        ty: FileType::Mdl,
+                        error: "eof reading a texture path",
+                    })?)
+                    .map_err(|_| Error::Corrupted {
+                        ty: FileType::Mdl,
+                        error: "a texture path is not valid utf8",
+                    })
+                }
+            })
+            .try_collect()
     }
 
     pub fn skin_families(&self) -> Option<Array2<i16>> {
@@ -768,16 +877,55 @@ impl<'a> HeaderRef<'a> {
         )
     }
 
-    pub fn body_parts(&self) -> Option<BodyPartsRef> {
-        let offset = self.header_1.body_part_offset.try_into().ok()?;
-        let count = self.header_1.body_part_count.try_into().ok()?;
-        let body_parts = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?.0.into_slice();
+    pub fn body_parts(&self) -> Result<BodyPartsRef<'a>> {
+        let offset = self
+            .header_1
+            .body_part_offset
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "body part offset is negative",
+            })?;
+        let count = self
+            .header_1
+            .body_part_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "body part count is negative",
+            })?;
 
-        Some(BodyPartsRef {
+        let body_parts = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "body parts out of bounds or misaligned",
+            })?
+            .0
+            .into_slice();
+
+        Ok(BodyPartsRef {
             body_parts,
             offset,
             bytes: self.bytes,
         })
+    }
+
+    pub fn iter_body_parts(
+        &self,
+    ) -> Result<impl Iterator<Item = BodyPartRef<'a>> + ExactSizeIterator> {
+        let body_parts = self.body_parts()?;
+        Ok(body_parts
+            .body_parts
+            .iter()
+            .enumerate()
+            .map(move |(i, body_part)| BodyPartRef {
+                body_part,
+                offset: body_parts.offset + i * size_of::<BodyPart>(),
+                bytes: body_parts.bytes,
+            }))
     }
 
     pub fn surface_prop(&self) -> Option<&str> {
@@ -817,7 +965,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BonesRef<'a> {
     bones: &'a [Bone],
     offset: usize,
@@ -825,7 +973,7 @@ pub struct BonesRef<'a> {
 }
 
 impl<'a> BonesRef<'a> {
-    pub fn get(&self, index: usize) -> Option<BoneRef> {
+    pub fn get(&self, index: usize) -> Option<BoneRef<'a>> {
         self.bones.get(index).map(|bone| BoneRef {
             bone,
             offset: self.offset + index * size_of::<Bone>(),
@@ -834,7 +982,7 @@ impl<'a> BonesRef<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BoneRef<'a> {
     bone: &'a Bone,
     offset: usize,
@@ -842,7 +990,7 @@ pub struct BoneRef<'a> {
 }
 
 impl<'a> BoneRef<'a> {
-    pub fn name(&self) -> Option<&str> {
+    pub fn name(&self) -> Option<&'a str> {
         let offset = self.offset as isize + self.bone.name_offset as isize;
         str::from_utf8(null_terminated_prefix(self.bytes.get(offset as usize..)?)?).ok()
     }
@@ -888,7 +1036,7 @@ impl<'a> BoneRef<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct TexturesRef<'a> {
     textures: &'a [Texture],
     offset: usize,
@@ -896,7 +1044,7 @@ pub struct TexturesRef<'a> {
 }
 
 impl<'a> TexturesRef<'a> {
-    pub fn get(&self, index: usize) -> Option<TextureRef> {
+    pub fn get(&self, index: usize) -> Option<TextureRef<'a>> {
         self.textures.get(index).map(|texture| TextureRef {
             texture,
             offset: self.offset + index * size_of::<Texture>(),
@@ -905,7 +1053,7 @@ impl<'a> TexturesRef<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct TextureRef<'a> {
     texture: &'a Texture,
     offset: usize,
@@ -913,17 +1061,26 @@ pub struct TextureRef<'a> {
 }
 
 impl<'a> TextureRef<'a> {
-    pub fn name(&self) -> Option<&str> {
-        if self.texture.name_offset == 0 {
-            return None;
-        }
+    pub fn name(&self) -> Result<&'a str> {
         let offset = self.offset as isize + self.texture.name_offset as isize;
-        str::from_utf8(null_terminated_prefix(self.bytes.get(offset as usize..)?)?).ok()
+        str::from_utf8(
+            null_terminated_prefix(self.bytes.get(offset as usize..).ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "texture name out of bounds",
+            })?)
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "eof reading texture name",
+            })?,
+        )
+        .map_err(|_| Error::Corrupted {
+            ty: FileType::Mdl,
+            error: "texture name is not valid utf8",
+        })
     }
 }
 
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BodyPartsRef<'a> {
     body_parts: &'a [BodyPart],
     offset: usize,
@@ -931,7 +1088,7 @@ pub struct BodyPartsRef<'a> {
 }
 
 impl<'a> BodyPartsRef<'a> {
-    pub fn get(&self, index: usize) -> Option<BodyPartRef> {
+    pub fn get(&self, index: usize) -> Option<BodyPartRef<'a>> {
         self.body_parts.get(index).map(|body_part| BodyPartRef {
             body_part,
             offset: self.offset + index * size_of::<BodyPart>(),
@@ -940,7 +1097,7 @@ impl<'a> BodyPartsRef<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BodyPartRef<'a> {
     body_part: &'a BodyPart,
     offset: usize,
@@ -948,22 +1105,69 @@ pub struct BodyPartRef<'a> {
 }
 
 impl<'a> BodyPartRef<'a> {
-    pub fn models(&self) -> Option<ModelsRef> {
+    pub fn models(&self) -> Result<ModelsRef<'a>> {
         let offset = (self.offset as isize + self.body_part.model_offset as isize) as usize;
-        let count = self.body_part.model_count.try_into().ok()?;
-        let models = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
+        let count = self
+            .body_part
+            .model_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "body part models count is negative",
+            })?;
+
+        let models = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "body part models out of bounds or misaligned",
+            })?
             .0
             .into_slice();
 
-        Some(ModelsRef {
+        Ok(ModelsRef {
             models,
             offset,
             bytes: self.bytes,
         })
     }
+
+    pub fn iter_models(&self) -> Result<impl Iterator<Item = ModelRef<'a>> + ExactSizeIterator> {
+        let models = self.models()?;
+        Ok(models
+            .models
+            .iter()
+            .enumerate()
+            .map(move |(i, model)| ModelRef {
+                model,
+                offset: models.offset + i * size_of::<Model>(),
+                bytes: models.bytes,
+            }))
+    }
+
+    pub fn name(&self) -> Result<&'a str> {
+        let offset = (self.offset as isize + self.body_part.name_offset as isize) as usize;
+
+        str::from_utf8(
+            null_terminated_prefix(self.bytes.get(offset..).ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "body part name offset out of bounds",
+            })?)
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "eof reading body part name",
+            })?,
+        )
+        .map_err(|_| Error::Corrupted {
+            ty: FileType::Mdl,
+            error: "body part name is not valid utf8",
+        })
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ModelsRef<'a> {
     models: &'a [Model],
     offset: usize,
@@ -971,7 +1175,7 @@ pub struct ModelsRef<'a> {
 }
 
 impl<'a> ModelsRef<'a> {
-    pub fn get(&self, index: usize) -> Option<ModelRef> {
+    pub fn get(&self, index: usize) -> Option<ModelRef<'a>> {
         self.models.get(index).map(|model| ModelRef {
             model,
             offset: self.offset + index * size_of::<Model>(),
@@ -980,7 +1184,7 @@ impl<'a> ModelsRef<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ModelRef<'a> {
     model: &'a Model,
     offset: usize,
@@ -988,22 +1192,57 @@ pub struct ModelRef<'a> {
 }
 
 impl<'a> ModelRef<'a> {
-    pub fn meshes(&self) -> Option<MeshesRef> {
+    pub fn meshes(&self) -> Result<MeshesRef<'a>> {
         let offset = (self.offset as isize + self.model.mesh_offset as isize) as usize;
-        let count = self.model.mesh_count.try_into().ok()?;
-        let meshes = LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
+        let count = self
+            .model
+            .mesh_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "model meshes count is negative",
+            })?;
+
+        let meshes = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "model meshes out of bounds or misaligned",
+            })?
             .0
             .into_slice();
 
-        Some(MeshesRef {
+        Ok(MeshesRef {
             meshes,
             offset,
             bytes: self.bytes,
         })
     }
+
+    pub fn iter_meshes(&self) -> Result<impl Iterator<Item = &Mesh> + ExactSizeIterator> {
+        let meshes = self.meshes()?;
+        Ok(meshes.meshes.iter())
+    }
+
+    pub fn name(&self) -> Result<&'a str> {
+        str::from_utf8(&self.model.name).map_err(|_| Error::Corrupted {
+            ty: FileType::Mdl,
+            error: "model name is not valid utf8",
+        })
+    }
 }
 
-#[derive(Debug, Clone)]
+impl<'a> Deref for ModelRef<'a> {
+    type Target = Model;
+
+    fn deref(&self) -> &Self::Target {
+        self.model
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct MeshesRef<'a> {
     meshes: &'a [Mesh],
     offset: usize,
@@ -1011,7 +1250,7 @@ pub struct MeshesRef<'a> {
 }
 
 impl<'a> MeshesRef<'a> {
-    pub fn get(&self, index: usize) -> Option<MeshRef> {
+    pub fn get(&self, index: usize) -> Option<MeshRef<'a>> {
         self.meshes.get(index).map(|mesh| MeshRef {
             mesh,
             offset: self.offset + index * size_of::<Mesh>(),
@@ -1020,7 +1259,7 @@ impl<'a> MeshesRef<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MeshRef<'a> {
     mesh: &'a Mesh,
     offset: usize,
@@ -1029,7 +1268,7 @@ pub struct MeshRef<'a> {
 
 #[cfg(all(test, feature = "steam"))]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, result};
 
     use crate::{
         fs::{DirEntryType, OpenFileSystem, Path, ReadDir},
@@ -1066,7 +1305,7 @@ mod tests {
         file_system: &OpenFileSystem,
         version_counter: &mut BTreeMap<i32, usize>,
     ) {
-        for entry in readdir.map(Result::unwrap) {
+        for entry in readdir.map(result::Result::unwrap) {
             let name = entry.name();
             match entry.entry_type() {
                 DirEntryType::File => {
