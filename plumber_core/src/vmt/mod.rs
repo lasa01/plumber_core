@@ -201,8 +201,8 @@ impl Shader {}
 
 #[derive(Debug, Clone, Error)]
 pub enum ShaderResolveError {
-    #[error("io error reading `{path}`: {kind:?}")]
-    Io { path: String, kind: io::ErrorKind },
+    #[error("io error reading `{path}`: {error}")]
+    Io { path: String, error: String },
     #[error("error deserializing included material: {0}")]
     Deserialization(#[from] vdf::Error),
     #[error("included material cannot be a patch material")]
@@ -213,7 +213,7 @@ impl ShaderResolveError {
     fn from_io(err: &io::Error, path: &Path) -> Self {
         Self::Io {
             path: path.as_str().to_string(),
-            kind: err.kind(),
+            error: err.to_string(),
         }
     }
 }

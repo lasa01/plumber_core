@@ -42,8 +42,8 @@ const NODRAW_PARAMS: &[&str] = &[
 
 #[derive(Debug, Error, Clone)]
 pub enum MaterialLoadError {
-    #[error("io error reading `{path}`: {kind:?}")]
-    Io { path: String, kind: io::ErrorKind },
+    #[error("io error reading `{path}`: {error}")]
+    Io { path: String, error: String },
     #[error("error loading patch material: {0}")]
     Patch(#[from] ShaderResolveError),
     #[error("error deserializing material: {0}")]
@@ -58,15 +58,15 @@ impl MaterialLoadError {
     fn from_io(err: &io::Error, path: &Path) -> Self {
         Self::Io {
             path: path.as_str().to_string(),
-            kind: err.kind(),
+            error: err.to_string(),
         }
     }
 }
 
 #[derive(Debug, Error, Clone)]
 pub enum TextureLoadError {
-    #[error("io error reading `{path}`: {kind:?}")]
-    Io { path: String, kind: io::ErrorKind },
+    #[error("io error reading `{path}`: {error}")]
+    Io { path: String, error: String },
     #[error("error loading vtf file: {0}")]
     Vtf(#[from] vtflib::Error),
 }
@@ -75,7 +75,7 @@ impl TextureLoadError {
     fn from_io(err: &io::Error, path: &Path) -> Self {
         Self::Io {
             path: path.as_str().to_string(),
-            kind: err.kind(),
+            error: err.to_string(),
         }
     }
 }
