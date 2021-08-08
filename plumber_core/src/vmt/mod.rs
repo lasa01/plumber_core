@@ -248,12 +248,12 @@ impl Vmt {
     /// or if the included material is also a patch material.
     pub fn resolve_shader(
         self,
-        filesystem: &fs::OpenFileSystem,
+        file_system: &fs::OpenFileSystem,
     ) -> Result<Shader, ShaderResolveError> {
         match self.shader {
             ShaderOrPatch::Shader(shader) => Ok(shader),
             ShaderOrPatch::Patch(mut patch) => {
-                let base_contents = filesystem
+                let base_contents = file_system
                     .read(&patch.include)
                     .map_err(|err| ShaderResolveError::from_io(&err, &patch.include))?;
                 let base_vmt = Self::from_bytes(&base_contents)?;

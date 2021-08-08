@@ -208,14 +208,14 @@ where
     pub fn load_materials<'a, I, O>(
         &'a self,
         material_paths: I,
-        filesystem: &'a OpenFileSystem,
+        file_system: &'a OpenFileSystem,
     ) -> LoadMaterials<'a, O, L>
     where
         I: IntoIterator<Item = PathBuf, IntoIter = O>,
     {
         LoadMaterials {
             loader: self,
-            filesystem,
+            file_system,
             vtf_lib: VtfLib::initialize().expect("vtflib is already initialized"),
             material_paths: material_paths.into_iter(),
         }
@@ -224,7 +224,7 @@ where
     fn load_material(
         &self,
         material_path: PathBuf,
-        filesystem: &OpenFileSystem,
+        file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<(MaterialInfo, Option<<L as MaterialBuilder>::Built>), MaterialLoadError> {
         if let Some(info_result) = self
@@ -236,7 +236,7 @@ where
             return info_result.clone().map(|i| (i, None));
         }
 
-        let result = self.load_material_inner(&material_path, filesystem, vtf_lib);
+        let result = self.load_material_inner(&material_path, file_system, vtf_lib);
 
         let info_result = match &result {
             Ok((info, _)) => Ok(info.clone()),
@@ -255,7 +255,7 @@ where
     fn load_material_inner(
         &self,
         material_path: &PathBuf,
-        filesystem: &OpenFileSystem,
+        file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<(MaterialInfo, <L as MaterialBuilder>::Built), MaterialLoadError> {
         let shader = get_shader(material_path, filesystem)?;
@@ -265,7 +265,7 @@ where
             textures: Vec::new(),
             loader: self,
             vtf_lib,
-            filesystem,
+            file_system,
             material_path,
         };
         let info = self.material_loader.info(&mut loaded_vmt)?;
@@ -277,7 +277,7 @@ where
     fn load_texture(
         &self,
         texture_path: PathBuf,
-        filesystem: &OpenFileSystem,
+        file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<(TextureInfo, Option<LoadedTexture>), TextureLoadError> {
         if let Some(info_result) = self
@@ -288,7 +288,7 @@ where
         {
             return info_result.clone().map(|i| (i, None));
         }
-        let loaded_result = LoadedTexture::load(&texture_path, filesystem, vtf_lib);
+        let loaded_result = LoadedTexture::load(&texture_path, file_system, vtf_lib);
         self.texture_cache
             .lock()
             .expect("the mutex shouldn't be poisoned")
@@ -299,20 +299,20 @@ where
 
 fn get_shader(
     material_path: &PathBuf,
-    filesystem: &OpenFileSystem,
+    file_system: &OpenFileSystem,
 ) -> Result<Shader, MaterialLoadError> {
     let material_path = material_path.with_extension("vmt");
-    let material_contents = filesystem
+    let material_contents = file_system
         .read(&material_path)
         .map_err(|err| MaterialLoadError::from_io(&err, &material_path))?;
     let material = Vmt::from_bytes(&material_contents)?;
-    Ok(material.resolve_shader(filesystem)?)
+    Ok(material.resolve_shader(file_system)?)
 }
 
 #[derive(Debug)]
 pub struct LoadMaterials<'a, I, L> {
     loader: &'a Loader<L>,
-    filesystem: &'a OpenFileSystem,
+    file_system: &'a OpenFileSystem,
     vtf_lib: (VtfLib, VtfGuard),
     material_paths: I,
 }
@@ -328,7 +328,7 @@ where
         for material_path in &mut self.material_paths {
             match self
                 .loader
-                .load_material(material_path, self.filesystem, &mut self.vtf_lib)
+                .load_material(material_path, self.file_system, &mut self.vtf_lib)
             {
                 Ok((_, Some(loaded))) => return Some(Ok(loaded)),
                 Ok((_, None)) => continue,
@@ -386,7 +386,7 @@ impl Default for MaterialInfo {
 pub struct LoadedVmt<'a, L> {
     loader: &'a Loader<L>,
     vtf_lib: &'a mut (VtfLib, VtfGuard),
-    filesystem: &'a OpenFileSystem,
+    file_system: &'a OpenFileSystem,
     material_path: &'a Path,
     shader: Shader,
     textures: Vec<LoadedTexture>,
@@ -402,7 +402,7 @@ where
     pub fn load_texture(&mut self, texture_path: PathBuf) -> Result<TextureInfo, TextureLoadError> {
         let (info, texture) =
             self.loader
-                .load_texture(texture_path, self.filesystem, self.vtf_lib)?;
+                .load_texture(texture_path, self.file_system, self.vtf_lib)?;
         if let Some(texture) = texture {
             self.textures.push(texture);
         }
@@ -452,7 +452,7 @@ pub struct LoadedTexture {
 impl LoadedTexture {
     fn load(
         texture_path: &Path,
-        filesystem: &OpenFileSystem,
+        file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<Self, TextureLoadError> {
         let (vtf_lib, guard) = vtf_lib;
