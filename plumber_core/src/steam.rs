@@ -322,7 +322,7 @@ impl<'a> Iterator for Apps<'a> {
                 for entry in current_iter {
                     let entry = match entry {
                         Ok(entry) => entry,
-                        Err(err) => return Some(Err(AppError::from_io(err, &current_path))),
+                        Err(err) => return Some(Err(AppError::from_io(err, current_path))),
                     };
                     if !entry.file_type().map_or(false, |t| t.is_file()) {
                         continue;
@@ -511,6 +511,6 @@ mod tests {
                     "F:\\Games\\Steam".into()
                 ],
             })
-        )
+        );
     }
 }

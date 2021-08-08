@@ -396,13 +396,13 @@ impl OpenSearchPath {
     fn path(&self) -> &StdPath {
         match self {
             OpenSearchPath::Vpk(dir) => dir.path(),
-            OpenSearchPath::Directory(path) => &path,
+            OpenSearchPath::Directory(path) => path,
         }
     }
 
     fn try_open_file(&self, file_path: &Path) -> io::Result<Option<GameFile>> {
         match self {
-            OpenSearchPath::Vpk(vpk) => vpk.open_file(&file_path).map_or_else(
+            OpenSearchPath::Vpk(vpk) => vpk.open_file(file_path).map_or_else(
                 |e| {
                     if e.kind() == io::ErrorKind::NotFound {
                         Ok(None)
@@ -609,7 +609,7 @@ impl<'a> Iterator for ReadDir<'a> {
                 return Some(ret);
             }
             if let Some(path) = self.search_paths.next() {
-                match path.try_read_dir(&self.path) {
+                match path.try_read_dir(self.path) {
                     Ok(r) => {
                         self.current_readdir = r;
                         continue;
@@ -706,7 +706,7 @@ impl<'a> DirEntry<'a> {
     /// Returns `Err` if `self` is not a file or if the file can't be opened.
     pub fn open(&self) -> io::Result<GameFile> {
         self.search_path
-            .try_open_file(&self.path())
+            .try_open_file(self.path())
             .and_then(|maybe_file| {
                 maybe_file.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such file"))
             })
@@ -850,6 +850,6 @@ mod tests {
                     }
                 }
             }
-        )
+        );
     }
 }

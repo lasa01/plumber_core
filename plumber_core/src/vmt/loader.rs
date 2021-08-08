@@ -191,7 +191,7 @@ where
                         .wait_timeout(guard, Duration::from_secs(30))
                         .expect("the mutex shouldn't be poisoned");
                     if res.timed_out() {
-                        panic!("any materials haven't been loaded in 30 seconds while waiting for a material")
+                        panic!("any materials haven't been loaded in 30 seconds while waiting for a material");
                     }
                     guard = g;
                 }

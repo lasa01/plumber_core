@@ -122,7 +122,7 @@ where
                         path.push(&material);
                         self.material_job_sender
                             .send(path)
-                            .expect("material job channel shouldn't be disconnected")
+                            .expect("material job channel shouldn't be disconnected");
                     }
                     Err(err) => todo!("handle err: {}", err),
                 }

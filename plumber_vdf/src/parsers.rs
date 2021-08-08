@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(
             any_key::<VerboseError<&[u8]>>(b"\r\n\t    \"a quoted key\" value".as_ref()),
             IResult::Ok((b" value".as_ref(), b"a quoted key".as_ref()))
-        )
+        );
     }
 
     #[test]
@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(
             any_key::<VerboseError<&[u8]>>(b"\r\n\t    $unquotedKey remaining".as_ref()),
             IResult::Ok((b" remaining".as_ref(), b"$unquotedKey".as_ref()))
-        )
+        );
     }
 
     #[test]
@@ -249,7 +249,7 @@ mod tests {
         assert_eq!(
             any_value::<VerboseError<&[u8]>>(b" \"quoted value\"".as_ref()),
             IResult::Ok((b"".as_ref(), b"quoted value".as_ref()))
-        )
+        );
     }
 
     #[test]
@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(
             any_value::<VerboseError<&[u8]>>(b"\tcsgo\\models\\stuff.mdl".as_ref()),
             IResult::Ok((b"".as_ref(), b"csgo\\models\\stuff.mdl".as_ref()))
-        )
+        );
     }
 
     #[test]
@@ -270,7 +270,7 @@ mod tests {
                 b" // and a comment too".as_ref(),
                 b"unquoted value with spaces/shit".as_ref()
             ))
-        )
+        );
     }
 
     #[test]
@@ -280,7 +280,7 @@ mod tests {
                 b"\t//this is a comment\r\n\tNotComment A Value".as_ref()
             ),
             IResult::Ok((b" A Value".as_ref(), b"NotComment".as_ref()))
-        )
+        );
     }
 
     #[test]
@@ -288,7 +288,7 @@ mod tests {
         assert_eq!(
             multispace_comment0::<VerboseError<&[u8]>>(b"\r\n\t//\r\n".as_ref()),
             IResult::Ok((b"".as_ref(), ()))
-        )
+        );
     }
 
     #[test]

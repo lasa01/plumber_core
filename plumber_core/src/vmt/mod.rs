@@ -360,7 +360,7 @@ mod tests {
                 Ok(filesystem) => {
                     eprintln!("reading from filesystem: {}", filesystem.name);
                     let filesystem = filesystem.open().unwrap();
-                    recurse(filesystem.read_dir(Path::try_from_str("materials").unwrap()))
+                    recurse(filesystem.read_dir(Path::try_from_str("materials").unwrap()));
                 }
                 Err(err) => eprintln!("warning: failed filesystem discovery: {}", err),
             }

@@ -54,7 +54,7 @@ impl Path {
     pub fn parent(&self) -> Option<&Self> {
         let mut path = &self.0;
         if path.ends_with('/') {
-            path = &path[..path.len() - 1]
+            path = &path[..path.len() - 1];
         }
         path.rfind('/').map(|i| Path::new(&path[..i]))
     }
@@ -63,7 +63,7 @@ impl Path {
     pub fn file_name(&self) -> Option<&str> {
         let mut path = &self.0;
         if path.ends_with('/') {
-            path = &path[..path.len() - 1]
+            path = &path[..path.len() - 1];
         }
         let file_name = path.rfind('/').map_or(path, |i| &path[i + 1..]);
         if file_name.is_empty() {
@@ -240,19 +240,19 @@ impl PathBuf {
     }
 
     pub fn clear(&mut self) {
-        self.0.clear()
+        self.0.clear();
     }
 
     pub fn reserve(&mut self, additional: usize) {
-        self.0.reserve(additional)
+        self.0.reserve(additional);
     }
 
     pub fn reserve_exact(&mut self, additional: usize) {
-        self.0.reserve_exact(additional)
+        self.0.reserve_exact(additional);
     }
 
     pub fn shrink_to_fit(&mut self) {
-        self.0.shrink_to_fit()
+        self.0.shrink_to_fit();
     }
 }
 

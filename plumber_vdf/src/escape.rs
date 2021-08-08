@@ -58,7 +58,7 @@ pub(crate) fn write_escape_str(input: &str, target: &mut String) {
             target.push('\\');
             target.push(escaped);
         } else {
-            target.push(ch)
+            target.push(ch);
         }
     }
 }

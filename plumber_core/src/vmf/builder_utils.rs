@@ -294,7 +294,7 @@ mod tests {
         assert_relative_eq!(
             affine_transform_point(&affine_matrix, Point2::new(-35.3834, -48.1264)),
             Point2::new(0.0, 1.0),
-        )
+        );
     }
 
     #[test]

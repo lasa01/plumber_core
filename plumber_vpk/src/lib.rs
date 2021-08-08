@@ -284,7 +284,7 @@ impl Directory {
                             let child: PathBuf = child.to_string().into();
                             parent.push(&child);
                             if !dir.iter().any(|c| c == child.as_path()) {
-                                dir.push(DirectoryContent::Directory(child))
+                                dir.push(DirectoryContent::Directory(child));
                             }
                             parent
                         },

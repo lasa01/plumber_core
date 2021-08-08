@@ -94,7 +94,7 @@ impl<'a> SideBuilder<'a> {
             let vertice = &vertices[self.vertice_indices[i]];
             let to_current: Vector3<f64> = (vertice - center).normalize();
             let filter_plane =
-                NdPlane::from_points(&vertice, &center, &(center + self.plane.normal.as_ref()));
+                NdPlane::from_points(vertice, &center, &(center + self.plane.normal.as_ref()));
 
             if let Some((next_idx, _)) = self.vertice_indices[i + 1..]
                 .iter()
@@ -326,7 +326,7 @@ impl<'a> SideBuilder<'a> {
                 face.material_index = self.material_index;
             }
 
-            sides.append(&mut disp_faces.into_raw_vec())
+            sides.append(&mut disp_faces.into_raw_vec());
         }
         Ok(())
     }
