@@ -6,18 +6,24 @@ use approx::abs_diff_eq;
 use itertools::Itertools;
 use nalgebra::{geometry::Point3, Matrix2x3, Matrix3, Point2, Unit, Vector3};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct GeometrySettings {
     pub(crate) epsilon: f64,
     pub(crate) cut_threshold: f64,
-    pub(crate) solids: bool,
-    pub(crate) overlays: bool,
 }
 
 impl GeometrySettings {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn epsilon(&mut self, epsilon: f64) {
+        self.epsilon = epsilon;
+    }
+
+    pub fn cut_threshold(&mut self, cut_threshold: f64) {
+        self.cut_threshold = cut_threshold;
     }
 }
 
@@ -26,8 +32,6 @@ impl Default for GeometrySettings {
         Self {
             epsilon: 1e-3,
             cut_threshold: 1e-3,
-            solids: true,
-            overlays: true,
         }
     }
 }

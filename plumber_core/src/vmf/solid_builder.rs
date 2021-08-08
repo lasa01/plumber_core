@@ -5,7 +5,11 @@ use crate::{
     vmt::loader::{MaterialInfo, MaterialLoadError},
 };
 
-use super::{Side, Solid, builder_utils::{NdPlane, GeometrySettings, lerp_uv, polygon_center, polygon_normal}, overlay_builder::SideFacesMap};
+use super::{
+    builder_utils::{lerp_uv, polygon_center, polygon_normal, GeometrySettings, NdPlane},
+    overlay_builder::SideFacesMap,
+    Side, Solid,
+};
 
 use approx::relative_eq;
 use float_ord::FloatOrd;
@@ -26,7 +30,13 @@ pub struct BuiltSolid<'a> {
     pub position: Point3<f64>,
     pub vertices: Vec<Point3<f64>>,
     pub sides: Vec<BuiltSide>,
-    pub materials: Vec<PathBuf>,
+    pub materials: Vec<SolidMaterial>,
+}
+
+#[derive(Debug)]
+pub struct SolidMaterial {
+    pub name: PathBuf,
+    pub info: MaterialInfo,
 }
 
 #[derive(Debug)]
@@ -124,23 +134,33 @@ impl<'a> SideBuilder<'a> {
         &mut self,
         center: &Point3<f64>,
         vertices: &[Point3<f64>],
-        materials: &mut Vec<PathBuf>,
+        materials: &mut Vec<SolidMaterial>,
         get_material_info: &mut impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
     ) {
-        self.material_index = materials
-            .iter()
-            .position(|p| p == &self.side.material)
-            .unwrap_or_else(|| {
-                let index = materials.len();
-                materials.push(self.side.material.clone());
-                index
-            });
-
         let mut material_path = PathBuf::from("materials");
         material_path.push(&self.side.material);
-        let material_info = get_material_info(&material_path).unwrap_or_default();
-        let texture_width = f64::from(material_info.width());
-        let texture_height = f64::from(material_info.height());
+
+        let (material_index, material) = if let Some(r) = materials
+            .iter()
+            .enumerate()
+            .find(|(_, p)| p.name == material_path)
+        {
+            r
+        } else {
+            let index = materials.len();
+            let info = get_material_info(&material_path).unwrap_or_default();
+            let material = SolidMaterial {
+                name: material_path,
+                info,
+            };
+            materials.push(material);
+            (index, materials.last().unwrap())
+        };
+
+        self.material_index = material_index;
+
+        let texture_width = f64::from(material.info.width());
+        let texture_height = f64::from(material.info.height());
         self.vertice_uvs.reserve_exact(self.vertice_indices.len());
         let u_axis = self.side.u_axis;
         let v_axis = self.side.v_axis;
@@ -345,7 +365,7 @@ struct SolidBuilder<'a> {
     center: Point3<f64>,
     sides: Vec<SideBuilder<'a>>,
     vertices: Vec<Point3<f64>>,
-    materials: Vec<PathBuf>,
+    materials: Vec<SolidMaterial>,
 }
 
 impl<'a> Debug for SolidBuilder<'a> {
@@ -355,7 +375,7 @@ impl<'a> Debug for SolidBuilder<'a> {
             .field("sides", &self.sides)
             .field("vertices", &self.vertices)
             .field("materials", &self.materials)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

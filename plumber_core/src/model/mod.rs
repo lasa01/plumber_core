@@ -2,6 +2,8 @@ mod mdl;
 mod vtx;
 mod vvd;
 
+pub mod loader;
+
 use std::{
     convert::TryInto,
     fmt::{self, Display},

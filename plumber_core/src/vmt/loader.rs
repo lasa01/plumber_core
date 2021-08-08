@@ -131,16 +131,27 @@ fn get_dimension_reference(shader: &Shader) -> Option<&String> {
 }
 
 /// The default material builder.
-/// Does nothing.
+/// Returns the base texture of the material, if specified and found.
 #[derive(Debug, Default, Clone)]
 pub struct DefaultMaterialBuilder;
 
 impl MaterialBuilder for DefaultMaterialBuilder {
-    type Built = ();
+    type Built = Option<LoadedTexture>;
 
-    fn build(&self, _vmt: LoadedVmt<Self>) -> Result<Self::Built, MaterialLoadError> {
-        Ok(())
+    fn build(&self, mut vmt: LoadedVmt<Self>) -> Result<Self::Built, MaterialLoadError> {
+        Ok(if vmt.textures.is_empty() {
+            None
+        } else {
+            Some(vmt.textures.swap_remove(0))
+        })
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadedMaterial<B: Debug + Send + Sync + 'static> {
+    pub name: PathBuf,
+    pub info: MaterialInfo,
+    pub data: B,
 }
 
 #[derive(Debug, Default)]
@@ -221,12 +232,19 @@ where
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn load_material(
         &self,
         material_path: PathBuf,
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
-    ) -> Result<(MaterialInfo, Option<<L as MaterialBuilder>::Built>), MaterialLoadError> {
+    ) -> Result<
+        (
+            MaterialInfo,
+            Option<LoadedMaterial<<L as MaterialBuilder>::Built>>,
+        ),
+        MaterialLoadError,
+    > {
         if let Some(info_result) = self
             .material_cache
             .lock()
@@ -239,7 +257,7 @@ where
         let result = self.load_material_inner(&material_path, file_system, vtf_lib);
 
         let info_result = match &result {
-            Ok((info, _)) => Ok(info.clone()),
+            Ok(LoadedMaterial { info, .. }) => Ok(info.clone()),
             Err(err) => Err(err.clone()),
         };
 
@@ -249,7 +267,7 @@ where
             .insert(material_path, info_result);
         self.material_condvar.notify_all();
 
-        result.map(|(i, b)| (i, Some(b)))
+        result.map(|b| (b.info.clone(), Some(b)))
     }
 
     fn load_material_inner(
@@ -257,8 +275,8 @@ where
         material_path: &PathBuf,
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
-    ) -> Result<(MaterialInfo, <L as MaterialBuilder>::Built), MaterialLoadError> {
-        let shader = get_shader(material_path, filesystem)?;
+    ) -> Result<LoadedMaterial<<L as MaterialBuilder>::Built>, MaterialLoadError> {
+        let shader = get_shader(material_path, file_system)?;
 
         let mut loaded_vmt = LoadedVmt {
             shader,
@@ -269,9 +287,15 @@ where
             material_path,
         };
         let info = self.material_loader.info(&mut loaded_vmt)?;
-        let loaded_material = self.material_loader.build(loaded_vmt)?;
+        let data = self.material_loader.build(loaded_vmt)?;
 
-        Ok((info, loaded_material))
+        let loaded_material = LoadedMaterial {
+            name: material_path.clone(),
+            info,
+            data,
+        };
+
+        Ok(loaded_material)
     }
 
     fn load_texture(
@@ -322,7 +346,7 @@ where
     I: Iterator<Item = PathBuf>,
     L: MaterialBuilder,
 {
-    type Item = Result<<L as MaterialBuilder>::Built, MaterialLoadError>;
+    type Item = Result<LoadedMaterial<<L as MaterialBuilder>::Built>, MaterialLoadError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         for material_path in &mut self.material_paths {
@@ -445,8 +469,9 @@ impl TextureInfo {
 
 #[derive(Debug, Clone)]
 pub struct LoadedTexture {
-    info: TextureInfo,
-    data: RgbaImage,
+    pub name: PathBuf,
+    pub info: TextureInfo,
+    pub data: RgbaImage,
 }
 
 impl LoadedTexture {
@@ -456,23 +481,23 @@ impl LoadedTexture {
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<Self, TextureLoadError> {
         let (vtf_lib, guard) = vtf_lib;
-        let mut texture_path = Path::try_from_str("materials").unwrap().join(texture_path);
-        texture_path.set_extension("vtf");
-        let vtf_bytes = filesystem
-            .read(&texture_path)
+        let texture_path = Path::try_from_str("materials").unwrap().join(texture_path);
+        let vtf_bytes = file_system
+            .read(&texture_path.with_extension("vtf"))
             .map_err(|err| TextureLoadError::from_io(&err, &texture_path))?;
         let mut vtf = vtf_lib.new_vtf_file().bind(guard);
         vtf.load(&vtf_bytes)?;
-        Self::load_vtf(&vtf)
+        Self::load_vtf(texture_path, &vtf)
     }
 
-    fn load_vtf(vtf: &BoundVtfFile) -> Result<Self, TextureLoadError> {
+    fn load_vtf(name: PathBuf, vtf: &BoundVtfFile) -> Result<Self, TextureLoadError> {
         let source = vtf.data(0, 0, 0, 0).ok_or(vtflib::Error::ImageNotLoaded)?;
         let format = vtf.format().ok_or(vtflib::Error::InvalidFormat)?;
         let width = vtf.width();
         let height = vtf.height();
         let data = VtfFile::convert_image_to_rgba8888(source, width, height, format)?;
         Ok(Self {
+            name,
             info: TextureInfo { width, height },
             data: RgbaImage::from_raw(width, height, data)
                 .expect("vtflib should return valid images"),

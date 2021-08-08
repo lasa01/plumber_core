@@ -2,7 +2,13 @@ use std::{collections::BTreeMap, fmt::Debug, sync::Mutex};
 
 use crate::fs::PathBuf;
 
-use super::{builder_utils::{NdPlane, GeometrySettings, affine_matrix, affine_transform_point, is_point_left_of_line, polygon_center, polygon_normal}, entities::{EntityParseError, Overlay, OverlayUvInfo}};
+use super::{
+    builder_utils::{
+        affine_matrix, affine_transform_point, is_point_left_of_line, polygon_center,
+        polygon_normal, GeometrySettings, NdPlane,
+    },
+    entities::{EntityParseError, Overlay, OverlayUvInfo},
+};
 
 use approx::relative_eq;
 use itertools::Itertools;
@@ -381,7 +387,8 @@ impl<'a> OverlayBuilder<'a> {
     }
 
     fn finish(self) -> Result<BuiltOverlay<'a>, OverlayError> {
-        let material = self.overlay.material()?;
+        let mut material = PathBuf::from("materials");
+        material.push(&self.overlay.material()?);
 
         Ok(BuiltOverlay {
             overlay: self.overlay,

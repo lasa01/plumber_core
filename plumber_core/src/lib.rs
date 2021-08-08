@@ -4,6 +4,8 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_sign_loss)]
+// causes too long living borrows
+#![allow(clippy::option_if_let_else)]
 
 mod binary_utils;
 #[cfg(feature = "fs")]
