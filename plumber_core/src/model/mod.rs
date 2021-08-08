@@ -23,8 +23,8 @@ use crate::fs::{GameFile, OpenFileSystem, Path, PathBuf};
 
 #[derive(Debug, Clone, Error)]
 pub enum Error {
-    #[error("io error reading `{path}`: {kind:?}")]
-    Io { path: String, kind: io::ErrorKind },
+    #[error("io error reading `{path}`: {error}")]
+    Io { path: String, error: String },
     #[error("not a {ty} file: invalid signature `{signature}`")]
     InvalidSignature { ty: FileType, signature: String },
     #[error("unsupported {ty} version {version}")]
@@ -58,7 +58,7 @@ impl Error {
     fn from_io(err: &io::Error, path: &Path) -> Self {
         Self::Io {
             path: path.as_str().to_string(),
-            kind: err.kind(),
+            error: err.to_string(),
         }
     }
 }
@@ -83,7 +83,7 @@ fn find_vtx<'a>(
     }
     Err(Error::Io {
         path: mdl_path.with_extension("*.vtx").into_string(),
-        kind: io::ErrorKind::NotFound,
+        error: "could not find a supported vtx file".to_owned(),
     })
 }
 
@@ -294,7 +294,7 @@ fn find_material<'a>(
 
     Err(Error::Io {
         path: name.with_extension("vmt").into_string(),
-        kind: io::ErrorKind::NotFound,
+        error: "could not find the material in any material paths".to_owned(),
     })
 }
 
