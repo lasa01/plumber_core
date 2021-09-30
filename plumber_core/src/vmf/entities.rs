@@ -681,6 +681,13 @@ impl<'a> Prop<'a> {
 
     /// # Errors
     ///
+    /// Returns `Err` if the parameter `model` doesn't exist.
+    pub fn model_path(&self) -> Result<PathBuf, EntityParseError> {
+        self.model().map(PathBuf::from)
+    }
+
+    /// # Errors
+    ///
     /// Returns `Err` if the parameter `skin` can't be parsed.
     pub fn skin(&self) -> Result<i32, EntityParseError> {
         self.parse_int_parameter("skin")
