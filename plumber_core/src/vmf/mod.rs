@@ -159,9 +159,11 @@ pub struct World {
     pub properties: BTreeMap<UncasedString, String>,
     #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
     pub solids: Vec<Solid>,
+    #[serde(default, rename = "group", skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<Group>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
 #[serde(expecting = "class solid")]
 pub struct Solid {
     pub id: i32,
@@ -171,7 +173,15 @@ pub struct Solid {
     pub editor: Option<Editor>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
+#[serde(expecting = "class group")]
+pub struct Group {
+    pub id: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor: Option<Editor>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
 #[serde(expecting = "class side")]
 pub struct Side {
     pub id: i32,
