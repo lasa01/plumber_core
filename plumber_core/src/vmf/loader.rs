@@ -10,40 +10,38 @@ use rayon::{prelude::*, ThreadPoolBuilder};
 use crate::{
     fs::OpenFileSystem,
     model::{self, loader::LoadedModel},
-    vmt::loader::{
-        DefaultMaterialBuilder, LoadedMaterial, Loader, MaterialBuilder, MaterialLoadError,
-    },
+    vmt::loader::{LoadedMaterial, Loader, MaterialBuilder, MaterialLoadError},
 };
 
-pub use super::builder_utils::GeometrySettings;
+pub use super::builder_utils::{GeometrySettings, InvisibleSolids, MergeSolids};
 pub use super::overlay_builder::{BuiltOverlay, BuiltOverlayFace, OverlayError};
 pub use super::prop_loader::{LoadedProp, PropError};
-pub use super::solid_builder::{BuiltSide, BuiltSolid, SolidError};
+pub use super::solid_builder::{BuiltBrushEntity, BuiltSolid, Face, MergedSolids, SolidError};
 
 use super::{entities::TypedEntity, overlay_builder::SideFacesMap, Vmf};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ImportGeometry {
     Nothing,
-    Solids,
-    SolidsAndOverlays,
+    Brushes,
+    BrushesAndOverlays,
 }
 
 impl Default for ImportGeometry {
     fn default() -> Self {
-        Self::SolidsAndOverlays
+        Self::BrushesAndOverlays
     }
 }
 
 impl ImportGeometry {
     #[must_use]
-    pub fn solids(&self) -> bool {
-        matches!(self, Self::Solids | Self::SolidsAndOverlays)
+    pub fn brushes(&self) -> bool {
+        matches!(self, Self::Brushes | Self::BrushesAndOverlays)
     }
 
     #[must_use]
     pub fn overlays(&self) -> bool {
-        matches!(self, Self::SolidsAndOverlays)
+        matches!(self, Self::BrushesAndOverlays)
     }
 }
 
@@ -57,12 +55,15 @@ pub struct Settings<M: MaterialBuilder> {
     import_entities: bool,
 }
 
-impl Default for Settings<DefaultMaterialBuilder> {
+impl<B> Default for Settings<B>
+where
+    B: MaterialBuilder + Default,
+{
     fn default() -> Self {
         Self {
-            material_builder: DefaultMaterialBuilder,
+            material_builder: B::default(),
             geometry_settings: GeometrySettings::default(),
-            import_geometry: ImportGeometry::SolidsAndOverlays,
+            import_geometry: ImportGeometry::BrushesAndOverlays,
             import_materials: true,
             import_props: true,
             import_entities: true,
@@ -79,7 +80,7 @@ where
         Self {
             material_builder,
             geometry_settings: GeometrySettings::default(),
-            import_geometry: ImportGeometry::SolidsAndOverlays,
+            import_geometry: ImportGeometry::BrushesAndOverlays,
             import_materials: true,
             import_props: true,
             import_entities: true,
@@ -271,32 +272,30 @@ where
         side_faces_map: Arc<Mutex<SideFacesMap>>,
         vmf: &'a Vmf,
         geometry_settings: GeometrySettings,
-    ) -> impl ParallelIterator<Item = Result<BuiltSolid, SolidError>> {
-        let world_solids_iter = {
-            vmf.world.solids.par_iter().map_with(
-                (
-                    material_loader.clone(),
-                    side_faces_map.clone(),
+    ) -> impl ParallelIterator<Item = Result<BuiltBrushEntity<'a>, SolidError>> {
+        let world_brush_iter = rayon::iter::once(&vmf.world).map_with(
+            (
+                material_loader.clone(),
+                side_faces_map.clone(),
+                geometry_settings,
+            ),
+            |(material_loader, side_faces_map, geometry_settings), world| {
+                world.build_brush(
+                    |path| material_loader.wait_for_material(path),
+                    side_faces_map,
                     geometry_settings,
-                ),
-                |(material_loader, side_faces_map, geometry_settings), s| {
-                    s.build_mesh(
-                        |path| material_loader.wait_for_material(path),
-                        side_faces_map,
-                        geometry_settings,
-                    )
-                },
-            )
-        };
+                )
+            },
+        );
 
-        let entity_solids_iter = {
+        let entity_brushes_iter = {
             vmf.entities
                 .par_iter()
-                .flat_map_iter(|e| &e.solids)
+                .filter(|entity| !entity.solids.is_empty())
                 .map_with(
                     (material_loader, side_faces_map, geometry_settings),
-                    |(material_loader, side_faces_map, geometry_settings), s| {
-                        s.build_mesh(
+                    |(material_loader, side_faces_map, geometry_settings), entity| {
+                        entity.build_brush(
                             |path| material_loader.wait_for_material(path),
                             side_faces_map,
                             geometry_settings,
@@ -305,7 +304,7 @@ where
                 )
         };
 
-        world_solids_iter.chain(entity_solids_iter)
+        world_brush_iter.chain(entity_brushes_iter)
     }
 
     fn load_overlays(
@@ -372,7 +371,7 @@ where
                     );
                 }
 
-                if settings.import_geometry.solids() {
+                if settings.import_geometry.brushes() {
                     Self::load_brushes(
                         material_loader,
                         side_faces_map.clone(),
@@ -381,7 +380,7 @@ where
                     )
                     .for_each_with(asset_sender.clone(), |asset_sender, r| {
                         asset_sender
-                            .send(Asset::Solid(r))
+                            .send(Asset::BrushEntity(r))
                             .expect("the channel should outlive the thread");
                     });
                 }
@@ -460,7 +459,7 @@ pub enum Asset<'a, M: MaterialBuilder> {
     Material(Result<LoadedMaterial<<M as MaterialBuilder>::Built>, MaterialLoadError>),
     Model(Result<LoadedModel, model::Error>),
     Entity(TypedEntity<'a>),
-    Solid(Result<BuiltSolid<'a>, SolidError>),
+    BrushEntity(Result<BuiltBrushEntity<'a>, SolidError>),
     Overlay(Result<BuiltOverlay<'a>, OverlayError>),
     Prop(Result<LoadedProp<'a>, PropError>),
 }
@@ -469,7 +468,7 @@ pub enum Asset<'a, M: MaterialBuilder> {
 mod tests {
     use std::path::Path;
 
-    use crate::fs::FileSystem;
+    use crate::{fs::FileSystem, vmt::loader::EmptyMaterialBuilder};
 
     use super::*;
 
@@ -483,7 +482,10 @@ mod tests {
 
         let parsed = Vmf::from_bytes(vmf).unwrap();
         let file_system = FileSystem::from_paths(root_path, game_info_path).unwrap();
-        let scene = parsed.scene(file_system.open().unwrap(), Settings::default());
+        let scene = parsed.scene(
+            file_system.open().unwrap(),
+            Settings::<EmptyMaterialBuilder>::default(),
+        );
         scene.load_assets_sequential(|asset| {
             dbg!(asset);
         });

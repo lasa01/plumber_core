@@ -7,9 +7,48 @@ use itertools::Itertools;
 use nalgebra::{geometry::Point3, Matrix2x3, Matrix3, Point2, Unit, Vector3};
 
 #[derive(Debug, Clone, Copy)]
+pub enum MergeSolids {
+    Separate,
+    Merge,
+    MergeAndOptimize,
+}
+
+impl MergeSolids {
+    #[must_use]
+    pub fn merge(self) -> bool {
+        matches!(self, Self::Merge | Self::MergeAndOptimize)
+    }
+
+    #[must_use]
+    pub fn optimize(self) -> bool {
+        matches!(self, Self::MergeAndOptimize)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum InvisibleSolids {
+    Import,
+    Skip,
+}
+
+impl InvisibleSolids {
+    #[must_use]
+    pub fn skip(self) -> bool {
+        matches!(self, Self::Skip)
+    }
+
+    #[must_use]
+    pub fn import(self) -> bool {
+        matches!(self, Self::Import)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct GeometrySettings {
     pub(crate) epsilon: f64,
     pub(crate) cut_threshold: f64,
+    pub(crate) merge_solids: MergeSolids,
+    pub(crate) invisible_solids: InvisibleSolids,
 }
 
 impl GeometrySettings {
@@ -25,6 +64,14 @@ impl GeometrySettings {
     pub fn cut_threshold(&mut self, cut_threshold: f64) {
         self.cut_threshold = cut_threshold;
     }
+
+    pub fn merge_solids(&mut self, merge: MergeSolids) {
+        self.merge_solids = merge;
+    }
+
+    pub fn invisible_solids(&mut self, invisible: InvisibleSolids) {
+        self.invisible_solids = invisible;
+    }
 }
 
 impl Default for GeometrySettings {
@@ -32,13 +79,15 @@ impl Default for GeometrySettings {
         Self {
             epsilon: 1e-3,
             cut_threshold: 1e-3,
+            merge_solids: MergeSolids::Merge,
+            invisible_solids: InvisibleSolids::Skip,
         }
     }
 }
 
 /// A plane defined by a normal vector and a distance to the origin.
 /// Also keeps a point on the plane for convenience.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct NdPlane {
     pub point: Point3<f64>,
     pub normal: Unit<Vector3<f64>>,
@@ -79,6 +128,37 @@ impl NdPlane {
         (point - self.point).dot(&self.normal)
     }
 
+    pub fn classify_point(&self, point: &Point3<f64>, epsilon: f64) -> PointClassification {
+        let distance = self.distance_to_point(point);
+
+        if distance > epsilon {
+            PointClassification::Front
+        } else if distance < -epsilon {
+            PointClassification::Back
+        } else {
+            PointClassification::OnPlane
+        }
+    }
+
+    pub fn intersect_line_with_factor(
+        &self,
+        line_1: &Point3<f64>,
+        line_2: &Point3<f64>,
+        epsilon: f64,
+    ) -> Option<(Point3<f64>, f64)> {
+        let line_direction = (line_2 - line_1).normalize();
+        if abs_diff_eq!(self.normal.dot(&line_direction), 0.0, epsilon = epsilon) {
+            return None;
+        }
+        let t = (self.normal.dot(&self.point.coords) - self.normal.dot(&line_1.coords))
+            / self.normal.dot(&line_direction);
+
+        let point = line_1 + line_direction * t;
+        let factor = t / (line_2 - line_1).magnitude();
+
+        Some((point, factor))
+    }
+
     pub fn intersect_line(
         &self,
         line_point: &Point3<f64>,
@@ -107,6 +187,51 @@ impl NdPlane {
                 .into(),
         )
     }
+
+    pub fn classify_polygon<I>(&self, polygon: I, epsilon: f64) -> PolygonClassification
+    where
+        I: Iterator<Item = Point3<f64>> + ExactSizeIterator,
+    {
+        let points_len = polygon.len();
+        let mut points_front = 0_usize;
+        let mut points_back = 0_usize;
+        let mut points_on_plane = 0_usize;
+
+        for point in polygon {
+            match self.classify_point(&point, epsilon) {
+                PointClassification::Front => points_front += 1,
+                PointClassification::Back => points_back += 1,
+                PointClassification::OnPlane => points_on_plane += 1,
+            }
+        }
+
+        if points_front == points_len {
+            return PolygonClassification::Front;
+        }
+        if points_back == points_len {
+            return PolygonClassification::Back;
+        }
+        if points_on_plane == points_len {
+            return PolygonClassification::OnPlane;
+        }
+
+        PolygonClassification::Spanning
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PointClassification {
+    Front,
+    Back,
+    OnPlane,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PolygonClassification {
+    Front,
+    Back,
+    OnPlane,
+    Spanning,
 }
 
 pub(crate) fn polygon_center<I>(polygon: I) -> Point3<f64>
@@ -277,6 +402,49 @@ mod tests {
             Point3::new(0.285_714_285_7, 0.0, 2.571_428_571_4),
             epsilon = 1e-3,
         );
+
+        let (point, factor) = plane
+            .intersect_line_with_factor(
+                &Point3::new(2.0, 0.0, 1.0),
+                &Point3::new(0.0, 0.0, 1.0),
+                1e-3,
+            )
+            .unwrap();
+
+        assert_relative_eq!(point, Point3::new(4.0 / 3.0, 0.0, 1.0), epsilon = 1e-3,);
+
+        assert_relative_eq!(factor, 1.0 / 3.0, epsilon = 1e-3,);
+
+        let plane_2 = NdPlane::from_point_normal(
+            Point3::new(-1.0, 0.0, 0.0),
+            Unit::new_normalize(Vector3::new(-1.0, 0.0, 0.0)),
+        );
+
+        assert_relative_eq!(
+            plane_2
+                .intersect_line_with_factor(
+                    &Point3::new(-2.0, -1.0, 0.0),
+                    &Point3::new(0.0, 1.0, 0.0),
+                    1e-3
+                )
+                .unwrap()
+                .1,
+            0.5,
+            epsilon = 1e-3,
+        );
+
+        assert_relative_eq!(
+            plane_2
+                .intersect_line_with_factor(
+                    &Point3::new(0.0, 1.0, 0.0),
+                    &Point3::new(-4.0, 1.0, 0.0),
+                    1e-3
+                )
+                .unwrap()
+                .1,
+            0.25,
+            epsilon = 1e-3,
+        );
     }
 
     #[test]
@@ -312,5 +480,61 @@ mod tests {
         let point = Point2::new(2.0, 0.0);
 
         assert!(!is_point_left_of_line(&line_a, &line_b, &point));
+    }
+
+    #[test]
+    fn polygon_classification() {
+        let plane = NdPlane::from_points(
+            &Point3::new(0.0, -3.0, 0.0),
+            &Point3::new(0.0, 0.0, 3.0),
+            &Point3::new(2.0, 0.0, 0.0),
+        );
+
+        let polygon = [
+            Point3::new(0.0, -3.0, 0.0),
+            Point3::new(0.0, 0.0, 3.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ];
+
+        assert_eq!(
+            plane.classify_polygon(IntoIterator::into_iter(polygon), 1e-3),
+            PolygonClassification::OnPlane,
+        );
+
+        let polygon_2 = [
+            Point3::new(-1.0, -2.0, 0.0),
+            Point3::new(-1.0, 3.0, 0.0),
+            Point3::new(2.0, 2.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+        ];
+
+        assert_eq!(
+            plane.classify_polygon(IntoIterator::into_iter(polygon_2), 1e-3),
+            PolygonClassification::Front,
+        );
+
+        let polygon_3 = [
+            Point3::new(-1.0, -2.0, 100.0),
+            Point3::new(-1.0, 3.0, 100.0),
+            Point3::new(2.0, 2.0, 100.0),
+            Point3::new(1.0, 1.0, 100.0),
+        ];
+
+        assert_eq!(
+            plane.classify_polygon(IntoIterator::into_iter(polygon_3), 1e-3),
+            PolygonClassification::Back,
+        );
+
+        let polygon_4 = [
+            Point3::new(-10.0, -20.0, 0.0),
+            Point3::new(-10.0, 30.0, 0.0),
+            Point3::new(20.0, 20.0, 0.0),
+            Point3::new(10.0, 10.0, 0.0),
+        ];
+
+        assert_eq!(
+            plane.classify_polygon(IntoIterator::into_iter(polygon_4), 1e-3),
+            PolygonClassification::Spanning,
+        );
     }
 }

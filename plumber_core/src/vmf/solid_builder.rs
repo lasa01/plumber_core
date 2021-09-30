@@ -1,19 +1,22 @@
-use std::{fmt::Debug, sync::Mutex};
+use std::{fmt::Debug, mem, ptr, sync::Mutex};
 
 use crate::{
     fs::{Path, PathBuf},
+    vmf::builder_utils::PointClassification,
     vmt::loader::{MaterialInfo, MaterialLoadError},
 };
 
 use super::{
-    builder_utils::{lerp_uv, polygon_center, polygon_normal, GeometrySettings, NdPlane},
+    builder_utils::{
+        lerp_uv, polygon_center, polygon_normal, GeometrySettings, NdPlane, PolygonClassification,
+    },
     overlay_builder::SideFacesMap,
-    Side, Solid,
+    Entity, Side, Solid, World,
 };
 
 use approx::relative_eq;
 use float_ord::FloatOrd;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use nalgebra::{geometry::Point3, Vector3};
 use ndarray::{Array2, Array3, Zip};
 use thiserror::Error;
@@ -25,28 +28,35 @@ pub enum SolidError {
 }
 
 #[derive(Debug)]
-pub struct BuiltSolid<'a> {
-    pub solid: &'a Solid,
+pub struct BuiltSolid {
+    pub id: i32,
     pub position: Point3<f64>,
     pub vertices: Vec<Point3<f64>>,
-    pub sides: Vec<BuiltSide>,
+    pub faces: Vec<Face>,
     pub materials: Vec<SolidMaterial>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SolidMaterial {
     pub name: PathBuf,
     pub info: MaterialInfo,
 }
 
+impl PartialEq for SolidMaterial {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
 #[derive(Debug)]
-pub struct BuiltSide {
+pub struct Face {
     pub vertice_indices: Vec<usize>,
     pub vertice_uvs: Vec<[f64; 2]>,
     pub material_index: usize,
 }
 
-struct SideBuilder<'a> {
+#[derive(Clone)]
+struct FaceBuilder<'a> {
     side: &'a Side,
     plane: NdPlane,
     vertice_indices: Vec<usize>,
@@ -54,7 +64,18 @@ struct SideBuilder<'a> {
     material_index: usize,
 }
 
-impl<'a> Debug for SideBuilder<'a> {
+impl<'a> PartialEq for FaceBuilder<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        // compare side references instead of contents
+        ptr::eq(self.side, other.side)
+            && self.plane == other.plane
+            && self.vertice_indices == other.vertice_indices
+            && self.vertice_uvs == other.vertice_uvs
+            && self.material_index == other.material_index
+    }
+}
+
+impl<'a> Debug for FaceBuilder<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SideBuilder")
             .field("plane", &self.plane)
@@ -65,7 +86,7 @@ impl<'a> Debug for SideBuilder<'a> {
     }
 }
 
-impl<'a> SideBuilder<'a> {
+impl<'a> FaceBuilder<'a> {
     fn new(side: &'a Side, center: Point3<f64>) -> Self {
         let plane = NdPlane::from_plane(&side.plane, &center);
         Self {
@@ -74,6 +95,16 @@ impl<'a> SideBuilder<'a> {
             vertice_indices: Vec::new(),
             vertice_uvs: Vec::new(),
             material_index: 0,
+        }
+    }
+
+    fn new_split(&self) -> Self {
+        Self {
+            side: self.side,
+            plane: self.plane,
+            vertice_indices: Vec::new(),
+            vertice_uvs: Vec::new(),
+            material_index: self.material_index,
         }
     }
 
@@ -229,7 +260,7 @@ impl<'a> SideBuilder<'a> {
         center: &Point3<f64>,
         old_vertices: &[Point3<f64>],
         vertices: &mut Vec<Point3<f64>>,
-        sides: &mut Vec<SideBuilder<'a>>,
+        faces: &mut Vec<FaceBuilder<'a>>,
     ) -> Result<(), SolidError> {
         if let Some(info) = &self.side.disp_info {
             self.verify_displacement()?;
@@ -320,9 +351,9 @@ impl<'a> SideBuilder<'a> {
                 }
             }
 
-            let mut disp_faces = Array3::<SideBuilder>::from_shape_simple_fn(
+            let mut disp_faces = Array3::<FaceBuilder>::from_shape_simple_fn(
                 (dimension - 1, dimension - 1, 2),
-                || SideBuilder {
+                || FaceBuilder {
                     side: self.side,
                     plane: self.plane,
                     vertice_indices: Vec::with_capacity(3),
@@ -346,13 +377,209 @@ impl<'a> SideBuilder<'a> {
                 face.material_index = self.material_index;
             }
 
-            sides.append(&mut disp_faces.into_raw_vec());
+            faces.append(&mut disp_faces.into_raw_vec());
         }
         Ok(())
     }
 
-    fn finish(self) -> BuiltSide {
-        BuiltSide {
+    #[allow(clippy::too_many_arguments)]
+    fn clip_to_sides(
+        self,
+        self_center: Point3<f64>,
+        clipped_sides: &mut Vec<Self>,
+        vertices: &mut Vec<Point3<f64>>,
+        sides: &[FaceBuilder],
+        sides_center: Point3<f64>,
+        clip_on_plane: bool,
+        epsilon: f64,
+    ) -> bool {
+        // solids are convex, so if self is in front of any side it's outside the solid and doesn't need clipping
+        if sides.iter().any(|side| {
+            side.plane.classify_polygon(
+                self.vertice_indices
+                    .iter()
+                    .map(|&i| vertices[i] + self_center.coords - sides_center.coords),
+                epsilon,
+            ) == PolygonClassification::Front
+        }) {
+            clipped_sides.push(self);
+            return false;
+        }
+
+        let (side, remaining_sides) = if let Some(r) = sides.split_first() {
+            r
+        } else {
+            clipped_sides.push(self);
+            return false;
+        };
+
+        match side.plane.classify_polygon(
+            self.vertice_indices
+                .iter()
+                .map(|&i| vertices[i] + self_center.coords - sides_center.coords),
+            epsilon,
+        ) {
+            PolygonClassification::Front => unreachable!("checked earlier"),
+            PolygonClassification::Back => {
+                if remaining_sides.is_empty() {
+                    return true;
+                }
+                self.clip_to_sides(
+                    self_center,
+                    clipped_sides,
+                    vertices,
+                    remaining_sides,
+                    sides_center,
+                    clip_on_plane,
+                    epsilon,
+                )
+            }
+            PolygonClassification::OnPlane => {
+                if !clip_on_plane
+                    && relative_eq!(self.plane.normal, side.plane.normal, epsilon = epsilon)
+                {
+                    clipped_sides.push(self);
+                    return false;
+                }
+
+                if remaining_sides.is_empty() {
+                    return true;
+                }
+
+                self.clip_to_sides(
+                    self_center,
+                    clipped_sides,
+                    vertices,
+                    remaining_sides,
+                    sides_center,
+                    clip_on_plane,
+                    epsilon,
+                )
+            }
+            PolygonClassification::Spanning => {
+                let (front, back) =
+                    self.split(self_center, vertices, &side.plane, sides_center, epsilon);
+
+                if front.vertice_indices.len() > 2 {
+                    clipped_sides.push(front);
+                }
+
+                if remaining_sides.is_empty() {
+                    return true;
+                }
+
+                let back_clipped = back.clone().clip_to_sides(
+                    self_center,
+                    clipped_sides,
+                    vertices,
+                    remaining_sides,
+                    sides_center,
+                    clip_on_plane,
+                    epsilon,
+                );
+
+                if back_clipped {
+                    true
+                } else {
+                    *clipped_sides
+                        .last_mut()
+                        .expect("clip_to_sides should push to clipped_sides if it returns false") =
+                        self;
+                    false
+                }
+            }
+        }
+    }
+
+    fn split(
+        &self,
+        self_center: Point3<f64>,
+        vertices: &mut Vec<Point3<f64>>,
+        plane: &NdPlane,
+        plane_center: Point3<f64>,
+        epsilon: f64,
+    ) -> (Self, Self) {
+        let vertice_positions = self
+            .vertice_indices
+            .iter()
+            .map(|&i| {
+                plane.classify_point(
+                    &(vertices[i] + self_center.coords - plane_center.coords),
+                    epsilon,
+                )
+            })
+            .collect_vec();
+
+        let mut front = self.new_split();
+        let mut back = self.new_split();
+
+        // iterate pairs of vertices that form edges
+        for ((&i, &uv, pos), (&i_next, &uv_next, pos_next)) in
+            izip!(&self.vertice_indices, &self.vertice_uvs, vertice_positions)
+                .circular_tuple_windows()
+        {
+            let vert = vertices[i] + self_center.coords - plane_center.coords;
+            let vert_next = vertices[i_next] + self_center.coords - plane_center.coords;
+
+            match pos {
+                PointClassification::Front => {
+                    front.vertice_indices.push(i);
+                    front.vertice_uvs.push(uv);
+                }
+                PointClassification::Back => {
+                    back.vertice_indices.push(i);
+                    back.vertice_uvs.push(uv);
+                }
+                PointClassification::OnPlane => {
+                    front.vertice_indices.push(i);
+                    front.vertice_uvs.push(uv);
+                    back.vertice_indices.push(i);
+                    back.vertice_uvs.push(uv);
+                }
+            }
+
+            if (pos == PointClassification::OnPlane) ^ (pos_next == PointClassification::OnPlane) {
+                // only one of the points is on the split plane
+                // a new vertex doesn't need to be created
+                continue;
+            }
+            if pos == pos_next {
+                // if the edge's vertices have the same position, a new vertex isn't needed either
+                continue;
+            }
+
+            // otherwise split the edge, creating a new vertex
+            let (new_vert, factor) =
+                if let Some(v) = plane.intersect_line_with_factor(&vert, &vert_next, epsilon) {
+                    v
+                } else {
+                    continue;
+                };
+
+            let new_vert = new_vert + plane_center.coords - self_center.coords;
+            // check if the new vertex already exists
+            let new_i = vertices
+                .iter()
+                .position(|v| relative_eq!(*v, &new_vert, epsilon = epsilon))
+                .unwrap_or_else(|| {
+                    // if not, create it
+                    vertices.push(new_vert);
+                    vertices.len() - 1
+                });
+            front.vertice_indices.push(new_i);
+            back.vertice_indices.push(new_i);
+
+            // calculate uvs
+            let new_uv = lerp_uv(uv, uv_next, factor);
+            front.vertice_uvs.push(new_uv);
+            back.vertice_uvs.push(new_uv);
+        }
+
+        (front, back)
+    }
+
+    fn finish(self) -> Face {
+        Face {
             vertice_indices: self.vertice_indices,
             vertice_uvs: self.vertice_uvs,
             material_index: self.material_index,
@@ -360,21 +587,26 @@ impl<'a> SideBuilder<'a> {
     }
 }
 
+#[derive(Clone, PartialEq)]
 struct SolidBuilder<'a> {
     solid: &'a Solid,
     center: Point3<f64>,
-    sides: Vec<SideBuilder<'a>>,
+    faces: Vec<FaceBuilder<'a>>,
     vertices: Vec<Point3<f64>>,
     materials: Vec<SolidMaterial>,
+    is_displacement: bool,
+    aabb_min: Point3<f64>,
+    aabb_max: Point3<f64>,
 }
 
 impl<'a> Debug for SolidBuilder<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SolidBuilder")
             .field("center", &self.center)
-            .field("sides", &self.sides)
+            .field("sides", &self.faces)
             .field("vertices", &self.vertices)
             .field("materials", &self.materials)
+            .field("is_displacement", &self.is_displacement)
             .finish_non_exhaustive()
     }
 }
@@ -391,30 +623,33 @@ impl<'a> SolidBuilder<'a> {
         Self {
             solid,
             center: solid_center,
-            sides: solid
+            faces: solid
                 .sides
                 .iter()
-                .map(|side| SideBuilder::new(side, solid_center))
+                .map(|side| FaceBuilder::new(side, solid_center))
                 .collect(),
             vertices: Vec::new(),
             materials: Vec::new(),
+            is_displacement: false,
+            aabb_min: Point3::new(0.0, 0.0, 0.0),
+            aabb_max: Point3::new(0.0, 0.0, 0.0),
         }
     }
 
     fn intersect_sides(&mut self, epsilon: f64, cut_threshold: f64) {
-        for (i1, i2, i3) in (0..self.sides.len()).tuple_combinations() {
+        for (i1, i2, i3) in (0..self.faces.len()).tuple_combinations() {
             if let Some(point) = NdPlane::intersect(
-                &self.sides[i1].plane,
-                &self.sides[i2].plane,
-                &self.sides[i3].plane,
+                &self.faces[i1].plane,
+                &self.faces[i2].plane,
+                &self.faces[i3].plane,
                 epsilon,
             ) {
                 // check if vertice is outside the brush
                 if self
-                    .sides
+                    .faces
                     .iter()
                     .enumerate()
-                    .filter(|(i, _)| *i != i1 && *i != i2 && *i != i3)
+                    .filter(|&(i, _)| i != i1 && i != i2 && i != i3)
                     .any(|(_, builder)| builder.plane.distance_to_point(&point) > cut_threshold)
                 {
                     continue;
@@ -430,21 +665,21 @@ impl<'a> SolidBuilder<'a> {
                         self.vertices.len() - 1
                     });
                 // add vertice index to sides
-                self.sides[i1].insert_vertice(vertice_i);
-                self.sides[i2].insert_vertice(vertice_i);
-                self.sides[i3].insert_vertice(vertice_i);
+                self.faces[i1].insert_vertice(vertice_i);
+                self.faces[i2].insert_vertice(vertice_i);
+                self.faces[i3].insert_vertice(vertice_i);
             }
         }
     }
 
-    fn remove_invalid_sides(&mut self) {
-        self.sides
+    fn remove_invalid_faces(&mut self) {
+        self.faces
             .retain(|builder| builder.vertice_indices.len() >= 3);
     }
 
     fn sort_vertices(&mut self) {
         let vertices = &mut self.vertices;
-        for builder in &mut self.sides {
+        for builder in &mut self.faces {
             builder.sort_vertices(vertices);
         }
     }
@@ -454,7 +689,7 @@ impl<'a> SolidBuilder<'a> {
         mut get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
     ) {
         let vertices = &self.vertices;
-        for builder in &mut self.sides {
+        for builder in &mut self.faces {
             builder.build_uvs(
                 &self.center,
                 vertices,
@@ -467,9 +702,9 @@ impl<'a> SolidBuilder<'a> {
     fn maybe_build_displacement(&mut self) -> Result<(), SolidError> {
         // calculate amount of new vertices
         let vertices_len = match self
-            .sides
+            .faces
             .iter()
-            .filter_map(SideBuilder::disp_vertices_len)
+            .filter_map(FaceBuilder::disp_vertices_len)
             .sum1()
         {
             Some(sum) => sum,
@@ -479,31 +714,33 @@ impl<'a> SolidBuilder<'a> {
         let old_vertices = &self.vertices;
         let mut vertices: Vec<Point3<f64>> = Vec::with_capacity(vertices_len);
 
-        let sides_len = self
-            .sides
+        let faces_len = self
+            .faces
             .iter()
-            .filter_map(SideBuilder::disp_faces_len)
+            .filter_map(FaceBuilder::disp_faces_len)
             .sum();
-        let mut sides: Vec<SideBuilder> = Vec::with_capacity(sides_len);
+        let mut faces: Vec<FaceBuilder> = Vec::with_capacity(faces_len);
 
-        for builder in &mut self.sides {
+        for builder in &mut self.faces {
             builder.maybe_build_displacement(
                 &self.center,
                 old_vertices,
                 &mut vertices,
-                &mut sides,
+                &mut faces,
             )?;
         }
 
         self.vertices = vertices;
-        self.sides = sides;
+        self.faces = faces;
+
+        self.is_displacement = true;
 
         Ok(())
     }
 
     fn extend_side_faces_map(&self, map: &Mutex<SideFacesMap>) {
         let mut map = map.lock().expect("mutex shouldn't be poisoned");
-        for builder in &self.sides {
+        for builder in &self.faces {
             map.entry(builder.side.id).or_default().push(
                 builder
                     .vertice_indices
@@ -511,6 +748,93 @@ impl<'a> SolidBuilder<'a> {
                     .map(|&i| self.center + self.vertices[i].coords)
                     .collect(),
             );
+        }
+    }
+
+    fn build(
+        &mut self,
+        get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        side_faces_map: &Mutex<SideFacesMap>,
+        settings: &GeometrySettings,
+    ) -> Result<(), SolidError> {
+        self.intersect_sides(settings.epsilon, settings.cut_threshold);
+        self.remove_invalid_faces();
+        self.sort_vertices();
+        self.build_uvs(get_material_info);
+        self.maybe_build_displacement()?;
+        self.extend_side_faces_map(side_faces_map);
+
+        Ok(())
+    }
+
+    fn calculate_aabb(&mut self) {
+        let mut min = self
+            .vertices
+            .first()
+            .copied()
+            .unwrap_or_else(|| Point3::new(0.0, 0.0, 0.0));
+        let mut max = min;
+
+        for vertice in &self.vertices {
+            min.coords = min.coords.inf(&vertice.coords);
+            max.coords = max.coords.sup(&vertice.coords);
+        }
+
+        self.aabb_min = min;
+        self.aabb_max = max;
+    }
+
+    fn aabb_intersects(&self, other: &Self) -> bool {
+        self.aabb_min.x < other.aabb_max.x
+            && other.aabb_min.x < self.aabb_max.x
+            && self.aabb_min.y < other.aabb_max.y
+            && other.aabb_min.y < self.aabb_max.y
+            && self.aabb_min.z < other.aabb_max.z
+            && other.aabb_min.z < self.aabb_max.z
+    }
+
+    fn clip_to_solid(&mut self, solid: &Self, clip_on_plane: bool, epsilon: f64) {
+        let faces = mem::take(&mut self.faces);
+
+        for builder in faces {
+            builder.clip_to_sides(
+                self.center,
+                &mut self.faces,
+                &mut self.vertices,
+                &solid.faces,
+                solid.center,
+                clip_on_plane,
+                epsilon,
+            );
+        }
+
+        // remove unused vertices
+        let mut vertices_to_retain = vec![false; self.vertices.len()];
+
+        for builder in &self.faces {
+            for &vertice_index in &builder.vertice_indices {
+                vertices_to_retain[vertice_index] = true;
+            }
+        }
+
+        let mut retain_iter = vertices_to_retain.iter();
+        self.vertices.retain(|_| *retain_iter.next().unwrap());
+
+        let mut current_correction = 0_usize;
+        let vertice_index_correction = vertices_to_retain
+            .iter()
+            .map(|retain| {
+                if !retain {
+                    current_correction += 1;
+                }
+                current_correction
+            })
+            .collect_vec();
+
+        for builder in &mut self.faces {
+            for vertice_index in &mut builder.vertice_indices {
+                *vertice_index -= vertice_index_correction[*vertice_index];
+            }
         }
     }
 
@@ -522,12 +846,16 @@ impl<'a> SolidBuilder<'a> {
         self.center += center;
     }
 
-    fn finish(self) -> BuiltSolid<'a> {
+    fn is_nodraw(&self) -> bool {
+        self.materials.iter().all(|mat| mat.info.no_draw())
+    }
+
+    fn finish(self) -> BuiltSolid {
         BuiltSolid {
-            solid: self.solid,
+            id: self.solid.id,
             position: self.center,
             vertices: self.vertices,
-            sides: self.sides.into_iter().map(SideBuilder::finish).collect(),
+            faces: self.faces.into_iter().map(FaceBuilder::finish).collect(),
             materials: self.materials,
         }
     }
@@ -544,19 +872,235 @@ impl Solid {
         settings: &GeometrySettings,
     ) -> Result<BuiltSolid, SolidError> {
         let mut builder = SolidBuilder::new(self);
-        builder.intersect_sides(settings.epsilon, settings.cut_threshold);
-        builder.remove_invalid_sides();
-        builder.sort_vertices();
-        builder.build_uvs(get_material_info);
-        builder.maybe_build_displacement()?;
-        builder.extend_side_faces_map(side_faces_map);
+        builder.build(get_material_info, side_faces_map, settings)?;
         builder.recenter();
         Ok(builder.finish())
     }
 }
 
+#[derive(Debug)]
+pub struct MergedSolids {
+    pub vertices: Vec<Point3<f64>>,
+    pub faces: Vec<Face>,
+    pub materials: Vec<SolidMaterial>,
+}
+
+impl MergedSolids {
+    fn merge(mut solids: Vec<SolidBuilder>, epsilon: f64, optimize: bool) -> Self {
+        let merge_solids: Vec<SolidBuilder>;
+
+        if optimize {
+            // calculate aabbs
+            for solid in &mut solids {
+                solid.calculate_aabb();
+            }
+
+            let mut clipped_solids = solids.clone();
+
+            // clip solids
+            for (i, clip_solid) in clipped_solids.iter_mut().enumerate() {
+                let mut clip_on_plane = false;
+
+                for (j, solid) in solids.iter().enumerate() {
+                    // make sure solids are not clipped against themselves
+                    if i == j {
+                        clip_on_plane = true;
+                    } else if clip_solid.aabb_intersects(solid) {
+                        clip_solid.clip_to_solid(solid, clip_on_plane, epsilon);
+                    }
+                }
+            }
+
+            merge_solids = clipped_solids;
+        } else {
+            merge_solids = solids;
+        }
+
+        // merge solids
+        let mut vertices = Vec::new();
+        let mut materials = Vec::new();
+
+        let mut faces = Vec::with_capacity(merge_solids.iter().map(|s| s.faces.len()).sum());
+
+        for clipped_solid in merge_solids {
+            let center = clipped_solid.center.coords;
+
+            let vertice_i_map = clipped_solid
+                .vertices
+                .into_iter()
+                .map(|vertice| {
+                    let vertice = vertice + center;
+                    vertices
+                        .iter()
+                        .position(|v| relative_eq!(v, &vertice, epsilon = epsilon))
+                        .unwrap_or_else(|| {
+                            // add the vertice if it doesn't exist already
+                            vertices.push(vertice);
+                            vertices.len() - 1
+                        })
+                })
+                .collect_vec();
+
+            let material_i_map = clipped_solid
+                .materials
+                .into_iter()
+                .map(|mat| {
+                    materials.iter().position(|m| m == &mat).unwrap_or_else(|| {
+                        // add the material if it doesn't exist already
+                        materials.push(mat);
+                        materials.len() - 1
+                    })
+                })
+                .collect_vec();
+
+            for mut face in clipped_solid.faces {
+                // fix indices
+                face.material_index = material_i_map[face.material_index];
+
+                for vertice_index in &mut face.vertice_indices {
+                    *vertice_index = vertice_i_map[*vertice_index];
+                }
+
+                faces.push(face.finish());
+            }
+        }
+
+        Self {
+            vertices,
+            faces,
+            materials,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct BuiltBrushEntity<'a> {
+    pub id: i32,
+    pub class_name: &'a str,
+    pub merged_solids: Option<MergedSolids>,
+    pub solids: Vec<BuiltSolid>,
+}
+
+impl<'a> BuiltBrushEntity<'a> {
+    fn new(
+        solids: &[Solid],
+        id: i32,
+        class_name: &'a str,
+        mut get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        side_faces_map: &Mutex<SideFacesMap>,
+        settings: &GeometrySettings,
+    ) -> Result<Self, SolidError> {
+        if settings.merge_solids.merge() {
+            let mut mergable_solids = Vec::new();
+            let mut displacements = Vec::new();
+
+            solids
+                .iter()
+                .filter_map(|solid| {
+                    let mut builder = SolidBuilder::new(solid);
+                    if let Err(err) =
+                        builder.build(&mut get_material_info, side_faces_map, settings)
+                    {
+                        return Some(Err(err));
+                    }
+                    if settings.invisible_solids.import() || !builder.is_nodraw() {
+                        Some(Ok(builder))
+                    } else {
+                        None
+                    }
+                })
+                .try_for_each(|r| {
+                    r.map(|mut b| {
+                        if b.is_displacement {
+                            b.recenter();
+                            displacements.push(b.finish());
+                        } else {
+                            mergable_solids.push(b);
+                        }
+                    })
+                })?;
+
+            Ok(BuiltBrushEntity {
+                id,
+                class_name,
+                merged_solids: Some(MergedSolids::merge(
+                    mergable_solids,
+                    settings.epsilon,
+                    settings.merge_solids.optimize(),
+                )),
+                solids: displacements,
+            })
+        } else {
+            Ok(BuiltBrushEntity {
+                id,
+                class_name,
+                merged_solids: None,
+                solids: solids
+                    .iter()
+                    .filter_map(|solid| {
+                        let mut builder = SolidBuilder::new(solid);
+                        if let Err(err) =
+                            builder.build(&mut get_material_info, side_faces_map, settings)
+                        {
+                            return Some(Err(err));
+                        }
+                        if settings.invisible_solids.import() || !builder.is_nodraw() {
+                            Some(Ok(builder.finish()))
+                        } else {
+                            None
+                        }
+                    })
+                    .try_collect()?,
+            })
+        }
+    }
+}
+
+impl Entity {
+    /// # Errors
+    ///
+    /// Returns `Err` if the building fails.
+    pub fn build_brush(
+        &self,
+        get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        side_faces_map: &Mutex<SideFacesMap>,
+        settings: &GeometrySettings,
+    ) -> Result<BuiltBrushEntity, SolidError> {
+        BuiltBrushEntity::new(
+            &self.solids,
+            self.id,
+            &self.class_name,
+            get_material_info,
+            side_faces_map,
+            settings,
+        )
+    }
+}
+
+impl World {
+    /// # Errors
+    ///
+    /// Returns `Err` if the building fails.
+    pub fn build_brush(
+        &self,
+        get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        side_faces_map: &Mutex<SideFacesMap>,
+        settings: &GeometrySettings,
+    ) -> Result<BuiltBrushEntity, SolidError> {
+        BuiltBrushEntity::new(
+            &self.solids,
+            self.id,
+            &self.class_name,
+            get_material_info,
+            side_faces_map,
+            settings,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use nalgebra::Unit;
     use plumber_vdf as vdf;
 
     use super::*;
@@ -666,7 +1210,7 @@ mod tests {
         let solid = get_test_solid();
         let mut builder = SolidBuilder::new(&solid);
         builder.intersect_sides(1e-3, 1e-3);
-        builder.remove_invalid_sides();
+        builder.remove_invalid_faces();
         builder.recenter();
 
         let expected_vertices = vec![
@@ -708,39 +1252,39 @@ mod tests {
         builder.sort_vertices();
 
         assert_face_sorted(
-            &builder.sides[0].vertice_indices,
+            &builder.faces[0].vertice_indices,
             &[is[1], is[3], is[2], is[0]],
             "+z",
         );
         assert_face_sorted(
-            &builder.sides[1].vertice_indices,
+            &builder.faces[1].vertice_indices,
             &[is[6], is[7], is[5], is[4]],
             "-z",
         );
         assert_face_sorted(
-            &builder.sides[2].vertice_indices,
+            &builder.faces[2].vertice_indices,
             &[is[4], is[5], is[1], is[0]],
             "-x",
         );
         assert_face_sorted(
-            &builder.sides[3].vertice_indices,
+            &builder.faces[3].vertice_indices,
             &[is[3], is[7], is[6], is[2]],
             "+x",
         );
         assert_face_sorted(
-            &builder.sides[4].vertice_indices,
+            &builder.faces[4].vertice_indices,
             &[is[2], is[6], is[4], is[0]],
             "+y",
         );
         assert_face_sorted(
-            &builder.sides[5].vertice_indices,
+            &builder.faces[5].vertice_indices,
             &[is[5], is[7], is[3], is[1]],
             "-y",
         );
 
         builder.build_uvs(|_| Ok(MaterialInfo::new(1024, 1024, false)));
 
-        let side = &builder.sides[0];
+        let side = &builder.faces[0];
         let expected_uvs = side
             .vertice_indices
             .iter()
@@ -938,7 +1482,7 @@ mod tests {
         let solid = get_test_displacement();
         let mut builder = SolidBuilder::new(&solid);
         builder.intersect_sides(1e-3, 1e-3);
-        builder.remove_invalid_sides();
+        builder.remove_invalid_faces();
         builder.sort_vertices();
         builder.build_uvs(|_| Ok(MaterialInfo::new(1024, 1024, false)));
         builder.maybe_build_displacement().unwrap();
@@ -1046,7 +1590,7 @@ mod tests {
             epsilon = 1e-3
         );
 
-        for side in &builder.sides {
+        for side in &builder.faces {
             for &i in &side.vertice_indices {
                 assert!(
                     builder.vertices.len() > i,
@@ -1055,5 +1599,329 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn side_clipping() {
+        let mut vertices = vec![
+            Point3::new(-2.0, 1.0, 0.0),
+            Point3::new(-2.0, -1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+            Point3::new(2.0, 1.0, 0.0),
+            Point3::new(-2.0, -1.0, 2.0),
+            Point3::new(-2.0, 1.0, 2.0),
+        ];
+
+        let dummy_side = Side::default();
+
+        let clipping_sides = vec![
+            FaceBuilder {
+                side: &dummy_side,
+                plane: NdPlane::from_point_normal(
+                    Point3::new(-1.0, 0.0, 0.0),
+                    Unit::new_normalize(Vector3::new(-1.0, 0.0, 0.0)),
+                ),
+                vertice_indices: Vec::new(),
+                vertice_uvs: Vec::new(),
+                material_index: 0,
+            },
+            FaceBuilder {
+                side: &dummy_side,
+                plane: NdPlane::from_point_normal(
+                    Point3::new(1.0, 0.0, 0.0),
+                    Unit::new_normalize(Vector3::new(1.0, 0.0, 0.0)),
+                ),
+                vertice_indices: Vec::new(),
+                vertice_uvs: Vec::new(),
+                material_index: 0,
+            },
+            FaceBuilder {
+                side: &dummy_side,
+                plane: NdPlane::from_point_normal(
+                    Point3::new(0.0, -2.0, 0.0),
+                    Unit::new_normalize(Vector3::new(0.0, -1.0, 0.0)),
+                ),
+                vertice_indices: Vec::new(),
+                vertice_uvs: Vec::new(),
+                material_index: 0,
+            },
+            FaceBuilder {
+                side: &dummy_side,
+                plane: NdPlane::from_point_normal(
+                    Point3::new(0.0, 2.0, 0.0),
+                    Unit::new_normalize(Vector3::new(0.0, 1.0, 0.0)),
+                ),
+                vertice_indices: Vec::new(),
+                vertice_uvs: Vec::new(),
+                material_index: 0,
+            },
+        ];
+
+        let clipped_side = FaceBuilder {
+            side: &dummy_side,
+            plane: NdPlane::from_point_normal(
+                Point3::new(2.0, 2.0, 0.0),
+                Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0)),
+            ),
+            vertice_indices: vec![0, 1, 2, 3],
+            vertice_uvs: vec![[0.0, 0.0]; 4],
+            material_index: 0,
+        };
+
+        let mut clipped = Vec::new();
+
+        clipped_side.clip_to_sides(
+            Point3::new(3.0, 2.0, 0.0),
+            &mut clipped,
+            &mut vertices,
+            &clipping_sides,
+            Point3::new(5.0, 2.0, 0.0),
+            false,
+            1e-3,
+        );
+
+        assert_relative_eq!(
+            &vertices[..],
+            &[
+                Point3::new(-2.0, 1.0, 0.0),
+                Point3::new(-2.0, -1.0, 0.0),
+                Point3::new(0.0, -1.0, 0.0),
+                Point3::new(2.0, 1.0, 0.0),
+                Point3::new(-2.0, -1.0, 2.0),
+                Point3::new(-2.0, 1.0, 2.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ][..],
+            epsilon = 1e-3
+        );
+
+        assert_eq!(
+            clipped,
+            vec![FaceBuilder {
+                side: &dummy_side,
+                plane: NdPlane::from_point_normal(
+                    Point3::new(2.0, 2.0, 0.0),
+                    Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0))
+                ),
+                vertice_indices: vec![0, 1, 2, 6, 7],
+                vertice_uvs: vec![[0.0, 0.0]; 5],
+                material_index: 0,
+            }]
+        );
+
+        let clipped_side = FaceBuilder {
+            side: &dummy_side,
+            plane: NdPlane::from_point_normal(
+                Point3::new(-2.0, 0.0, 2.0),
+                Unit::new_normalize(Vector3::new(-1.0, 0.0, 0.0)),
+            ),
+            vertice_indices: vec![0, 1, 4, 5],
+            vertice_uvs: vec![[0.0, 0.0]; 4],
+            material_index: 0,
+        };
+
+        let mut clipped = Vec::new();
+
+        clipped_side.clone().clip_to_sides(
+            Point3::new(3.0, 2.0, 0.0),
+            &mut clipped,
+            &mut vertices,
+            &clipping_sides,
+            Point3::new(5.0, 2.0, 0.0),
+            false,
+            1e-3,
+        );
+
+        assert_eq!(clipped, vec![clipped_side]);
+
+        let clipped_side = FaceBuilder {
+            side: &dummy_side,
+            plane: NdPlane::from_point_normal(
+                Point3::new(1.0, 0.0, 0.0),
+                Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0)),
+            ),
+            vertice_indices: vec![3, 7, 6],
+            vertice_uvs: vec![[0.0, 0.0]; 2],
+            material_index: 0,
+        };
+
+        let mut clipped = Vec::new();
+
+        clipped_side.clone().clip_to_sides(
+            Point3::new(3.0, 2.0, 0.0),
+            &mut clipped,
+            &mut vertices,
+            &clipping_sides,
+            Point3::new(5.0, 2.0, 0.0),
+            false,
+            1e-3,
+        );
+
+        assert_eq!(clipped, Vec::new());
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn solid_clipping() {
+        let dummy_side = Side::default();
+        let dummy_solid = Solid::default();
+
+        let clipping_solid = SolidBuilder {
+            solid: &dummy_solid,
+            center: Point3::new(5.0, 2.0, 0.0),
+            faces: vec![
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(-1.0, 0.0, 0.0),
+                        Unit::new_normalize(Vector3::new(-1.0, 0.0, 0.0)),
+                    ),
+                    vertice_indices: Vec::new(),
+                    vertice_uvs: Vec::new(),
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(1.0, 0.0, 0.0),
+                        Unit::new_normalize(Vector3::new(1.0, 0.0, 0.0)),
+                    ),
+                    vertice_indices: Vec::new(),
+                    vertice_uvs: Vec::new(),
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(0.0, -2.0, 0.0),
+                        Unit::new_normalize(Vector3::new(0.0, -1.0, 0.0)),
+                    ),
+                    vertice_indices: Vec::new(),
+                    vertice_uvs: Vec::new(),
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(0.0, 2.0, 0.0),
+                        Unit::new_normalize(Vector3::new(0.0, 1.0, 0.0)),
+                    ),
+                    vertice_indices: Vec::new(),
+                    vertice_uvs: Vec::new(),
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(0.0, 0.0, -1.0),
+                        Unit::new_normalize(Vector3::new(0.0, 0.0, -1.0)),
+                    ),
+                    vertice_indices: Vec::new(),
+                    vertice_uvs: Vec::new(),
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(0.0, 0.0, 1.0),
+                        Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0)),
+                    ),
+                    vertice_indices: Vec::new(),
+                    vertice_uvs: Vec::new(),
+                    material_index: 0,
+                },
+            ],
+            vertices: Vec::new(),
+            materials: Vec::new(),
+            is_displacement: false,
+            aabb_min: Point3::new(0.0, 0.0, 0.0),
+            aabb_max: Point3::new(0.0, 0.0, 0.0),
+        };
+
+        let mut clipped_solid = SolidBuilder {
+            solid: &dummy_solid,
+            center: Point3::new(6.0, 4.0, 0.0),
+            faces: vec![
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(-1.0, 2.0, 0.0),
+                        Unit::new_normalize(Vector3::new(-1.0, 1.0, 0.0)),
+                    ),
+                    vertice_indices: vec![0, 1, 5, 4],
+                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(-2.0, 1.0, 0.0),
+                        Unit::new_normalize(Vector3::new(-1.0, -1.0, 0.0)),
+                    ),
+                    vertice_indices: vec![1, 2, 6, 5],
+                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(1.0, -2.0, 0.0),
+                        Unit::new_normalize(Vector3::new(1.0, -1.0, 0.0)),
+                    ),
+                    vertice_indices: vec![2, 3, 7, 6],
+                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(2.0, -1.0, 0.0),
+                        Unit::new_normalize(Vector3::new(1.0, 1.0, 0.0)),
+                    ),
+                    vertice_indices: vec![3, 0, 4, 7],
+                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(0.0, 0.0, 1.0),
+                        Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0)),
+                    ),
+                    vertice_indices: vec![0, 1, 2, 3],
+                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    material_index: 0,
+                },
+                FaceBuilder {
+                    side: &dummy_side,
+                    plane: NdPlane::from_point_normal(
+                        Point3::new(0.0, 0.0, -1.0),
+                        Unit::new_normalize(Vector3::new(0.0, 0.0, -1.0)),
+                    ),
+                    vertice_indices: vec![7, 6, 5, 4],
+                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    material_index: 0,
+                },
+            ],
+            vertices: vec![
+                Point3::new(-1.0, 2.0, 1.0),
+                Point3::new(-2.0, 1.0, 1.0),
+                Point3::new(1.0, -2.0, 1.0),
+                Point3::new(2.0, -1.0, 1.0),
+                Point3::new(-1.0, 2.0, -1.0),
+                Point3::new(-2.0, 1.0, -1.0),
+                Point3::new(1.0, -2.0, -1.0),
+                Point3::new(2.0, -1.0, -1.0),
+            ],
+            materials: Vec::new(),
+            is_displacement: false,
+            aabb_min: Point3::new(0.0, 0.0, 0.0),
+            aabb_max: Point3::new(0.0, 0.0, 0.0),
+        };
+
+        clipped_solid.clip_to_solid(&clipping_solid, false, 1e-3);
+
+        dbg!(clipped_solid);
     }
 }

@@ -147,6 +147,19 @@ impl MaterialBuilder for DefaultMaterialBuilder {
     }
 }
 
+/// A material builder used for debugging.
+/// Returns nothing.
+#[derive(Debug, Clone, Default)]
+pub struct EmptyMaterialBuilder;
+
+impl MaterialBuilder for EmptyMaterialBuilder {
+    type Built = ();
+
+    fn build(&self, _vmt: LoadedVmt<Self>) -> Result<Self::Built, MaterialLoadError> {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LoadedMaterial<B: Debug + Send + Sync + 'static> {
     pub name: PathBuf,

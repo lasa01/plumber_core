@@ -364,6 +364,16 @@ pub struct Plane(
     pub nalgebra::Point3<f64>,
 );
 
+impl Default for Plane {
+    fn default() -> Self {
+        Self(
+            nalgebra::Point3::new(0.0, 0.0, 0.0),
+            nalgebra::Point3::new(0.0, 0.0, 0.0),
+            nalgebra::Point3::new(0.0, 0.0, 0.0),
+        )
+    }
+}
+
 impl<'de> Deserialize<'de> for Plane {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -458,7 +468,7 @@ impl Display for Plane {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct UvAxis {
     pub axis: nalgebra::Vector3<f64>,
     pub translation: f64,
