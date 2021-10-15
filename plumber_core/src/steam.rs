@@ -36,6 +36,7 @@ fn is_acf_file(filename: &str) -> bool {
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
+#[serde(case_insensitive)]
 struct AppManifest {
     #[serde(rename = "AppState")]
     pub app_state: AppState,
@@ -65,6 +66,7 @@ impl AppState {
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
+#[serde(case_insensitive)]
 struct LibraryFoldersFile {
     #[serde(rename = "LibraryFolders")]
     pub library_folders: LibraryFolders,
@@ -127,7 +129,7 @@ impl<'de> Deserialize<'de> for LibraryFolders {
             where
                 A: MapAccess<'de>,
             {
-                let mut library_folders = Vec::new();
+                let mut library_folders: Vec<LibraryFolder> = Vec::new();
 
                 while let Some(key) = if let Ok(key) = map.next_key::<LibraryFoldersKey>() {
                     key.map(Some)
@@ -142,13 +144,19 @@ impl<'de> Deserialize<'de> for LibraryFolders {
                 }
 
                 Ok(LibraryFolders(Libraries {
-                    paths: library_folders,
+                    paths: library_folders.into_iter().map(|f| f.path).collect(),
                 }))
             }
         }
 
         deserializer.deserialize_map(LibraryFoldersVisitor)
     }
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(case_insensitive)]
+struct LibraryFolder {
+    path: PathBuf,
 }
 
 #[derive(Debug, Error)]
@@ -487,14 +495,36 @@ mod tests {
     fn test_libraryfolders_deserialization() {
         let libraryfolders = vdf::escaped_from_str::<LibraryFoldersFile>(
             r#"
-        "LibraryFolders"
-        {
-        	"TimeNextStatsReport"		"1619642796"
-        	"ContentStatsID"		"3393887322297456883"
-        	"1"		"D:\\Games\\Steam"
-        	"2"		"E:\\Games\\Steam"
-        	"3"		"F:\\Games\\Steam"
-        }
+            "libraryfolders"
+            {
+                "contentstatsid"		"3393887322297456883"
+                "0"
+                {
+                    "path"		"C:\\Program Files (x86)\\Steam"
+                    "label"		""
+                    "contentid"		"3393887322297456883"
+                    "totalsize"		"0"
+                    "update_clean_bytes_tally"		"476447588"
+                    "time_last_update_corruption"		"0"
+                    "apps"
+                    {
+                        "211"		"2173258931"
+                    }
+                }
+                "1"
+                {
+                    "path"		"D:\\Games\\Steam"
+                    "label"		""
+                    "contentid"		"2825139553531466896"
+                    "totalsize"		"1000068870144"
+                    "update_clean_bytes_tally"		"40799269"
+                    "time_last_update_corruption"		"0"
+                    "apps"
+                    {
+                        "215"		"2811981136"
+                    }
+                }
+            }            
         "#,
         )
         .unwrap()
@@ -504,9 +534,8 @@ mod tests {
             libraryfolders,
             LibraryFolders(Libraries {
                 paths: vec![
+                    "C:\\Program Files (x86)\\Steam".into(),
                     "D:\\Games\\Steam".into(),
-                    "E:\\Games\\Steam".into(),
-                    "F:\\Games\\Steam".into()
                 ],
             })
         );
