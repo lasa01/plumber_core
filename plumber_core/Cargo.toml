@@ -12,14 +12,6 @@ license = "MIT OR Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[features]
-default = ["steam", "vmf", "vmt", "model"]
-steam = ["winreg", "home", "phf"]
-fs = []
-vmt = ["fs", "vtflib", "image"]
-vmf = ["fs", "vmt", "model"]
-model = ["fs", "zerocopy", "byteorder", "maligned", "bitflags"]
-
 [dependencies]
 plumber_vdf = { version = "0.1.0", path = "../plumber_vdf" }
 plumber_vpk = { version = "0.1.0", path = "../plumber_vpk", features = ["serde"] }
@@ -33,21 +25,21 @@ serde = "= 1.0.125"
 serde_derive = "= 1.0.125"
 thiserror = "1.0.24"
 uncased = { version = "0.9.6", features = ["with-serde-alloc"] }
-phf = { version = "0.8.0", features = ["macros"], optional = true }
-vtflib = { version = "0.2.0", optional = true, features = ["static"] }
-image = { version = "0.23.14", optional = true, default-features = false }
+phf = { version = "0.8.0", features = ["macros"] }
+vtflib = { version = "0.2.0", features = ["static"] }
+image = { version = "0.23.14", default-features = false }
 nom = "6.1.2"
 num_cpus = "1.13.0"
 rayon = "1.5.1"
 crossbeam-channel = "0.5.1"
 crossbeam-utils = "0.8.5"
-zerocopy = { version = "0.5.0", optional = true }
-byteorder = { version = "1.4.3", optional = true }
-maligned = { version = "0.2.1", optional = true }
-bitflags = { version = "1.2.1", optional = true }
+zerocopy = { version = "0.5.0" }
+byteorder = { version = "1.4.3" }
+maligned = { version = "0.2.1" }
+bitflags = { version = "1.2.1" }
 
 [target.'cfg(windows)'.dependencies]
-winreg = { version = "0.8", optional = true }
+winreg = { version = "0.8" }
 
 [target.'cfg(not(windows))'.dependencies]
-home = { version = "0.5.3", optional = true }
+home = { version = "0.5.3" }

@@ -1266,7 +1266,7 @@ pub struct MeshRef<'a> {
     bytes: &'a [u8],
 }
 
-#[cfg(all(test, feature = "steam"))]
+#[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, result};
 

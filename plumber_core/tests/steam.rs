@@ -1,5 +1,3 @@
-#![cfg(feature = "steam")]
-
 use plumber_core::{
     fs::{Path, PathBuf},
     steam::{App, Libraries},
@@ -19,7 +17,6 @@ fn test_library_discovery() {
 }
 
 /// Fails if steam is not installed
-#[cfg(feature = "fs")]
 #[test]
 #[ignore]
 fn test_filesystem_discovery() {
@@ -30,7 +27,6 @@ fn test_filesystem_discovery() {
 }
 
 /// Fails if steam is not installed
-#[cfg(feature = "fs")]
 #[test]
 #[ignore]
 fn open_discovered_filesystems() {
@@ -42,7 +38,6 @@ fn open_discovered_filesystems() {
 }
 
 /// Fails if steam is not installed
-#[cfg(feature = "fs")]
 #[test]
 #[ignore]
 fn opened_discovered_filesystems_readdir() {
@@ -58,10 +53,8 @@ fn opened_discovered_filesystems_readdir() {
     }
 }
 
-#[cfg(feature = "fs")]
 use plumber_core::fs::ReadDir;
 
-#[cfg(feature = "fs")]
 fn recurse_readdir(readdir: ReadDir, encountered: &mut HashSet<(StdPathBuf, PathBuf)>) {
     // check that recursing yields no duplicates
     for entry in readdir.map(Result::unwrap) {

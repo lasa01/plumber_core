@@ -1,7 +1,6 @@
 use std::io::{self, Read};
 use std::mem::align_of;
 
-#[cfg(feature = "fs")]
 use crate::fs::GameFile;
 
 pub fn null_terminated_prefix(bytes: &[u8]) -> Option<&[u8]> {
@@ -11,7 +10,6 @@ pub fn null_terminated_prefix(bytes: &[u8]) -> Option<&[u8]> {
     bytes.splitn(2, |&b| b == 0).next()
 }
 
-#[cfg(all(feature = "maligned", feature = "fs"))]
 pub fn read_file_aligned<A: maligned::Alignment>(mut file: GameFile) -> io::Result<Vec<u8>> {
     let size = file.size().unwrap_or_default();
 

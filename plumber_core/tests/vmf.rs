@@ -1,4 +1,3 @@
-#![cfg(feature = "vmf")]
 use plumber_core::vmf::Vmf;
 
 #[test]

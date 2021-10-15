@@ -380,7 +380,6 @@ impl<'a> Iterator for SourceApps<'a> {
     }
 }
 
-#[cfg(feature = "fs")]
 impl<'a> SourceApps<'a> {
     /// Parse the filesystems from the Source apps.
     #[must_use]
@@ -397,7 +396,6 @@ impl<'a> SourceApps<'a> {
 /// The [`Result`] will be an [`Err`] if the library directory read fails,
 /// the appmanifest can't be read, the appmanifest deserialization fails,
 /// the gameinfo.txt read fails or the gameinfo deserialization fails.
-#[cfg(feature = "fs")]
 #[derive(Debug)]
 pub struct FileSystems<'a>(SourceApps<'a>);
 

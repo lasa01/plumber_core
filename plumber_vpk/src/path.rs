@@ -1,4 +1,9 @@
-use std::{borrow::Borrow, ops::Deref, path::PathBuf as StdPathBuf};
+use std::{
+    borrow::Borrow,
+    fmt::{self, Display},
+    ops::Deref,
+    path::PathBuf as StdPathBuf,
+};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -305,6 +310,12 @@ impl From<&str> for PathBuf {
 impl PartialEq<Path> for PathBuf {
     fn eq(&self, other: &Path) -> bool {
         self.as_str() == other.as_str()
+    }
+}
+
+impl Display for PathBuf {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 

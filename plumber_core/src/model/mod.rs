@@ -308,7 +308,7 @@ pub struct Mesh<'a> {
     pub faces: Vec<Face>,
 }
 
-#[cfg(all(test, feature = "steam"))]
+#[cfg(test)]
 mod tests {
     use crate::{
         fs::{DirEntryType, OpenFileSystem, Path, ReadDir},

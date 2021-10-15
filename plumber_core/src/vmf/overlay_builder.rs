@@ -71,8 +71,11 @@ struct OverlayBuilder<'a> {
 }
 
 impl<'a> OverlayBuilder<'a> {
-    fn new(overlay: Overlay<'a>) -> Result<Self, OverlayError> {
-        let uv_info = overlay.uv_info()?;
+    fn new(overlay: Overlay<'a>) -> Result<Self, (Overlay<'a>, OverlayError)> {
+        let uv_info = match overlay.uv_info() {
+            Ok(r) => r,
+            Err(e) => return Err((overlay, e.into())),
+        };
 
         let u_axis = uv_info.basis_u;
         let v_axis = uv_info.basis_v;
@@ -84,9 +87,10 @@ impl<'a> OverlayBuilder<'a> {
             normal.z,
         ]);
 
-        let global_to_uv_matrix = uv_to_global_matrix
-            .try_inverse()
-            .ok_or(OverlayError::InvalidUvData)?;
+        let global_to_uv_matrix = match uv_to_global_matrix.try_inverse() {
+            Some(r) => r,
+            None => return Err((overlay, OverlayError::InvalidUvData)),
+        };
 
         Ok(Self {
             overlay,
@@ -386,9 +390,13 @@ impl<'a> OverlayBuilder<'a> {
         self.origin = center.into();
     }
 
-    fn finish(self) -> Result<BuiltOverlay<'a>, OverlayError> {
+    fn finish(self) -> Result<BuiltOverlay<'a>, (Overlay<'a>, OverlayError)> {
         let mut material = PathBuf::from("materials");
-        material.push(&self.overlay.material()?);
+        let overlay_material = match self.overlay.material() {
+            Ok(r) => r,
+            Err(e) => return Err((self.overlay, e.into())),
+        };
+        material.push(&overlay_material);
 
         Ok(BuiltOverlay {
             overlay: self.overlay,
@@ -412,14 +420,24 @@ impl<'a> Overlay<'a> {
         self,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
-    ) -> Result<BuiltOverlay<'a>, OverlayError> {
+    ) -> Result<BuiltOverlay<'a>, (Self, OverlayError)> {
         let mut builder = OverlayBuilder::new(self)?;
-        builder.create_vertices(side_faces_map, settings.epsilon)?;
-        builder.offset_vertices()?;
-        builder.cut_faces(settings.epsilon, settings.cut_threshold)?;
+        if let Err(e) = builder.create_vertices(side_faces_map, settings.epsilon) {
+            return Err((builder.overlay, e));
+        }
+        if let Err(e) = builder.offset_vertices() {
+            return Err((builder.overlay, e));
+        }
+        if let Err(e) = builder.cut_faces(settings.epsilon, settings.cut_threshold) {
+            return Err((builder.overlay, e));
+        }
         builder.remove_vertices_outside(settings.cut_threshold);
-        builder.ensure_not_empty()?;
-        builder.create_uvs()?;
+        if let Err(e) = builder.ensure_not_empty() {
+            return Err((builder.overlay, e));
+        }
+        if let Err(e) = builder.create_uvs() {
+            return Err((builder.overlay, e));
+        }
         builder.recenter();
         builder.finish()
     }

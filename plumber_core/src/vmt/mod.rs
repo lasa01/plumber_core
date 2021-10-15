@@ -334,7 +334,7 @@ impl Serialize for Vmt {
     }
 }
 
-#[cfg(all(test, feature = "fs", feature = "steam"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::fs::{DirEntryType, Path, ReadDir};

@@ -32,9 +32,16 @@ impl<'a> Prop<'a> {
         self,
         model_loader: &model::loader::Loader,
         file_system: &OpenFileSystem,
-    ) -> Result<(LoadedProp<'a>, Option<LoadedModel>), PropError> {
-        let model_path = PathBuf::from(self.model()?);
-        let (model_info, model) = model_loader.load_model(model_path, file_system)?;
+    ) -> Result<(LoadedProp<'a>, Option<LoadedModel>), (Self, PropError)> {
+        let model = match self.model() {
+            Ok(r) => r,
+            Err(e) => return Err((self, e.into())),
+        };
+        let model_path = PathBuf::from(model);
+        let (model_info, model) = match model_loader.load_model(model_path, file_system) {
+            Ok(r) => r,
+            Err(e) => return Err((self, e.into())),
+        };
         Ok((
             LoadedProp {
                 prop: self,

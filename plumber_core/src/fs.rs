@@ -13,7 +13,6 @@ use plumber_vpk as vpk;
 use vpk::DirectoryReadError;
 pub use vpk::{Path, PathBuf};
 
-#[cfg(feature = "steam")]
 use crate::steam;
 
 use serde::{
@@ -126,7 +125,6 @@ impl ParseError {
     }
 }
 
-#[cfg(feature = "steam")]
 impl From<steam::AppError> for ParseError {
     fn from(e: steam::AppError) -> Self {
         match e {
@@ -180,7 +178,6 @@ impl FileSystem {
     ///
     /// Returns `Err` if gameinfo.txt can't be found,
     /// the gameinfo.txt read fails or the gameinfo deserialization fails.
-    #[cfg(feature = "steam")]
     pub fn from_app(app: &steam::App) -> Result<Self, ParseError> {
         let mut entries = fs::read_dir(&app.install_dir)
             .map_err(|err| ParseError::from_io(err, &app.install_dir))?;
