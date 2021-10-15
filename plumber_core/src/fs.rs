@@ -167,7 +167,7 @@ pub enum SearchPath {
 }
 
 /// Represents a Source game's filesystem.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct FileSystem {
     pub name: String,
     pub search_paths: Vec<SearchPath>,
@@ -781,9 +781,8 @@ impl<'a> Seek for GameFile<'a> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_gameinfo_deserialization() {
-        let game_info = vdf::from_str::<GameInfoFile>(
+    fn get_test_game_info() -> GameInfo {
+        vdf::from_str::<GameInfoFile>(
             r#"
         "GameInfo"
         {
@@ -824,10 +823,13 @@ mod tests {
         "#,
         )
         .unwrap()
-        .game_info;
+        .game_info
+    }
 
+    #[test]
+    fn test_gameinfo_deserialization() {
         assert_eq!(
-            game_info,
+            get_test_game_info(),
             GameInfo {
                 game: "Team Fortress 2".into(),
                 file_system: GameInfoFileSystem {
@@ -846,6 +848,32 @@ mod tests {
                         ],
                     }
                 }
+            }
+        );
+    }
+
+    #[test]
+    fn file_system_creation() {
+        let game_info = get_test_game_info();
+        let file_system = FileSystem::from_game_info(
+            game_info,
+            &StdPathBuf::from("game_info_directory"),
+            &StdPathBuf::from("root_path"),
+        );
+        assert_eq!(
+            file_system,
+            FileSystem {
+                name: "Team Fortress 2".into(),
+                search_paths: vec![
+                    SearchPath::Wildcard("root_path/tf/custom".into()),
+                    SearchPath::Vpk("root_path/tf/tf2_textures.vpk".into()),
+                    SearchPath::Vpk("root_path/tf/tf2_misc.vpk".into()),
+                    SearchPath::Vpk("root_path/hl2/hl2_textures.vpk".into()),
+                    SearchPath::Vpk("root_path/hl2/hl2_misc.vpk".into()),
+                    SearchPath::Directory("root_path/tf".into()),
+                    SearchPath::Directory("root_path/hl2".into()),
+                    SearchPath::Directory("root_path/tf/download".into())
+                ]
             }
         );
     }
