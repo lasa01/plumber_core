@@ -111,12 +111,12 @@ impl Settings {
 impl Vmf {
     pub(crate) fn load(
         &self,
-        importer: Importer<impl Handler>,
+        mut importer: Importer<impl Handler>,
         settings: &Settings,
         f: impl FnOnce(),
     ) {
         let side_faces_map = Arc::new(Mutex::new(BTreeMap::new()));
-        self.send_material_jobs(&importer, settings.import_materials);
+        self.send_material_jobs(&mut importer, settings.import_materials);
 
         importer.pool.in_place_scope(|s| {
             s.spawn(|_| {
@@ -175,7 +175,7 @@ impl Vmf {
         });
     }
 
-    fn send_material_jobs(&self, importer: &Importer<impl Handler>, import_materials: bool) {
+    fn send_material_jobs(&self, importer: &mut Importer<impl Handler>, import_materials: bool) {
         // make sure solids' materials are loaded first
         // because solid loading later requires the material info to be available
         for solid in &self.world.solids {
@@ -205,7 +205,10 @@ impl Vmf {
                             path.push(&material);
                             importer.import_vmt(material);
                         }
-                        Err(err) => todo!("handle err: {}", err),
+                        Err(error) => importer.asset_handler.handle_error(Error::Overlay {
+                            id: entity.id,
+                            error: error.into(),
+                        }),
                     }
                 }
             }
