@@ -269,6 +269,24 @@ impl<'a> Verified<'a> {
             .map(|texture| find_material(texture, &texture_paths, file_system))
             .try_collect()
     }
+
+    /// # Errors
+    ///
+    /// Returns `Err` if something goes wrong.
+    pub fn bones(&self) -> Result<Vec<Bone>> {
+        self.mdl_header
+            .iter_bones()?
+            .map(|bone| {
+                Ok(Bone {
+                    name: bone.name()?,
+                    surface_prop: bone.surface_prop()?,
+                    parent_bone_index: bone.parent_bone_index.try_into().ok(),
+                    position: bone.position,
+                    rotation: bone.rotation,
+                })
+            })
+            .try_collect()
+    }
 }
 
 fn find_material<'a>(
@@ -306,6 +324,15 @@ pub struct Mesh<'a> {
     pub name: &'a str,
     pub vertices: Vec<&'a Vertex>,
     pub faces: Vec<Face>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Bone<'a> {
+    pub name: &'a str,
+    pub surface_prop: Option<&'a str>,
+    pub parent_bone_index: Option<usize>,
+    pub position: [f32; 3],
+    pub rotation: [f32; 3],
 }
 
 #[cfg(test)]

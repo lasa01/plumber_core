@@ -156,32 +156,4 @@ impl<'a> HeaderRef<'a> {
                 error: "vertices out of bounds or misaligned",
             })
     }
-
-    pub fn fixups(&self) -> Result<&[Fixup]> {
-        let offset = self
-            .header
-            .fixup_count
-            .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Vvd,
-                error: "fixup offset is negative",
-            })?;
-        let count = self
-            .header
-            .fixup_table_offset
-            .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Vvd,
-                error: "fixup count is negative",
-            })?;
-
-        self.bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .map(|(verified, _)| verified.into_slice())
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vvd,
-                error: "fixups out of bounds or misaligned",
-            })
-    }
 }

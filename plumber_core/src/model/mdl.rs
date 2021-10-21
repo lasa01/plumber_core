@@ -5,8 +5,6 @@ use std::{convert::TryInto, io, mem::size_of, str, usize};
 use bitflags::bitflags;
 use itertools::Itertools;
 use maligned::A4;
-use nalgebra::{Matrix3x4, Point3, Quaternion, Vector3};
-use ndarray::Array2;
 use zerocopy::{FromBytes, LayoutVerified};
 
 use crate::binary_utils::{null_terminated_prefix, read_file_aligned};
@@ -149,20 +147,20 @@ struct Header2 {
 
 #[derive(Debug, PartialEq, FromBytes)]
 #[repr(C)]
-struct Bone {
+pub struct Bone {
     name_offset: i32,
-    parent_bone_index: i32,
+    pub parent_bone_index: i32,
     bone_controller_indexes: [i32; 6],
 
-    position: [f32; 3],
-    quat: [f32; 4],
-    rotation: [f32; 3],
-    position_scale: [f32; 3],
-    rotation_scale: [f32; 3],
+    pub position: [f32; 3],
+    pub quat: [f32; 4],
+    pub rotation: [f32; 3],
+    pub position_scale: [f32; 3],
+    pub rotation_scale: [f32; 3],
 
-    pose_to_bone: [f32; 12],
+    pub pose_to_bone: [f32; 12],
 
-    q_alignment: [f32; 4],
+    pub q_alignment: [f32; 4],
 
     flags: i32,
 
@@ -727,32 +725,55 @@ impl<'a> HeaderRef<'a> {
         HeaderFlags::from_bits_truncate(self.header_1.flags)
     }
 
-    pub fn bones(&self) -> Option<BonesRef<'a>> {
-        let offset: usize = self.header_1.bone_offset.try_into().ok()?;
-        let bones_bytes = self.bytes.get(offset..)?;
-        let count = self.header_1.bone_count.try_into().ok()?;
-        let bones = LayoutVerified::new_slice_from_prefix(bones_bytes, count)?
+    fn bones(&self) -> Result<BonesRef<'a>> {
+        let offset: usize = self
+            .header_1
+            .bone_offset
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "bone offset is negative",
+            })?;
+        let count = self
+            .header_1
+            .bone_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "bone count is negative",
+            })?;
+        let bones = self
+            .bytes
+            .get(offset..)
+            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "bones out of bounds or misaligned",
+            })?
             .0
             .into_slice();
 
-        Some(BonesRef {
+        Ok(BonesRef {
             bones,
             offset,
             bytes: self.bytes,
         })
     }
 
-    pub fn bone_controllers(&self) -> Option<&[BoneController]> {
-        let offset: usize = self.header_1.bone_controller_offset.try_into().ok()?;
-        let count = self.header_1.bone_controller_count.try_into().ok()?;
-        Some(
-            LayoutVerified::new_slice_from_prefix(self.bytes.get(offset..)?, count)?
-                .0
-                .into_slice(),
-        )
+    pub fn iter_bones(&self) -> Result<impl Iterator<Item = BoneRef<'a>>> {
+        let bones = self.bones()?;
+        Ok(bones
+            .bones
+            .iter()
+            .enumerate()
+            .map(move |(i, bone)| BoneRef {
+                bone,
+                offset: bones.offset + i * size_of::<Bone>(),
+                bytes: bones.bytes,
+            }))
     }
 
-    pub fn textures(&self) -> Result<TexturesRef<'a>> {
+    fn textures(&self) -> Result<TexturesRef<'a>> {
         let offset: usize =
             self.header_1
                 .texture_offset
@@ -859,25 +880,7 @@ impl<'a> HeaderRef<'a> {
             .try_collect()
     }
 
-    pub fn skin_families(&self) -> Option<Array2<i16>> {
-        let offset: usize = self.header_1.skin_family_offset.try_into().ok()?;
-        let family_count: usize = self.header_1.skin_family_count.try_into().ok()?;
-        let reference_count: usize = self.header_1.skin_reference_count.try_into().ok()?;
-
-        let values = LayoutVerified::new_slice_from_prefix(
-            self.bytes.get(offset..)?,
-            family_count * reference_count,
-        )?
-        .0
-        .into_slice();
-
-        Some(
-            Array2::from_shape_vec((family_count, reference_count), values.to_vec())
-                .expect("slice length should be correct"),
-        )
-    }
-
-    pub fn body_parts(&self) -> Result<BodyPartsRef<'a>> {
+    fn body_parts(&self) -> Result<BodyPartsRef<'a>> {
         let offset = self
             .header_1
             .body_part_offset
@@ -927,18 +930,6 @@ impl<'a> HeaderRef<'a> {
                 bytes: body_parts.bytes,
             }))
     }
-
-    pub fn surface_prop(&self) -> Option<&str> {
-        if self.header_1.surface_prop_offset > 0 {
-            str::from_utf8(null_terminated_prefix(
-                self.bytes
-                    .get(self.header_1.surface_prop_offset as usize..)?,
-            )?)
-            .ok()
-        } else {
-            None
-        }
-    }
 }
 
 bitflags! {
@@ -966,20 +957,10 @@ bitflags! {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BonesRef<'a> {
+struct BonesRef<'a> {
     bones: &'a [Bone],
     offset: usize,
     bytes: &'a [u8],
-}
-
-impl<'a> BonesRef<'a> {
-    pub fn get(&self, index: usize) -> Option<BoneRef<'a>> {
-        self.bones.get(index).map(|bone| BoneRef {
-            bone,
-            offset: self.offset + index * size_of::<Bone>(),
-            bytes: self.bytes,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -990,67 +971,60 @@ pub struct BoneRef<'a> {
 }
 
 impl<'a> BoneRef<'a> {
-    pub fn name(&self) -> Option<&'a str> {
+    pub fn name(&self) -> Result<&'a str> {
         let offset = self.offset as isize + self.bone.name_offset as isize;
-        str::from_utf8(null_terminated_prefix(self.bytes.get(offset as usize..)?)?).ok()
+        str::from_utf8(
+            null_terminated_prefix(self.bytes.get(offset as usize..).ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "bone name out of bounds",
+            })?)
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "eof reading bone name",
+            })?,
+        )
+        .map_err(|_| Error::Corrupted {
+            ty: FileType::Mdl,
+            error: "bone name is not valid utf8",
+        })
     }
 
-    pub fn position(&self) -> Point3<f32> {
-        self.bone.position.into()
-    }
-
-    pub fn quat(&self) -> Quaternion<f32> {
-        self.bone.quat.into()
-    }
-
-    pub fn rotation(&self) -> Vector3<f32> {
-        self.bone.rotation.into()
-    }
-
-    pub fn position_scale(&self) -> Vector3<f32> {
-        self.bone.position_scale.into()
-    }
-
-    pub fn rotation_scale(&self) -> Vector3<f32> {
-        self.bone.rotation_scale.into()
-    }
-
-    pub fn pose_to_bone(&self) -> Matrix3x4<f32> {
-        Matrix3x4::from_row_slice(&self.bone.pose_to_bone)
-    }
-
-    pub fn q_alignment(&self) -> Quaternion<f32> {
-        self.bone.q_alignment.into()
-    }
-
-    pub fn flags(&self) -> i32 {
-        self.bone.flags
-    }
-
-    pub fn surface_prop(&self) -> Option<&str> {
+    pub fn surface_prop(&self) -> Result<Option<&'a str>> {
         if self.bone.surface_prop_name_offset == 0 {
-            return None;
+            return Ok(None);
         }
         let offset = self.offset as isize + self.bone.surface_prop_name_offset as isize;
-        str::from_utf8(null_terminated_prefix(self.bytes.get(offset as usize..)?)?).ok()
+        str::from_utf8(
+            null_terminated_prefix(self.bytes.get(offset as usize..).ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "bone surface prop out of bounds",
+            })?)
+            .ok_or(Error::Corrupted {
+                ty: FileType::Mdl,
+                error: "eof reading bone surface prop",
+            })?,
+        )
+        .map_err(|_| Error::Corrupted {
+            ty: FileType::Mdl,
+            error: "bone surface prop is not valid utf8",
+        })
+        .map(Some)
+    }
+}
+
+impl<'a> Deref for BoneRef<'a> {
+    type Target = Bone;
+
+    fn deref(&self) -> &Self::Target {
+        self.bone
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TexturesRef<'a> {
+struct TexturesRef<'a> {
     textures: &'a [Texture],
     offset: usize,
     bytes: &'a [u8],
-}
-
-impl<'a> TexturesRef<'a> {
-    pub fn get(&self, index: usize) -> Option<TextureRef<'a>> {
-        self.textures.get(index).map(|texture| TextureRef {
-            texture,
-            offset: self.offset + index * size_of::<Texture>(),
-            bytes: self.bytes,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1081,20 +1055,10 @@ impl<'a> TextureRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BodyPartsRef<'a> {
+struct BodyPartsRef<'a> {
     body_parts: &'a [BodyPart],
     offset: usize,
     bytes: &'a [u8],
-}
-
-impl<'a> BodyPartsRef<'a> {
-    pub fn get(&self, index: usize) -> Option<BodyPartRef<'a>> {
-        self.body_parts.get(index).map(|body_part| BodyPartRef {
-            body_part,
-            offset: self.offset + index * size_of::<BodyPart>(),
-            bytes: self.bytes,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1105,7 +1069,7 @@ pub struct BodyPartRef<'a> {
 }
 
 impl<'a> BodyPartRef<'a> {
-    pub fn models(&self) -> Result<ModelsRef<'a>> {
+    fn models(&self) -> Result<ModelsRef<'a>> {
         let offset = (self.offset as isize + self.body_part.model_offset as isize) as usize;
         let count = self
             .body_part
@@ -1168,20 +1132,10 @@ impl<'a> BodyPartRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ModelsRef<'a> {
+struct ModelsRef<'a> {
     models: &'a [Model],
     offset: usize,
     bytes: &'a [u8],
-}
-
-impl<'a> ModelsRef<'a> {
-    pub fn get(&self, index: usize) -> Option<ModelRef<'a>> {
-        self.models.get(index).map(|model| ModelRef {
-            model,
-            offset: self.offset + index * size_of::<Model>(),
-            bytes: self.bytes,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1192,7 +1146,7 @@ pub struct ModelRef<'a> {
 }
 
 impl<'a> ModelRef<'a> {
-    pub fn meshes(&self) -> Result<MeshesRef<'a>> {
+    fn meshes(&self) -> Result<MeshesRef<'a>> {
         let offset = (self.offset as isize + self.model.mesh_offset as isize) as usize;
         let count = self
             .model
@@ -1243,20 +1197,10 @@ impl<'a> Deref for ModelRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MeshesRef<'a> {
+struct MeshesRef<'a> {
     meshes: &'a [Mesh],
     offset: usize,
     bytes: &'a [u8],
-}
-
-impl<'a> MeshesRef<'a> {
-    pub fn get(&self, index: usize) -> Option<MeshRef<'a>> {
-        self.meshes.get(index).map(|mesh| MeshRef {
-            mesh,
-            offset: self.offset + index * size_of::<Mesh>(),
-            bytes: self.bytes,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -3,7 +3,7 @@ use std::{
     sync::{Condvar, Mutex},
 };
 
-use super::{Face, Mesh, Model, Result, Vertex};
+use super::{Bone, Face, Mesh, Model, Result, Vertex};
 
 use crate::fs::{OpenFileSystem, PathBuf};
 
@@ -13,6 +13,7 @@ pub struct LoadedModel {
     pub info: ModelInfo,
     pub meshes: Vec<LoadedMesh>,
     pub materials: Vec<PathBuf>,
+    pub bones: Vec<LoadedBone>,
 }
 
 #[derive(Debug, Clone)]
@@ -21,11 +22,6 @@ pub struct LoadedMesh {
     pub name: String,
     pub vertices: Vec<Vertex>,
     pub faces: Vec<Face>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ModelInfo {
-    pub static_prop: bool,
 }
 
 impl LoadedMesh {
@@ -37,6 +33,32 @@ impl LoadedMesh {
             faces: mesh.faces,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadedBone {
+    pub name: String,
+    pub surface_prop: Option<String>,
+    pub parent_bone_index: Option<usize>,
+    pub position: [f32; 3],
+    pub rotation: [f32; 3],
+}
+
+impl LoadedBone {
+    fn new(bone: Bone) -> Self {
+        Self {
+            name: bone.name.to_owned(),
+            surface_prop: bone.surface_prop.map(ToString::to_string),
+            parent_bone_index: bone.parent_bone_index,
+            position: bone.position,
+            rotation: bone.rotation,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelInfo {
+    pub static_prop: bool,
 }
 
 #[derive(Debug)]
@@ -124,7 +146,11 @@ impl Loader {
             .into_iter()
             .map(LoadedMesh::new)
             .collect();
+
         let materials = verified.materials(file_system)?;
+
+        let bones = verified.bones()?.into_iter().map(LoadedBone::new).collect();
+
         let info = ModelInfo {
             static_prop: verified.is_static_prop(),
         };
@@ -134,6 +160,7 @@ impl Loader {
             info,
             meshes,
             materials,
+            bones,
         })
     }
 }
