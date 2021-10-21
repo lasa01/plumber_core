@@ -98,12 +98,6 @@ fn is_vpk_file(filename: &str) -> bool {
         == Some(true)
 }
 
-/// Stores Source games' filesystems.
-#[derive(Debug)]
-pub struct Manager {
-    pub games: Vec<FileSystem>,
-}
-
 #[derive(Debug, Error)]
 pub enum ParseError {
     #[error("io error reading `{path}`: {inner}")]
