@@ -21,6 +21,7 @@ use crate::{
 
 use plumber_vdf as vdf;
 
+use rayon::ThreadPoolBuilder;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -107,6 +108,7 @@ where
     pub(crate) material_loader: Arc<MaterialLoader>,
     pub(crate) material_job_sender: crossbeam_channel::Sender<PathBuf>,
     pub(crate) model_loader: Arc<ModelLoader>,
+    pub(crate) pool: rayon::ThreadPool,
     pub(crate) asset_handler: H,
 }
 
@@ -140,11 +142,14 @@ where
             });
         }
 
+        let pool = build_thread_pool();
+
         Self {
             file_system,
             material_loader,
             material_job_sender,
             model_loader: Arc::new(ModelLoader::new()),
+            pool,
             asset_handler,
         }
     }
@@ -164,6 +169,24 @@ where
             .send(path.clone())
             .expect("material job channel shouldn't be disconnected");
         self.material_loader.wait_for_material(path)
+    }
+
+    /// Errors are handled in [Handler].
+    pub fn import_mdl(&self, path: PathBuf) {
+        let model_loader = self.model_loader.clone();
+        let mut asset_handler = self.asset_handler.clone();
+        let file_system = self.file_system.clone();
+
+        self.pool.spawn(move || {
+            match model_loader.load_model(path.clone(), &file_system) {
+                Ok((_info, model)) => {
+                    if let Some(model) = model {
+                        asset_handler.handle_model(model);
+                    }
+                }
+                Err(error) => asset_handler.handle_error(Error::Model { path, error }),
+            };
+        });
     }
 
     /// # Errors
@@ -194,6 +217,16 @@ where
         vmf.load(self, settings, f);
         Ok(())
     }
+}
+
+fn build_thread_pool() -> rayon::ThreadPool {
+    // this is 2 less than number of cpus since one thread is for material loading and one for asset callback
+    // rest of the cpus are used for parallel asset loading
+    let num_threads = num_cpus::get().saturating_sub(2).max(1);
+    ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build()
+        .expect("thread pool building shouldn't fail")
 }
 
 #[cfg(test)]

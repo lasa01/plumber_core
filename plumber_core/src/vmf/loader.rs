@@ -4,9 +4,14 @@ use std::{
 };
 
 use plumber_vpk::PathBuf;
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::prelude::*;
 
-use crate::asset::{Error, Handler, Importer};
+use crate::{
+    asset::{Error, Handler, Importer},
+    fs::OpenFileSystem,
+    model::loader::Loader as ModelLoader,
+    vmt::loader::Loader as MaterialLoader,
+};
 
 pub use super::builder_utils::{GeometrySettings, InvisibleSolids, MergeSolids};
 pub use super::overlay_builder::{BuiltOverlay, BuiltOverlayFace, OverlayError};
@@ -113,22 +118,31 @@ impl Vmf {
         let side_faces_map = Arc::new(Mutex::new(BTreeMap::new()));
         self.send_material_jobs(&importer, settings.import_materials);
 
-        let pool = build_thread_pool();
+        let pool = importer.pool;
+        let file_system = importer.file_system;
+        let model_loader = importer.model_loader;
+        let material_loader = importer.material_loader;
+        let material_job_sender = importer.material_job_sender;
+        let asset_handler = importer.asset_handler;
+
         pool.in_place_scope(|s| {
             s.spawn(|_| {
                 if settings.import_props {
-                    self.load_props(&importer).for_each_with(
-                        importer.asset_handler.clone(),
-                        |handler, r| match r {
-                            Ok(prop) => handler.handle_prop(prop),
-                            Err((id, error)) => handler.handle_error(Error::Prop { id, error }),
-                        },
-                    );
+                    self.load_props(
+                        file_system,
+                        model_loader,
+                        material_job_sender,
+                        asset_handler.clone(),
+                    )
+                    .for_each_with(asset_handler.clone(), |handler, r| match r {
+                        Ok(prop) => handler.handle_prop(prop),
+                        Err((id, error)) => handler.handle_error(Error::Prop { id, error }),
+                    });
                 }
 
                 if settings.import_entities {
                     self.load_other_entities().for_each_with(
-                        importer.asset_handler.clone(),
+                        asset_handler.clone(),
                         |handler, entity| {
                             handler.handle_entity(entity);
                         },
@@ -136,8 +150,8 @@ impl Vmf {
                 }
 
                 if let Some(geometry_settings) = settings.geometry.brushes() {
-                    self.load_brushes(&importer, side_faces_map.clone(), *geometry_settings)
-                        .for_each_with(importer.asset_handler.clone(), |handler, r| match r {
+                    self.load_brushes(material_loader, side_faces_map.clone(), *geometry_settings)
+                        .for_each_with(asset_handler.clone(), |handler, r| match r {
                             Ok(brush) => handler.handle_brush(brush),
                             Err((id, error)) => handler.handle_error(Error::Solid { id, error }),
                         });
@@ -145,15 +159,13 @@ impl Vmf {
 
                 if let Some(geometry_settings) = settings.geometry.overlays() {
                     self.load_overlays(side_faces_map, *geometry_settings)
-                        .for_each_with(importer.asset_handler.clone(), |handler, r| match r {
+                        .for_each_with(asset_handler, |handler, r| match r {
                             Ok(overlay) => handler.handle_overlay(overlay),
                             Err((id, error)) => handler.handle_error(Error::Overlay { id, error }),
                         });
                 }
 
-                // drop the importer so that all copies of the asset handler are dropped,
-                // possibly signaling the closure f to terminate as well
-                drop(importer);
+                // final copy of the asset handler is dropped above, possibly signaling the closure f to terminate
             });
 
             f();
@@ -197,10 +209,13 @@ impl Vmf {
         }
     }
 
-    fn load_props<'a>(
-        &'a self,
-        importer: &Importer<impl Handler>,
-    ) -> impl ParallelIterator<Item = Result<LoadedProp<'a>, (i32, PropError)>> {
+    fn load_props(
+        &self,
+        file_system: Arc<OpenFileSystem>,
+        model_loader: Arc<ModelLoader>,
+        material_job_sender: crossbeam_channel::Sender<PathBuf>,
+        asset_handler: impl Handler,
+    ) -> impl ParallelIterator<Item = Result<LoadedProp, (i32, PropError)>> {
         self.entities
             .par_iter()
             .filter_map(|e| {
@@ -216,10 +231,10 @@ impl Vmf {
             })
             .map_with(
                 (
-                    importer.file_system.clone(),
-                    importer.model_loader.clone(),
-                    importer.material_job_sender.clone(),
-                    importer.asset_handler.clone(),
+                    file_system,
+                    model_loader,
+                    material_job_sender,
+                    asset_handler,
                 ),
                 |(file_system, model_loader, material_job_sender, asset_handler), prop| {
                     let (prop, model) = prop
@@ -254,15 +269,15 @@ impl Vmf {
         })
     }
 
-    fn load_brushes<'a>(
-        &'a self,
-        importer: &Importer<impl Handler>,
+    fn load_brushes(
+        &self,
+        material_loader: Arc<MaterialLoader>,
         side_faces_map: Arc<Mutex<SideFacesMap>>,
         geometry_settings: GeometrySettings,
-    ) -> impl ParallelIterator<Item = Result<BuiltBrushEntity<'a>, (i32, SolidError)>> {
+    ) -> impl ParallelIterator<Item = Result<BuiltBrushEntity, (i32, SolidError)>> {
         let world_brush_iter = rayon::iter::once(&self.world).map_with(
             (
-                importer.material_loader.clone(),
+                material_loader.clone(),
                 side_faces_map.clone(),
                 geometry_settings,
             ),
@@ -282,11 +297,7 @@ impl Vmf {
                 .par_iter()
                 .filter(|entity| !entity.solids.is_empty())
                 .map_with(
-                    (
-                        importer.material_loader.clone(),
-                        side_faces_map,
-                        geometry_settings,
-                    ),
+                    (material_loader, side_faces_map, geometry_settings),
                     |(material_loader, side_faces_map, geometry_settings), entity| {
                         entity
                             .build_brush(
@@ -324,14 +335,4 @@ impl Vmf {
                 },
             )
     }
-}
-
-fn build_thread_pool() -> rayon::ThreadPool {
-    // this is 2 less than number of cpus since one thread is for material loading and one for asset callback
-    // rest of the cpus are used for parallel asset loading
-    let num_threads = num_cpus::get().saturating_sub(2).max(1);
-    ThreadPoolBuilder::new()
-        .num_threads(num_threads)
-        .build()
-        .expect("thread pool building shouldn't fail")
 }
