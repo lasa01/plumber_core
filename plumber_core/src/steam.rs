@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs, io,
     path::{Path, PathBuf},
     slice::Iter,
@@ -6,26 +7,22 @@ use std::{
 
 use plumber_vdf as vdf;
 
-use phf::phf_set;
 use serde::{
     de::{IgnoredAny, MapAccess, Visitor},
     Deserialize,
 };
 use thiserror::Error;
 
-static SOURCE_APPS: phf::Set<u32> = phf_set! {
-    219u32, 220u32, 240u32, 260u32, 280u32, 300u32, 320u32, 340u32, 360u32, 380u32,
-    400u32, 410u32, 420u32, 440u32, 500u32, 550u32, 570u32, 590u32, 620u32, 630u32, 730u32,
-    1300u32, 1800u32, 2100u32, 2120u32, 2130u32, 2400u32, 2430u32, 2450u32, 2600u32, 4000u32,
-    17500u32, 17510u32, 17520u32, 17530u32, 17550u32, 17570u32, 17580u32, 17700u32, 17710u32,
-    17730u32, 17740u32, 17750u32, 90007u32, 222880u32, 224260u32, 235780u32, 238430u32, 252530u32,
-    261820u32, 261980u32, 265630u32, 270370u32, 280740u32, 286080u32, 287820u32, 290930u32,
-    313240u32, 317360u32, 317400u32, 317790u32, 334370u32, 346290u32, 346330u32, 349480u32,
-    353220u32, 362890u32, 397680u32, 433970u32, 440000u32, 447820u32, 563560u32, 587650u32,
-    601360u32, 628410u32, 638800u32, 669270u32, 747250u32, 869480u32, 6626680u32, 1054600u32,
-    1057700u32, 1104390u32, 1117390u32, 1154130u32, 1255980u32, 1341060u32, 1367890u32, 1372780u32,
-    1389950u32,
-};
+static SOURCE_APPS: [u32; 90] = [
+    219, 220, 240, 260, 280, 300, 320, 340, 360, 380, 400, 410, 420, 440, 500, 550, 570, 590, 620,
+    630, 730, 1300, 1800, 2100, 2120, 2130, 2400, 2430, 2450, 2600, 4000, 17500, 17510, 17520,
+    17530, 17550, 17570, 17580, 17700, 17710, 17730, 17740, 17750, 90007, 222_880, 224_260,
+    235_780, 238_430, 252_530, 261_820, 261_980, 265_630, 270_370, 280_740, 286_080, 287_820,
+    290_930, 313_240, 317_360, 317_400, 317_790, 334_370, 346_290, 346_330, 349_480, 353_220,
+    362_890, 397_680, 433_970, 440_000, 447_820, 563_560, 587_650, 601_360, 628_410, 638_800,
+    669_270, 747_250, 869_480, 6_626_680, 1_054_600, 1_057_700, 1_104_390, 1_117_390, 1_154_130,
+    1_255_980, 1_341_060, 1_367_890, 1_372_780, 1_389_950,
+];
 
 fn is_acf_file(filename: &str) -> bool {
     filename
@@ -314,10 +311,22 @@ pub struct Apps<'a> {
 }
 
 impl<'a> Apps<'a> {
-    /// Filter the iterator to only return Source apps.
+    /// Filter the iterator to only return Source apps based on a bundled set of Source app ids.
     #[must_use]
     pub fn source(self) -> SourceApps<'a> {
-        SourceApps(self)
+        SourceApps {
+            apps: self,
+            source_app_ids: SOURCE_APPS.into(),
+        }
+    }
+
+    /// Filter the iterator to only return Source apps based on a custom set of Source app ids.
+    #[must_use]
+    pub fn defined_source(self, source_app_ids: BTreeSet<u32>) -> SourceApps<'a> {
+        SourceApps {
+            apps: self,
+            source_app_ids,
+        }
     }
 }
 
@@ -370,16 +379,19 @@ impl<'a> Iterator for Apps<'a> {
 /// The [`Result`] will be an [`Err`] if a library directory read fails,
 /// an appmanifest can't be read or the appmanifest deserialization fails.
 #[derive(Debug)]
-pub struct SourceApps<'a>(Apps<'a>);
+pub struct SourceApps<'a> {
+    apps: Apps<'a>,
+    source_app_ids: BTreeSet<u32>,
+}
 
 impl<'a> Iterator for SourceApps<'a> {
     type Item = Result<App, AppError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for result in &mut self.0 {
+        for result in &mut self.apps {
             if result
                 .as_ref()
-                .map_or(true, |app| SOURCE_APPS.contains(&app.app_id))
+                .map_or(true, |app| self.source_app_ids.contains(&app.app_id))
             {
                 return Some(result);
             }

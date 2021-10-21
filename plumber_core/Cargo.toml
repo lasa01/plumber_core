@@ -25,7 +25,6 @@ serde = "= 1.0.125"
 serde_derive = "= 1.0.125"
 thiserror = "1.0.24"
 uncased = { version = "0.9.6", features = ["with-serde-alloc"] }
-phf = { version = "0.8.0", features = ["macros"] }
 vtflib = { version = "0.2.0", features = ["static"] }
 image = { version = "0.23.14", default-features = false }
 nom = "6.1.2"
