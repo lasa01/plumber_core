@@ -1,6 +1,6 @@
+use std::fmt;
 use std::io;
 use std::mem::size_of;
-use std::{convert::TryInto, fmt};
 
 use byteorder::NativeEndian;
 use itertools::Itertools;

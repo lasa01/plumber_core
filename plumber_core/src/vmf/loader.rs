@@ -118,31 +118,27 @@ impl Vmf {
         let side_faces_map = Arc::new(Mutex::new(BTreeMap::new()));
         self.send_material_jobs(&importer, settings.import_materials);
 
-        let pool = importer.pool;
-        let file_system = importer.file_system;
-        let model_loader = importer.model_loader;
-        let material_loader = importer.material_loader;
-        let material_job_sender = importer.material_job_sender;
-        let asset_handler = importer.asset_handler;
-
-        pool.in_place_scope(|s| {
+        importer.pool.in_place_scope(|s| {
             s.spawn(|_| {
                 if settings.import_props {
                     self.load_props(
-                        file_system,
-                        model_loader,
-                        material_job_sender,
-                        asset_handler.clone(),
+                        importer.file_system,
+                        importer.model_loader,
+                        importer.material_job_sender,
+                        importer.asset_handler.clone(),
                     )
-                    .for_each_with(asset_handler.clone(), |handler, r| match r {
-                        Ok(prop) => handler.handle_prop(prop),
-                        Err((id, error)) => handler.handle_error(Error::Prop { id, error }),
-                    });
+                    .for_each_with(
+                        importer.asset_handler.clone(),
+                        |handler, r| match r {
+                            Ok(prop) => handler.handle_prop(prop),
+                            Err((id, error)) => handler.handle_error(Error::Prop { id, error }),
+                        },
+                    );
                 }
 
                 if settings.import_entities {
                     self.load_other_entities().for_each_with(
-                        asset_handler.clone(),
+                        importer.asset_handler.clone(),
                         |handler, entity| {
                             handler.handle_entity(entity);
                         },
@@ -150,16 +146,23 @@ impl Vmf {
                 }
 
                 if let Some(geometry_settings) = settings.geometry.brushes() {
-                    self.load_brushes(material_loader, side_faces_map.clone(), *geometry_settings)
-                        .for_each_with(asset_handler.clone(), |handler, r| match r {
+                    self.load_brushes(
+                        importer.material_loader,
+                        side_faces_map.clone(),
+                        *geometry_settings,
+                    )
+                    .for_each_with(
+                        importer.asset_handler.clone(),
+                        |handler, r| match r {
                             Ok(brush) => handler.handle_brush(brush),
                             Err((id, error)) => handler.handle_error(Error::Solid { id, error }),
-                        });
+                        },
+                    );
                 }
 
                 if let Some(geometry_settings) = settings.geometry.overlays() {
                     self.load_overlays(side_faces_map, *geometry_settings)
-                        .for_each_with(asset_handler, |handler, r| match r {
+                        .for_each_with(importer.asset_handler, |handler, r| match r {
                             Ok(overlay) => handler.handle_overlay(overlay),
                             Err((id, error)) => handler.handle_error(Error::Overlay { id, error }),
                         });

@@ -258,7 +258,7 @@ impl<'a> OverlayBuilder<'a> {
                 // replace the face vertices that were outside the uv border with the 2 newly created ones
                 builder.vertice_indices.splice(
                     first_outside_i..=last_outside_i,
-                    IntoIterator::into_iter([first_new_i, last_new_i]),
+                    [first_new_i, last_new_i].into_iter(),
                 );
             }
         }

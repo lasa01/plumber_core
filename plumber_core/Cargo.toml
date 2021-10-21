@@ -7,7 +7,7 @@ readme = "README.md"
 keywords = ["valve", "source", "vdf", "vmf", "vmt"]
 categories = ["parser-implementations"]
 authors = ["Lassi Säike"]
-edition = "2018"
+edition = "2021"
 license = "MIT OR Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

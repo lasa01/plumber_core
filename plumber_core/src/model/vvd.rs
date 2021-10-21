@@ -1,5 +1,5 @@
+use std::fmt;
 use std::io;
-use std::{convert::TryInto, fmt};
 
 use maligned::A4;
 use zerocopy::{FromBytes, LayoutVerified};

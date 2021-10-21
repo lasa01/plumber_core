@@ -1,6 +1,6 @@
 use std::fmt;
 use std::ops::Deref;
-use std::{convert::TryInto, io, mem::size_of, str, usize};
+use std::{io, mem::size_of, str, usize};
 
 use bitflags::bitflags;
 use itertools::Itertools;

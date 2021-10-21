@@ -5,7 +5,6 @@ mod vvd;
 pub mod loader;
 
 use std::{
-    convert::TryInto,
     fmt::{self, Display},
     io,
     mem::size_of,

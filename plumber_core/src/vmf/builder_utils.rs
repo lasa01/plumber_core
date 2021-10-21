@@ -497,7 +497,7 @@ mod tests {
         ];
 
         assert_eq!(
-            plane.classify_polygon(IntoIterator::into_iter(polygon), 1e-3),
+            plane.classify_polygon(polygon.into_iter(), 1e-3),
             PolygonClassification::OnPlane,
         );
 
@@ -509,7 +509,7 @@ mod tests {
         ];
 
         assert_eq!(
-            plane.classify_polygon(IntoIterator::into_iter(polygon_2), 1e-3),
+            plane.classify_polygon(polygon_2.into_iter(), 1e-3),
             PolygonClassification::Front,
         );
 
@@ -521,7 +521,7 @@ mod tests {
         ];
 
         assert_eq!(
-            plane.classify_polygon(IntoIterator::into_iter(polygon_3), 1e-3),
+            plane.classify_polygon(polygon_3.into_iter(), 1e-3),
             PolygonClassification::Back,
         );
 
@@ -533,7 +533,7 @@ mod tests {
         ];
 
         assert_eq!(
-            plane.classify_polygon(IntoIterator::into_iter(polygon_4), 1e-3),
+            plane.classify_polygon(polygon_4.into_iter(), 1e-3),
             PolygonClassification::Spanning,
         );
     }

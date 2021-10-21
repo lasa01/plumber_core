@@ -9,7 +9,6 @@ pub use path::{Path, PathBuf};
 
 use std::{
     collections::{hash_map::Keys, HashMap},
-    convert::TryInto,
     ffi::OsStr,
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
