@@ -9,7 +9,7 @@ use std::{
 use plumber_core::{
     asset::{Handler, Importer},
     fs::FileSystem,
-    vmf::{loader::Settings, Vmf},
+    vmf::loader::Settings,
 };
 
 #[derive(Clone)]
@@ -26,7 +26,7 @@ impl Handler for AssetHandler {
 
     fn build_material(
         &mut self,
-        vmt: plumber_core::vmt::loader::LoadedVmt,
+        _vmt: plumber_core::vmt::loader::LoadedVmt,
     ) -> Result<Self::MaterialData, plumber_core::vmt::loader::MaterialLoadError> {
         Ok(())
     }
@@ -67,7 +67,6 @@ fn main() {
         .join("vmf")
         .join("de_dust2_d.vmf");
     let vmf_bytes = read(vmf_path).unwrap();
-    let vmf = Vmf::from_bytes(&vmf_bytes).unwrap();
 
     let root_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
