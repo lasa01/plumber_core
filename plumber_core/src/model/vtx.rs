@@ -7,13 +7,15 @@ use itertools::Itertools;
 use maligned::A4;
 use zerocopy::{
     byteorder::{I16, I32, U16},
-    FromBytes, LayoutVerified, Unaligned,
+    FromBytes, Unaligned,
 };
 
-use crate::binary_utils::read_file_aligned;
 use crate::fs::GameFile;
 
-use super::{mdl, Error, FileType, Result};
+use super::{
+    binary_utils::{parse, parse_slice, read_file_aligned},
+    mdl, Error, FileType, Result,
+};
 
 #[derive(Debug, Clone, FromBytes)]
 #[repr(C)]
@@ -273,13 +275,10 @@ impl Vtx {
     }
 
     pub fn header(&self) -> Result<HeaderRef> {
-        let header = LayoutVerified::<_, Header>::new_from_prefix(self.bytes.as_ref())
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vtx,
-                error: "eof reading header",
-            })?
-            .0
-            .into_ref();
+        let header = parse(&self.bytes, 0).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "eof reading header",
+        })?;
 
         Ok(HeaderRef {
             header,
@@ -323,16 +322,10 @@ impl<'a> HeaderRef<'a> {
                 error: "body part count is negative",
             })?;
 
-        let body_parts = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vtx,
-                error: "body parts out of bounds or misaligned",
-            })?
-            .0
-            .into_slice();
+        let body_parts = parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "body parts out of bounds or misaligned",
+        })?;
 
         Ok(BodyPartsRef {
             body_parts,
@@ -381,16 +374,10 @@ impl<'a> BodyPartRef<'a> {
                 error: "body part models count is negative",
             })?;
 
-        let models = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vtx,
-                error: "body part models out of bounds or misaligned",
-            })?
-            .0
-            .into_slice();
+        let models = parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "body part models out of bounds or misaligned",
+        })?;
 
         Ok(ModelsRef {
             models,
@@ -439,16 +426,10 @@ impl<'a> ModelRef<'a> {
                 error: "model lod count is negative",
             })?;
 
-        let lods = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vtx,
-                error: "model lods out of bounds or misaligned",
-            })?
-            .0
-            .into_slice();
+        let lods = parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "model lods out of bounds or misaligned",
+        })?;
 
         Ok(LodsRef {
             lods,
@@ -494,16 +475,10 @@ impl<'a> LodRef<'a> {
                 error: "lod mesh count is negative",
             })?;
 
-        let meshes = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vtx,
-                error: "lod meshes out of bounds",
-            })?
-            .0
-            .into_slice();
+        let meshes = parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "lod meshes out of bounds",
+        })?;
 
         Ok(MeshesRef {
             meshes,
@@ -662,15 +637,10 @@ where
     S: StripGroup,
 {
     fn new(bytes: &'a [u8], offset: usize, count: usize) -> Result<Self> {
-        let strip_groups: &[S] = bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vtx,
-                error: "mesh strip groups out of bounds",
-            })?
-            .0
-            .into_slice();
+        let strip_groups: &[S] = parse_slice(bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "mesh strip groups out of bounds",
+        })?;
 
         // validate strip groups to check if the current format is correct
         for strip_group in strip_groups {
@@ -719,14 +689,10 @@ where
                 error: "strip group vertices count is negative",
             })?;
 
-        self.bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
-            .map(|(verified, _)| verified.into_slice())
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vtx,
-                error: "strip group vertices out of bounds",
-            })
+        parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "strip group vertices out of bounds",
+        })
     }
 
     pub fn indices(&self) -> Result<&[U16<NativeEndian>]> {
@@ -740,14 +706,10 @@ where
                 error: "strip group indices count is negative",
             })?;
 
-        self.bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
-            .map(|(verified, _)| verified.into_slice())
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vtx,
-                error: "strip group indices out of bounds",
-            })
+        parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "strip group indices out of bounds",
+        })
     }
 
     pub fn strips(&self) -> Result<&[<S as StripGroup>::Strip]> {
@@ -761,14 +723,10 @@ where
                 error: "strip groups strips count is negative",
             })?;
 
-        self.bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_unaligned_from_prefix(bytes, count))
-            .map(|(verified, _)| verified.into_slice())
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vtx,
-                error: "strip group strips out of bounds",
-            })
+        parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "strip group strips out of bounds",
+        })
     }
 }
 

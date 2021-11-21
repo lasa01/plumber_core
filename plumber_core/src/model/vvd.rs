@@ -2,12 +2,14 @@ use std::fmt;
 use std::io;
 
 use maligned::A4;
-use zerocopy::{FromBytes, LayoutVerified};
+use zerocopy::FromBytes;
 
-use crate::binary_utils::read_file_aligned;
 use crate::fs::GameFile;
 
-use super::{Error, FileType, Result};
+use super::{
+    binary_utils::{parse, parse_slice, read_file_aligned},
+    Error, FileType, Result,
+};
 
 #[derive(Debug, Clone, FromBytes)]
 #[repr(C)]
@@ -99,13 +101,10 @@ impl Vvd {
     }
 
     pub fn header(&self) -> Result<HeaderRef> {
-        let header = LayoutVerified::<_, Header>::new_from_prefix(self.bytes.as_ref())
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vvd,
-                error: "eof reading header",
-            })?
-            .0
-            .into_ref();
+        let header = parse(&self.bytes, 0).ok_or(Error::Corrupted {
+            ty: FileType::Vvd,
+            error: "eof reading header",
+        })?;
 
         Ok(HeaderRef {
             header,
@@ -147,13 +146,9 @@ impl<'a> HeaderRef<'a> {
                 error: "vertex count is negative",
             })?;
 
-        self.bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .map(|(verified, _)| verified.into_slice())
-            .ok_or(Error::Corrupted {
-                ty: FileType::Vvd,
-                error: "vertices out of bounds or misaligned",
-            })
+        parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vvd,
+            error: "vertices out of bounds or misaligned",
+        })
     }
 }

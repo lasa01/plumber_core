@@ -8,7 +8,6 @@
 #![allow(clippy::option_if_let_else)]
 
 pub mod asset;
-mod binary_utils;
 pub mod fs;
 pub mod model;
 mod parsers;

@@ -1,16 +1,21 @@
 use std::fmt;
 use std::ops::Deref;
-use std::{io, mem::size_of, str, usize};
+use std::{io, mem::size_of, str};
 
 use bitflags::bitflags;
 use itertools::Itertools;
 use maligned::A4;
-use zerocopy::{FromBytes, LayoutVerified};
+use zerocopy::FromBytes;
 
-use crate::binary_utils::{null_terminated_prefix, read_file_aligned};
 use crate::fs::GameFile;
 
-use super::{Error, FileType, Result};
+use super::binary_utils::parse_mut;
+use super::{
+    binary_utils::{
+        null_terminated_prefix, parse, parse_slice, parse_slice_mut, read_file_aligned,
+    },
+    Error, FileType, Result,
+};
 
 #[derive(Debug, PartialEq, FromBytes)]
 #[repr(C)]
@@ -240,10 +245,10 @@ struct AnimationDesc {
     section_offset: i32,
     section_frame_count: i32,
 
-    span_frame_count: i32,
-    span_count: i32,
+    span_frame_count: i16,
+    span_count: i16,
     span_offset: i32,
-    span_stall_time: i32,
+    span_stall_time: f32,
 }
 
 #[derive(Debug, PartialEq, FromBytes)]
@@ -592,6 +597,13 @@ struct FlexControllerUi {
     unused: [u8; 2],
 }
 
+fn corrupted(error: &'static str) -> Error {
+    Error::Corrupted {
+        ty: FileType::Mdl,
+        error,
+    }
+}
+
 #[derive(Clone)]
 pub struct Mdl {
     bytes: Vec<u8>,
@@ -604,10 +616,10 @@ impl Mdl {
     }
 
     pub fn check_signature(&self) -> Result<()> {
-        let signature = self.bytes.get(0..4).ok_or(Error::Corrupted {
-            ty: FileType::Mdl,
-            error: "eof reading signature",
-        })?;
+        let signature = self
+            .bytes
+            .get(0..4)
+            .ok_or_else(|| corrupted("eof reading signature"))?;
 
         if signature == b"IDST" {
             Ok(())
@@ -621,10 +633,7 @@ impl Mdl {
 
     pub fn version(&self) -> Result<i32> {
         if self.bytes.len() < 8 {
-            return Err(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "eof reading version",
-            });
+            return Err(corrupted("eof reading version"));
         }
         Ok(i32::from_ne_bytes(self.bytes[4..8].try_into().unwrap()))
     }
@@ -643,25 +652,13 @@ impl Mdl {
     }
 
     pub fn header(&self) -> Result<HeaderRef> {
-        let header_1 = LayoutVerified::<_, Header1>::new_from_prefix(self.bytes.as_ref())
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "eof reading header",
-            })?
-            .0
-            .into_ref();
+        let header_1: &Header1 =
+            parse(&self.bytes, 0).ok_or_else(|| corrupted("eof reading header"))?;
 
         let header_2 = if header_1.header_2_offset > 0 {
             Some(
-                self.bytes
-                    .get(header_1.header_2_offset as usize..)
-                    .and_then(LayoutVerified::<_, Header2>::new_from_prefix)
-                    .ok_or(Error::Corrupted {
-                        ty: FileType::Mdl,
-                        error: "header 2 out of bounds or misaligned",
-                    })?
-                    .0
-                    .into_ref(),
+                parse(&self.bytes, header_1.header_2_offset as usize)
+                    .ok_or_else(|| corrupted("header 2 out of bounds or misaligned"))?,
             )
         } else {
             None
@@ -700,25 +697,18 @@ impl<'a> HeaderRef<'a> {
                     + size_of::<Header2>()
                     + header_2.name_offset as usize;
                 return str::from_utf8(
-                    null_terminated_prefix(self.bytes.get(offset..).ok_or(Error::Corrupted {
-                        ty: FileType::Mdl,
-                        error: "header 2 name offset out of bounds",
-                    })?)
-                    .ok_or(Error::Corrupted {
-                        ty: FileType::Mdl,
-                        error: "eof reading header 2 name",
-                    })?,
+                    null_terminated_prefix(
+                        self.bytes
+                            .get(offset..)
+                            .ok_or_else(|| corrupted("header 2 name offset out of bounds"))?,
+                    )
+                    .ok_or_else(|| corrupted("eof reading header 2 name"))?,
                 )
-                .map_err(|_| Error::Corrupted {
-                    ty: FileType::Mdl,
-                    error: "header 2 name is not valid utf8",
-                });
+                .map_err(|_| corrupted("header 2 name is not valid utf8"));
             }
         }
-        str::from_utf8(&self.header_1.name).map_err(|_| Error::Corrupted {
-            ty: FileType::Mdl,
-            error: "header name is not valid utf8",
-        })
+        str::from_utf8(null_terminated_prefix(&self.header_1.name).expect("name can not be empty"))
+            .map_err(|_| corrupted("header name is not valid utf8"))
     }
 
     pub fn flags(&self) -> HeaderFlags {
@@ -730,28 +720,14 @@ impl<'a> HeaderRef<'a> {
             .header_1
             .bone_offset
             .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "bone offset is negative",
-            })?;
+            .map_err(|_| corrupted("bone offset is negative"))?;
         let count = self
             .header_1
             .bone_count
             .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "bone count is negative",
-            })?;
-        let bones = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "bones out of bounds or misaligned",
-            })?
-            .0
-            .into_slice();
+            .map_err(|_| corrupted("bone count is negative"))?;
+        let bones = parse_slice(self.bytes, offset, count)
+            .ok_or_else(|| corrupted("bones out of bounds or misaligned"))?;
 
         Ok(BonesRef {
             bones,
@@ -774,33 +750,19 @@ impl<'a> HeaderRef<'a> {
     }
 
     fn textures(&self) -> Result<TexturesRef<'a>> {
-        let offset: usize =
-            self.header_1
-                .texture_offset
-                .try_into()
-                .map_err(|_| Error::Corrupted {
-                    ty: FileType::Mdl,
-                    error: "texture offset is negative",
-                })?;
+        let offset: usize = self
+            .header_1
+            .texture_offset
+            .try_into()
+            .map_err(|_| corrupted("texture offset is negative"))?;
         let count = self
             .header_1
             .texture_count
             .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "texture count is negative",
-            })?;
+            .map_err(|_| corrupted("texture count is negative"))?;
 
-        let textures = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "textures out of bounds or misaligned",
-            })?
-            .0
-            .into_slice();
+        let textures = parse_slice(self.bytes, offset, count)
+            .ok_or_else(|| corrupted("textures out of bounds or misaligned"))?;
 
         Ok(TexturesRef {
             textures,
@@ -827,54 +789,36 @@ impl<'a> HeaderRef<'a> {
             .header_1
             .texture_dir_offset
             .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "texture paths offset is negative",
-            })?;
+            .map_err(|_| corrupted("texture paths offset is negative"))?;
         let count = self
             .header_1
             .texture_dir_count
             .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "texture paths count is negative",
-            })?;
+            .map_err(|_| corrupted("texture paths count is negative"))?;
 
-        let path_offsets: &[i32] = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "texture paths out of bounds or misaligned",
-            })?
-            .0
-            .into_slice();
+        let path_offsets: &[i32] = parse_slice(self.bytes, offset, count)
+            .ok_or_else(|| corrupted("texture paths out of bounds or misaligned"))?;
 
         path_offsets
             .iter()
             .map(|&offset| {
-                let offset = offset.try_into().map_err(|_| Error::Corrupted {
-                    ty: FileType::Mdl,
-                    error: "a texture path offset is negative",
-                })?;
+                let offset = offset
+                    .try_into()
+                    .map_err(|_| corrupted("a texture path offset is negative"))?;
 
                 if offset == 0 {
                     Ok("")
                 } else {
-                    let bytes = self.bytes.get(offset..).ok_or(Error::Corrupted {
-                        ty: FileType::Mdl,
-                        error: "a texture path is out of bounds",
-                    })?;
+                    let bytes = self
+                        .bytes
+                        .get(offset..)
+                        .ok_or_else(|| corrupted("a texture path is out of bounds"))?;
 
-                    str::from_utf8(null_terminated_prefix(bytes).ok_or(Error::Corrupted {
-                        ty: FileType::Mdl,
-                        error: "eof reading a texture path",
-                    })?)
-                    .map_err(|_| Error::Corrupted {
-                        ty: FileType::Mdl,
-                        error: "a texture path is not valid utf8",
-                    })
+                    str::from_utf8(
+                        null_terminated_prefix(bytes)
+                            .ok_or_else(|| corrupted("eof reading a texture path"))?,
+                    )
+                    .map_err(|_| corrupted("a texture path is not valid utf8"))
                 }
             })
             .try_collect()
@@ -885,29 +829,15 @@ impl<'a> HeaderRef<'a> {
             .header_1
             .body_part_offset
             .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "body part offset is negative",
-            })?;
+            .map_err(|_| corrupted("body part offset is negative"))?;
         let count = self
             .header_1
             .body_part_count
             .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "body part count is negative",
-            })?;
+            .map_err(|_| corrupted("body part count is negative"))?;
 
-        let body_parts = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "body parts out of bounds or misaligned",
-            })?
-            .0
-            .into_slice();
+        let body_parts = parse_slice(self.bytes, offset, count)
+            .ok_or_else(|| corrupted("body parts out of bounds or misaligned"))?;
 
         Ok(BodyPartsRef {
             body_parts,
@@ -928,6 +858,44 @@ impl<'a> HeaderRef<'a> {
                 body_part,
                 offset: body_parts.offset + i * size_of::<BodyPart>(),
                 bytes: body_parts.bytes,
+            }))
+    }
+
+    fn animation_descs(&self) -> Result<AnimationDescsRef<'a>> {
+        let offset: usize = self
+            .header_1
+            .local_anim_offset
+            .try_into()
+            .map_err(|_| corrupted("local animation offset is negative"))?;
+        let count = self
+            .header_1
+            .local_anim_count
+            .try_into()
+            .map_err(|_| corrupted("local animation count is negative"))?;
+        let animation_descs = parse_slice(self.bytes, offset, count)
+            .ok_or_else(|| corrupted("local animations out of bounds or misaligned"))?;
+
+        let bones = self.bones()?;
+
+        Ok(AnimationDescsRef {
+            animation_descs,
+            offset,
+            bones: bones.bones,
+            bytes: self.bytes,
+        })
+    }
+
+    pub fn iter_animation_descs(&self) -> Result<impl Iterator<Item = AnimationDescRef<'a>>> {
+        let animation_descs = self.animation_descs()?;
+        Ok(animation_descs
+            .animation_descs
+            .iter()
+            .enumerate()
+            .map(move |(i, animation_desc)| AnimationDescRef {
+                animation_desc,
+                offset: animation_descs.offset + i * size_of::<AnimationDesc>(),
+                bones: animation_descs.bones,
+                bytes: animation_descs.bytes,
             }))
     }
 }
@@ -974,19 +942,14 @@ impl<'a> BoneRef<'a> {
     pub fn name(&self) -> Result<&'a str> {
         let offset = self.offset as isize + self.bone.name_offset as isize;
         str::from_utf8(
-            null_terminated_prefix(self.bytes.get(offset as usize..).ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "bone name out of bounds",
-            })?)
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "eof reading bone name",
-            })?,
+            null_terminated_prefix(
+                self.bytes
+                    .get(offset as usize..)
+                    .ok_or_else(|| corrupted("bone name out of bounds"))?,
+            )
+            .ok_or_else(|| corrupted("eof reading bone name"))?,
         )
-        .map_err(|_| Error::Corrupted {
-            ty: FileType::Mdl,
-            error: "bone name is not valid utf8",
-        })
+        .map_err(|_| corrupted("bone name is not valid utf8"))
     }
 
     pub fn surface_prop(&self) -> Result<Option<&'a str>> {
@@ -995,19 +958,14 @@ impl<'a> BoneRef<'a> {
         }
         let offset = self.offset as isize + self.bone.surface_prop_name_offset as isize;
         str::from_utf8(
-            null_terminated_prefix(self.bytes.get(offset as usize..).ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "bone surface prop out of bounds",
-            })?)
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "eof reading bone surface prop",
-            })?,
+            null_terminated_prefix(
+                self.bytes
+                    .get(offset as usize..)
+                    .ok_or_else(|| corrupted("bone surface prop out of bounds"))?,
+            )
+            .ok_or_else(|| corrupted("eof reading bone surface prop"))?,
         )
-        .map_err(|_| Error::Corrupted {
-            ty: FileType::Mdl,
-            error: "bone surface prop is not valid utf8",
-        })
+        .map_err(|_| corrupted("bone surface prop is not valid utf8"))
         .map(Some)
     }
 }
@@ -1038,19 +996,14 @@ impl<'a> TextureRef<'a> {
     pub fn name(&self) -> Result<&'a str> {
         let offset = self.offset as isize + self.texture.name_offset as isize;
         str::from_utf8(
-            null_terminated_prefix(self.bytes.get(offset as usize..).ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "texture name out of bounds",
-            })?)
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "eof reading texture name",
-            })?,
+            null_terminated_prefix(
+                self.bytes
+                    .get(offset as usize..)
+                    .ok_or_else(|| corrupted("texture name out of bounds"))?,
+            )
+            .ok_or_else(|| corrupted("eof reading texture name"))?,
         )
-        .map_err(|_| Error::Corrupted {
-            ty: FileType::Mdl,
-            error: "texture name is not valid utf8",
-        })
+        .map_err(|_| corrupted("texture name is not valid utf8"))
     }
 }
 
@@ -1075,21 +1028,10 @@ impl<'a> BodyPartRef<'a> {
             .body_part
             .model_count
             .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "body part models count is negative",
-            })?;
+            .map_err(|_| corrupted("body part models count is negative"))?;
 
-        let models = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "body part models out of bounds or misaligned",
-            })?
-            .0
-            .into_slice();
+        let models = parse_slice(self.bytes, offset, count)
+            .ok_or_else(|| corrupted("body part models out of bounds or misaligned"))?;
 
         Ok(ModelsRef {
             models,
@@ -1115,19 +1057,14 @@ impl<'a> BodyPartRef<'a> {
         let offset = (self.offset as isize + self.body_part.name_offset as isize) as usize;
 
         str::from_utf8(
-            null_terminated_prefix(self.bytes.get(offset..).ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "body part name offset out of bounds",
-            })?)
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "eof reading body part name",
-            })?,
+            null_terminated_prefix(
+                self.bytes
+                    .get(offset..)
+                    .ok_or_else(|| corrupted("body part name offset out of bounds"))?,
+            )
+            .ok_or_else(|| corrupted("eof reading body part name"))?,
         )
-        .map_err(|_| Error::Corrupted {
-            ty: FileType::Mdl,
-            error: "body part name is not valid utf8",
-        })
+        .map_err(|_| corrupted("body part name is not valid utf8"))
     }
 }
 
@@ -1152,21 +1089,10 @@ impl<'a> ModelRef<'a> {
             .model
             .mesh_count
             .try_into()
-            .map_err(|_| Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "model meshes count is negative",
-            })?;
+            .map_err(|_| corrupted("model meshes count is negative"))?;
 
-        let meshes = self
-            .bytes
-            .get(offset..)
-            .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-            .ok_or(Error::Corrupted {
-                ty: FileType::Mdl,
-                error: "model meshes out of bounds or misaligned",
-            })?
-            .0
-            .into_slice();
+        let meshes = parse_slice(self.bytes, offset, count)
+            .ok_or_else(|| corrupted("model meshes out of bounds or misaligned"))?;
 
         Ok(MeshesRef {
             meshes,
@@ -1181,10 +1107,10 @@ impl<'a> ModelRef<'a> {
     }
 
     pub fn name(&self) -> Result<&'a str> {
-        str::from_utf8(&self.model.name).map_err(|_| Error::Corrupted {
-            ty: FileType::Mdl,
-            error: "model name is not valid utf8",
-        })
+        str::from_utf8(
+            null_terminated_prefix(&self.model.name).expect("model name cannot be empty"),
+        )
+        .map_err(|_| corrupted("model name is not valid utf8"))
     }
 }
 
@@ -1208,6 +1134,955 @@ pub struct MeshRef<'a> {
     mesh: &'a Mesh,
     offset: usize,
     bytes: &'a [u8],
+}
+
+bitflags! {
+    pub struct AnimationDescFlags: i32 {
+        const LOOPING = 0x0001;
+        const SNAP = 0x0002;
+        const DELTA = 0x0004;
+        const AUTOPLAY = 0x0008;
+        const POST = 0x0010;
+        const ALLZEROS = 0x0020;
+        const FRAMEANIM = 0x0040;
+        const CYCLEPOSE = 0x0080;
+        const REALTIME = 0x0100;
+        const LOCAL = 0x0200;
+        const HIDDEN = 0x0400;
+        const OVERRIDE = 0x0800;
+        const ACTIVITY = 0x1000;
+        const EVENT = 0x2000;
+        const WORLD = 0x4000;
+        const NOFORCELOOP = 0x8000;
+        const EVENT_CLIENT = 0x10000;
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AnimationDescsRef<'a> {
+    animation_descs: &'a [AnimationDesc],
+    offset: usize,
+    bones: &'a [Bone],
+    bytes: &'a [u8],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AnimationDescRef<'a> {
+    animation_desc: &'a AnimationDesc,
+    offset: usize,
+    bones: &'a [Bone],
+    bytes: &'a [u8],
+}
+
+impl<'a> AnimationDescRef<'a> {
+    pub fn name(&self) -> Result<&'a str> {
+        let offset = self.offset as isize + self.animation_desc.name_offset as isize;
+        str::from_utf8(
+            null_terminated_prefix(
+                self.bytes
+                    .get(offset as usize..)
+                    .ok_or_else(|| corrupted("animation name out of bounds"))?,
+            )
+            .ok_or_else(|| corrupted("eof reading animation name"))?,
+        )
+        .map_err(|_| corrupted("animation name is not valid utf8"))
+    }
+
+    pub fn flags(&self) -> AnimationDescFlags {
+        AnimationDescFlags::from_bits_truncate(self.animation_desc.flags)
+    }
+
+    fn movements(&self) -> Result<MovementsRef<'a>> {
+        let offset = (self.offset as isize + self.animation_desc.movement_offset as isize) as usize;
+        let count = self
+            .animation_desc
+            .movement_count
+            .try_into()
+            .map_err(|_| corrupted("animation movements count is negative"))?;
+
+        let movements = parse_slice(self.bytes, offset, count)
+            .ok_or_else(|| corrupted("animation movements out of bounds or misaligned"))?;
+
+        Ok(MovementsRef {
+            movements,
+            offset,
+            bytes: self.bytes,
+        })
+    }
+
+    pub fn iter_movements(&self) -> Result<impl Iterator<Item = MovementRef<'a>>> {
+        let movements = self.movements()?;
+        Ok(movements
+            .movements
+            .iter()
+            .enumerate()
+            .map(move |(i, movement)| MovementRef {
+                movement,
+                offset: movements.offset + i * size_of::<Movement>(),
+                bytes: movements.bytes,
+            }))
+    }
+
+    fn animation_sections(&self) -> Result<Option<AnimationSectionsRef<'a>>> {
+        if self.animation_desc.section_offset == 0 || self.animation_desc.section_frame_count < 0 {
+            return Ok(None);
+        }
+
+        let offset = (self.offset as isize + self.animation_desc.section_offset as isize) as usize;
+        let count = (self.animation_desc.frame_count / self.animation_desc.section_frame_count + 2)
+            .try_into()
+            .map_err(|_| corrupted("calculated animation section count is negative"))?;
+
+        let animation_sections: &[AnimationSection] = parse_slice(self.bytes, offset, count)
+            .ok_or_else(|| corrupted("animation sections out of bounds or misaligned"))?;
+
+        let first_section_anim_offset = match animation_sections.get(0) {
+            None => 0,
+            Some(section) => section.anim_offset as isize,
+        };
+        let anim_offset = (self.offset as isize + self.animation_desc.anim_offset as isize
+            - first_section_anim_offset) as usize;
+
+        Ok(Some(AnimationSectionsRef {
+            animation_sections,
+            offset,
+            anim_offset,
+            bones: self.bones,
+            bytes: self.bytes,
+        }))
+    }
+
+    pub fn iter_animation_sections(
+        &self,
+    ) -> Result<Option<impl Iterator<Item = AnimationSectionRef<'a>>>> {
+        let sections = match self.animation_sections() {
+            Ok(Some(sections)) => sections,
+            Ok(None) => return Ok(None),
+            Err(err) => return Err(err),
+        };
+        let sections_len = sections.animation_sections.len();
+
+        let section_frame_count: usize = self
+            .animation_desc
+            .section_frame_count
+            .try_into()
+            .map_err(|_| corrupted("animation section frame count is negative"))?;
+
+        let frame_count: usize = self
+            .animation_desc
+            .frame_count
+            .try_into()
+            .map_err(|_| corrupted("animation frame count is negative"))?;
+
+        Ok(Some(
+            sections
+                .animation_sections
+                .iter()
+                .enumerate()
+                .map(move |(i, animation_section)| AnimationSectionRef {
+                    anim_offset: (sections.anim_offset as isize
+                        + animation_section.anim_offset as isize)
+                        as usize,
+                    anim_block: animation_section.anim_block,
+                    bones: sections.bones,
+                    // check for last section (there are apparently 2 last sections)
+                    frame_count: if i < sections_len - 2 {
+                        section_frame_count
+                    } else {
+                        frame_count - (sections_len - 2) * section_frame_count
+                    },
+                    // I have no idea but this is what Crowbar does
+                    last_section: i >= sections_len - 2
+                        || frame_count == (i + 1) * section_frame_count,
+                    bytes: sections.bytes,
+                })
+                .filter(|section| section.anim_block == 0),
+        ))
+    }
+
+    pub fn animation_section(&self) -> Result<Option<AnimationSectionRef<'a>>> {
+        if self.animation_desc.anim_block != 0 {
+            return Ok(None);
+        }
+
+        let anim_offset =
+            (self.offset as isize + self.animation_desc.anim_offset as isize) as usize;
+        let frame_count: usize = self
+            .animation_desc
+            .frame_count
+            .try_into()
+            .map_err(|_| corrupted("animation frame count is negative"))?;
+
+        Ok(Some(AnimationSectionRef {
+            anim_offset,
+            anim_block: 0,
+            bones: self.bones,
+            frame_count,
+            last_section: true,
+            bytes: self.bytes,
+        }))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MovementsRef<'a> {
+    movements: &'a [Movement],
+    offset: usize,
+    bytes: &'a [u8],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MovementRef<'a> {
+    movement: &'a Movement,
+    offset: usize,
+    bytes: &'a [u8],
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AnimationSectionsRef<'a> {
+    animation_sections: &'a [AnimationSection],
+    offset: usize,
+    anim_offset: usize,
+    bones: &'a [Bone],
+    bytes: &'a [u8],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AnimationSectionRef<'a> {
+    anim_offset: usize,
+    anim_block: i32,
+    bones: &'a [Bone],
+    frame_count: usize,
+    last_section: bool,
+    bytes: &'a [u8],
+}
+
+impl<'a> AnimationSectionRef<'a> {
+    pub fn frame_animation(&self) -> Result<FrameAnimationRef<'a>> {
+        let offset = self.anim_offset;
+
+        let frame_animation = parse(self.bytes, offset).ok_or_else(|| {
+            corrupted("animation section frame animation out of bounds or misaligned")
+        })?;
+
+        Ok(FrameAnimationRef {
+            frame_animation,
+            offset,
+            bone_count: self.bones.len(),
+            frame_count: self.frame_count,
+            last_section: self.last_section,
+            bytes: self.bytes,
+        })
+    }
+
+    pub fn iter_bone_animations(&self) -> impl Iterator<Item = Result<AnimationRef<'a>>> {
+        IterBoneAnimations {
+            offset: self.anim_offset,
+            bones: self.bones,
+            frame_count: self.frame_count,
+            finished: false,
+            bytes: self.bytes,
+        }
+    }
+}
+
+struct IterBoneAnimations<'a> {
+    offset: usize,
+    bones: &'a [Bone],
+    frame_count: usize,
+    finished: bool,
+    bytes: &'a [u8],
+}
+
+impl<'a> Iterator for IterBoneAnimations<'a> {
+    type Item = Result<AnimationRef<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+
+        let animation: &Animation = match parse(self.bytes, self.offset) {
+            Some(animation) => animation,
+            None => {
+                return Some(Err(corrupted(
+                    "animation section animation out of bounds or misaligned",
+                )))
+            }
+        };
+
+        if animation.bone_index == 255 || animation.bone_index as usize >= self.bones.len() {
+            self.finished = true;
+            return None;
+        }
+
+        let animation_ref = AnimationRef {
+            animation,
+            offset: self.offset,
+            bone: &self.bones[animation.bone_index as usize],
+            frame_count: self.frame_count,
+            bytes: self.bytes,
+        };
+
+        let next_offset: usize = match animation.next_offset.try_into() {
+            Ok(offset) => offset,
+            Err(_) => {
+                return Some(Err(corrupted(
+                    "animation section animation next offset is negative",
+                )))
+            }
+        };
+
+        if next_offset == 0 {
+            self.finished = true;
+        } else {
+            self.offset += next_offset;
+        }
+
+        Some(Ok(animation_ref))
+    }
+}
+
+bitflags! {
+    struct BoneFlags: u8 {
+        const RAWPOS = 0x01;
+        const RAWROT = 0x02;
+        const ANIMPOS = 0x04;
+        const ANIMROT = 0x08;
+        const FULLANIMPOS = 0x10;
+        const CONST_ROT2 = 0x40;
+        const ANIM_ROT2 = 0x80;
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Quaternion {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub w: f64,
+}
+
+impl Quaternion {
+    pub fn from_bytes_48(bytes: [u8; 6]) -> Self {
+        let a = (u16::from(bytes[1] & 0x7f) << 8) | u16::from(bytes[0]);
+        let b = (u16::from(bytes[3] & 0x7f) << 8) | u16::from(bytes[2]);
+        let c = (u16::from(bytes[5] & 0x7f) << 8) | u16::from(bytes[4]);
+
+        let missing_component_index = ((bytes[1] & 0x80) >> 6) | ((bytes[3] & 0x80) >> 7);
+        let missing_component_sign = if bytes[5] & 0x80 > 0 { -1.0 } else { 1.0 };
+
+        let a = (f64::from(a) - 16384.0) / 23168.0;
+        let b = (f64::from(b) - 16384.0) / 23168.0;
+        let c = (f64::from(c) - 16384.0) / 23168.0;
+
+        let missing_component = (1.0 - a * a - b * b - c * c).sqrt() * missing_component_sign;
+
+        match missing_component_index {
+            1 => Self {
+                x: missing_component,
+                y: a,
+                z: b,
+                w: c,
+            },
+            2 => Self {
+                x: c,
+                y: missing_component,
+                z: a,
+                w: b,
+            },
+            3 => Self {
+                x: b,
+                y: c,
+                z: missing_component,
+                w: a,
+            },
+            0 => Self {
+                x: a,
+                y: b,
+                z: c,
+                w: missing_component,
+            },
+            4.. => unreachable!(
+                "missing component index has only 2 nonzero bits, so maximum value is 3"
+            ),
+        }
+    }
+
+    pub fn from_bytes_64(bytes: [u8; 8]) -> Self {
+        let x = u32::from(bytes[0]) | u32::from(bytes[1]) << 8 | u32::from(bytes[2] & 0x1f) << 16;
+        let x = (f64::from(x) - 1_048_576.0) / 1_048_576.5;
+
+        let y = u32::from(bytes[2] & 0xe0) >> 5
+            | u32::from(bytes[3]) << 3
+            | u32::from(bytes[4]) << 11
+            | u32::from(bytes[5] & 0x3) << 19;
+        let y = (f64::from(y) - 1_048_576.0) / 1_048_576.5;
+
+        let z = u32::from(bytes[5] & 0xfc) >> 2
+            | u32::from(bytes[6]) << 6
+            | u32::from(bytes[7] & 0x7f) << 14;
+        let z = (f64::from(z) - 1_048_576.0) / 1_048_576.5;
+
+        let w_sign = if bytes[7] & 0x80 > 0 { -1.0 } else { 1.0 };
+        let w = (1.0 - x * x - y * y - z * z).sqrt() * w_sign;
+
+        Self { x, y, z, w }
+    }
+
+    pub fn from_u16s(u16s: [u16; 3]) -> Self {
+        let x = (f64::from(u16s[0]) - 32768.0) / 32768.0;
+        let y = (f64::from(u16s[1]) - 32768.0) / 32768.0;
+        let z = (f64::from(u16s[2] & 0x7fff) - 16384.0) / 16384.0;
+
+        let w_sign = if u16s[2] & 0x8000 > 0 { -1.0 } else { 1.0 };
+
+        let w = (1.0 - x * x - y * y - z * z).sqrt() * w_sign;
+
+        Self { x, y, z, w }
+    }
+}
+
+fn f16_to_f64(f16: u16) -> f64 {
+    let mantissa = u32::from(f16 & 0x3ff);
+    let biased_exponent = u32::from((f16 & 0x7c00) >> 10);
+    let sign = u32::from((f16 & 0x8000) >> 15);
+
+    let float_sign = if sign == 1 { -1.0 } else { 1.0 };
+
+    if biased_exponent == 31 {
+        if mantissa == 0 {
+            // Infinity
+            return 65504.0 * float_sign;
+        }
+        // NaN
+        return 0.0;
+    }
+
+    if biased_exponent == 0 && mantissa != 0 {
+        let float_mantissa = f64::from(mantissa) / 1024.0;
+        float_sign * float_mantissa / 16384.0
+    } else {
+        f64::from(f32::from_bits(
+            sign << 31 | (biased_exponent + 127 - 15) << 23 | mantissa << (23 - 10),
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Vector {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+impl Vector {
+    pub fn from_u16s(u16s: [u16; 3]) -> Self {
+        Self {
+            x: f16_to_f64(u16s[0]),
+            y: f16_to_f64(u16s[1]),
+            z: f16_to_f64(u16s[2]),
+        }
+    }
+}
+
+/// Rotation animation data of a bone.
+#[derive(Debug, Clone)]
+pub enum AnimationRotationData {
+    /// The rotation of the bone stays constant during the animation.
+    Constant(Quaternion),
+    /// The rotation of the bone is animated. Contains one rotation quaternion for each frame.
+    Animated(Vec<Quaternion>),
+    /// The rotation of the bone is animated. Contains one rotation euler for each frame.
+    AnimatedEuler(Vec<Vector>),
+    /// The animation has no data of the rotation of the bone.
+    None,
+}
+
+impl Default for AnimationRotationData {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+/// Position animation data of a bone.
+#[derive(Debug, Clone)]
+pub enum AnimationPositionData {
+    /// The position of the bone stays constant during the animation.
+    Constant(Vector),
+    /// The position of the bone is animated. Contains one position for each frame.
+    Animated(Vec<Vector>),
+    /// The animation has no data of the position of the bone.
+    None,
+}
+
+impl Default for AnimationPositionData {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+/// Rotation and position animation data of a bone.
+#[derive(Debug, Clone, Default)]
+pub struct BoneAnimationData {
+    pub rotation: AnimationRotationData,
+    pub position: AnimationPositionData,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FrameAnimationRef<'a> {
+    frame_animation: &'a FrameAnimation,
+    offset: usize,
+    bone_count: usize,
+    frame_count: usize,
+    last_section: bool,
+    bytes: &'a [u8],
+}
+
+impl<'a> FrameAnimationRef<'a> {
+    fn bone_flags(&self) -> Result<&'a [u8]> {
+        let offset = self.offset + size_of::<FrameAnimation>();
+
+        self.bytes
+            .get(offset..offset + self.bone_count)
+            .ok_or_else(|| corrupted("frame animation bone flags out of bounds"))
+    }
+
+    pub fn animation_data(&self) -> Result<Vec<BoneAnimationData>> {
+        let bone_flags = self.bone_flags()?;
+
+        let mut data = vec![BoneAnimationData::default(); bone_flags.len()];
+
+        self.read_bone_constants(bone_flags, &mut data)?;
+        self.read_bone_frames(bone_flags, &mut data)?;
+
+        Ok(data)
+    }
+
+    fn read_bone_constants(&self, bone_flags: &[u8], data: &mut [BoneAnimationData]) -> Result<()> {
+        if self.frame_animation.constants_offset == 0 {
+            return Ok(());
+        }
+
+        let offset =
+            (self.offset as isize + self.frame_animation.constants_offset as isize) as usize;
+        let mut bytes = self
+            .bytes
+            .get(offset..)
+            .ok_or_else(|| corrupted("frame animation bone constants out of bounds"))?;
+
+        for (&flags, data) in bone_flags.iter().zip(data) {
+            let flags = BoneFlags::from_bits_truncate(flags);
+
+            if flags.contains(BoneFlags::CONST_ROT2) {
+                let value_bytes = bytes
+                    .get(..6)
+                    .ok_or_else(|| corrupted("frame animation bone constants out of bounds"))?
+                    .try_into()
+                    .expect("slice must have correct length");
+                data.rotation =
+                    AnimationRotationData::Constant(Quaternion::from_bytes_48(value_bytes));
+
+                bytes = &bytes[6..];
+            }
+
+            if flags.contains(BoneFlags::RAWROT) {
+                let u16s = parse_slice_mut(&mut bytes, 3).ok_or_else(|| {
+                    corrupted("frame animation bone constants out of bounds or misaligned")
+                })?;
+
+                data.rotation = AnimationRotationData::Constant(Quaternion::from_u16s(
+                    u16s.try_into().expect("slice must have correct length"),
+                ));
+            }
+
+            if flags.contains(BoneFlags::RAWPOS) {
+                let u16s = parse_slice_mut(&mut bytes, 3).ok_or_else(|| {
+                    corrupted("frame animation bone constants out of bounds or misaligned")
+                })?;
+
+                data.position = AnimationPositionData::Constant(Vector::from_u16s(
+                    u16s.try_into().expect("slice must have correct length"),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn read_bone_frames(&self, bone_flags: &[u8], data: &mut [BoneAnimationData]) -> Result<()> {
+        if self.frame_animation.frame_offset == 0 {
+            return Ok(());
+        }
+
+        let offset = (self.offset as isize + self.frame_animation.frame_offset as isize) as usize;
+
+        let mut bytes = self
+            .bytes
+            .get(offset..)
+            .ok_or_else(|| corrupted("frame animation bone frames out of bounds"))?;
+
+        let frame_count = if self.last_section {
+            self.frame_count
+        } else {
+            self.frame_count + 1
+        };
+
+        for (&flags, data) in bone_flags.iter().zip(&mut *data) {
+            let flags = BoneFlags::from_bits_truncate(flags);
+
+            if flags.contains(BoneFlags::ANIM_ROT2) || flags.contains(BoneFlags::ANIMROT) {
+                data.rotation =
+                    AnimationRotationData::Animated(Vec::with_capacity(self.frame_count));
+            }
+
+            if flags.contains(BoneFlags::ANIMPOS) || flags.contains(BoneFlags::FULLANIMPOS) {
+                data.position =
+                    AnimationPositionData::Animated(Vec::with_capacity(self.frame_count));
+            }
+        }
+
+        for _ in 0..frame_count {
+            for (&flags, data) in bone_flags.iter().zip(&mut *data) {
+                let flags = BoneFlags::from_bits_truncate(flags);
+
+                if flags.contains(BoneFlags::ANIM_ROT2) {
+                    let value_bytes = bytes
+                        .get(..6)
+                        .ok_or_else(|| corrupted("frame animation bone frames out of bounds"))?
+                        .try_into()
+                        .expect("slice must have correct length");
+
+                    if let AnimationRotationData::Animated(frames) = &mut data.rotation {
+                        frames.push(Quaternion::from_bytes_48(value_bytes));
+                    } else {
+                        unreachable!();
+                    }
+
+                    bytes = &bytes[6..];
+                }
+
+                if flags.contains(BoneFlags::ANIMROT) {
+                    let u16s = parse_slice_mut(&mut bytes, 3).ok_or_else(|| {
+                        corrupted("frame animation bone frames out of bounds or misaligned")
+                    })?;
+
+                    if let AnimationRotationData::Animated(frames) = &mut data.rotation {
+                        frames.push(Quaternion::from_u16s(
+                            u16s.try_into().expect("slice must have correct length"),
+                        ));
+                    } else {
+                        unreachable!();
+                    }
+                }
+
+                if flags.contains(BoneFlags::ANIMPOS) {
+                    let u16s = parse_slice_mut(&mut bytes, 3).ok_or_else(|| {
+                        corrupted("frame animation bone frames out of bounds or misaligned")
+                    })?;
+
+                    if let AnimationPositionData::Animated(frames) = &mut data.position {
+                        frames.push(Vector::from_u16s(
+                            u16s.try_into().expect("slice must have correct length"),
+                        ));
+                    } else {
+                        unreachable!();
+                    }
+                }
+
+                if flags.contains(BoneFlags::FULLANIMPOS) {
+                    let f32s: &[f32] = parse_slice_mut(&mut bytes, 3).ok_or_else(|| {
+                        corrupted("frame animation bone frames out of bounds or misaligned")
+                    })?;
+
+                    if let AnimationPositionData::Animated(frames) = &mut data.position {
+                        frames.push(Vector {
+                            x: f64::from(f32s[0]),
+                            y: f64::from(f32s[1]),
+                            z: f64::from(f32s[2]),
+                        });
+                    } else {
+                        unreachable!();
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+bitflags! {
+    struct AnimationFlags: u8 {
+        const RAWPOS = 0x01;
+        const RAWROT = 0x02;
+        const ANIMPOS = 0x04;
+        const ANIMROT = 0x08;
+        const DELTA = 0x10;
+        const RAWROT2 = 0x20;
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+struct AnimationValue(i16);
+
+impl AnimationValue {
+    fn from_bytes(bytes: [u8; 2]) -> Self {
+        Self(i16::from_ne_bytes(bytes))
+    }
+
+    fn valid(self) -> u8 {
+        self.0.to_ne_bytes()[0]
+    }
+
+    fn total(self) -> u8 {
+        self.0.to_ne_bytes()[1]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AnimationRef<'a> {
+    animation: &'a Animation,
+    offset: usize,
+    frame_count: usize,
+    bone: &'a Bone,
+    bytes: &'a [u8],
+}
+
+impl<'a> AnimationRef<'a> {
+    pub fn animation_data(&self) -> Result<BoneAnimationData> {
+        let mut bytes = self
+            .bytes
+            .get(self.offset + size_of::<Animation>()..)
+            .expect("cannot fail: animation already parsed at offset");
+
+        let flags = AnimationFlags::from_bits_truncate(self.animation.flags);
+
+        let mut data = BoneAnimationData::default();
+
+        Self::read_animation_constants(flags, &mut bytes, &mut data)?;
+        self.read_animation_frames(flags, bytes, &mut data)?;
+
+        Ok(data)
+    }
+
+    fn read_animation_constants(
+        flags: AnimationFlags,
+        bytes: &mut &[u8],
+        data: &mut BoneAnimationData,
+    ) -> Result<()> {
+        if flags.contains(AnimationFlags::RAWROT2) {
+            let value_bytes = bytes
+                .get(..8)
+                .ok_or_else(|| corrupted("animation constants out of bounds"))?
+                .try_into()
+                .expect("slice must have correct length");
+            data.rotation = AnimationRotationData::Constant(Quaternion::from_bytes_64(value_bytes));
+
+            *bytes = &bytes[8..];
+        }
+
+        if flags.contains(AnimationFlags::RAWROT) {
+            let u16s = parse_slice_mut(bytes, 3)
+                .ok_or_else(|| corrupted("animation constants out of bounds"))?;
+
+            data.rotation = AnimationRotationData::Constant(Quaternion::from_u16s(
+                u16s.try_into().expect("slice must have correct length"),
+            ));
+        }
+
+        if flags.contains(AnimationFlags::RAWPOS) {
+            let u16s = parse_slice_mut(bytes, 3)
+                .ok_or_else(|| corrupted("animation constants out of bounds"))?;
+
+            data.position = AnimationPositionData::Constant(Vector::from_u16s(
+                u16s.try_into().expect("slice must have correct length"),
+            ));
+        };
+
+        Ok(())
+    }
+
+    fn read_animation_frames(
+        &self,
+        flags: AnimationFlags,
+        mut bytes: &[u8],
+        data: &mut BoneAnimationData,
+    ) -> Result<()> {
+        if flags.contains(AnimationFlags::ANIMROT) {
+            let reference_bytes = bytes;
+
+            let x_offset: i16 = *parse_mut(&mut bytes)
+                .ok_or_else(|| corrupted("animation offsets out of bounds"))?;
+
+            let y_offset: i16 = *parse_mut(&mut bytes)
+                .ok_or_else(|| corrupted("animation offsets out of bounds"))?;
+
+            let z_offset: i16 = *parse_mut(&mut bytes)
+                .ok_or_else(|| corrupted("animation offsets out of bounds"))?;
+
+            let mut frames = vec![Vector::default(); self.frame_count];
+
+            if x_offset > 0 {
+                let x_values = self.read_animation_values(
+                    reference_bytes
+                        .get(x_offset as usize..)
+                        .ok_or_else(|| corrupted("animation rotation x values out of bounds"))?,
+                )?;
+
+                for (i, frame) in frames.iter_mut().enumerate() {
+                    frame.x = extract_animation_value(i, &x_values, self.bone.rotation_scale[0]);
+                }
+            }
+
+            if y_offset > 0 {
+                let y_values = self.read_animation_values(
+                    reference_bytes
+                        .get(y_offset as usize..)
+                        .ok_or_else(|| corrupted("animation rotation y values out of bounds"))?,
+                )?;
+
+                for (i, frame) in frames.iter_mut().enumerate() {
+                    frame.y = extract_animation_value(i, &y_values, self.bone.rotation_scale[1]);
+                }
+            }
+
+            if z_offset > 0 {
+                let z_values = self.read_animation_values(
+                    reference_bytes
+                        .get(z_offset as usize..)
+                        .ok_or_else(|| corrupted("animation rotation z values out of bounds"))?,
+                )?;
+
+                for (i, frame) in frames.iter_mut().enumerate() {
+                    frame.z = extract_animation_value(i, &z_values, self.bone.rotation_scale[2]);
+                }
+            }
+
+            data.rotation = AnimationRotationData::AnimatedEuler(frames);
+        }
+
+        if flags.contains(AnimationFlags::ANIMPOS) {
+            let reference_bytes = bytes;
+
+            let x_offset: i16 = *parse_mut(&mut bytes)
+                .ok_or_else(|| corrupted("animation offsets out of bounds"))?;
+
+            let y_offset: i16 = *parse_mut(&mut bytes)
+                .ok_or_else(|| corrupted("animation offsets out of bounds"))?;
+
+            let z_offset: i16 = *parse_mut(&mut bytes)
+                .ok_or_else(|| corrupted("animation offsets out of bounds"))?;
+
+            let mut frames = vec![Vector::default(); self.frame_count];
+
+            if x_offset > 0 {
+                let x_values = self.read_animation_values(
+                    reference_bytes
+                        .get(x_offset as usize..)
+                        .ok_or_else(|| corrupted("animation position x values out of bounds"))?,
+                )?;
+
+                for (i, frame) in frames.iter_mut().enumerate() {
+                    frame.x = extract_animation_value(i, &x_values, self.bone.position_scale[0]);
+                }
+            }
+
+            if y_offset > 0 {
+                let y_values = self.read_animation_values(
+                    reference_bytes
+                        .get(y_offset as usize..)
+                        .ok_or_else(|| corrupted("animation position y values out of bounds"))?,
+                )?;
+
+                for (i, frame) in frames.iter_mut().enumerate() {
+                    frame.y = extract_animation_value(i, &y_values, self.bone.position_scale[1]);
+                }
+            }
+
+            if z_offset > 0 {
+                let z_values = self.read_animation_values(
+                    reference_bytes
+                        .get(z_offset as usize..)
+                        .ok_or_else(|| corrupted("animation position z values out of bounds"))?,
+                )?;
+
+                for (i, frame) in frames.iter_mut().enumerate() {
+                    frame.z = extract_animation_value(i, &z_values, self.bone.position_scale[2]);
+                }
+            }
+
+            data.position = AnimationPositionData::Animated(frames);
+        };
+
+        Ok(())
+    }
+
+    fn read_animation_values(&self, mut bytes: &[u8]) -> Result<Vec<AnimationValue>> {
+        let mut values = Vec::new();
+        let mut total = 0;
+
+        while total < self.frame_count {
+            let value = read_animation_value(&mut bytes)?;
+
+            if value.total() == 0 {
+                break;
+            }
+
+            total += value.total() as usize;
+
+            values.push(value);
+
+            for _ in 0..value.valid() {
+                values.push(read_animation_value(&mut bytes)?);
+            }
+        }
+
+        Ok(values)
+    }
+}
+
+fn read_animation_value(bytes: &mut &[u8]) -> Result<AnimationValue> {
+    let value_bytes = bytes
+        .get(..2)
+        .ok_or_else(|| corrupted("animation values out of bounds"))?
+        .try_into()
+        .expect("slice must have correct length");
+
+    *bytes = &bytes[2..];
+
+    Ok(AnimationValue::from_bytes(value_bytes))
+}
+
+fn extract_animation_value(frame: usize, values: &[AnimationValue], scale: f32) -> f64 {
+    let mut k = frame;
+    let mut i = 0;
+
+    loop {
+        match values.get(i) {
+            Some(v) if v.total() as usize > k => break,
+            Some(v) if v.total() == 0 => return 0.0,
+            Some(v) => {
+                k -= v.total() as usize;
+                i += v.valid() as usize + 1;
+            }
+            None => return 0.0,
+        }
+    }
+
+    values
+        .get(i)
+        .map(|&v| {
+            if v.valid() as usize > k {
+                i + k + 1
+            } else {
+                i + v.valid() as usize
+            }
+        })
+        .and_then(|i| values.get(i))
+        .map(|&v| f64::from(v.0) * f64::from(scale))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1272,5 +2147,77 @@ mod tests {
             .next()
             .map(|ext| ext.eq_ignore_ascii_case("mdl"))
             == Some(true)
+    }
+
+    #[test]
+    fn read_animated() {
+        let bytes =
+            maligned::aligned::<A4, _>(include_bytes!("../../tests/model/inferno_ceiling_fan.mdl"));
+        let mdl = Mdl {
+            bytes: bytes.to_vec(),
+        };
+
+        read_mdl(&mdl);
+    }
+
+    #[test]
+    fn read_frame_animated() {
+        let bytes =
+            maligned::aligned::<A4, _>(include_bytes!("../../tests/model/v_huntingrifle.mdl"));
+        let mdl = Mdl {
+            bytes: bytes.to_vec(),
+        };
+
+        read_mdl(&mdl);
+    }
+
+    fn read_mdl(mdl: &Mdl) {
+        mdl.check_signature().unwrap();
+        mdl.check_version().unwrap();
+        let header = mdl.header().unwrap();
+        dbg!(header.name().unwrap(),);
+        dbg!(header.flags());
+        for bone in header.iter_bones().unwrap() {
+            dbg!(bone.name().unwrap());
+            dbg!(bone.surface_prop().unwrap());
+        }
+        for texture in header.iter_textures().unwrap() {
+            dbg!(texture.name().unwrap());
+        }
+        dbg!(header.texture_paths().unwrap());
+        for body_part in header.iter_body_parts().unwrap() {
+            dbg!(body_part.name().unwrap());
+
+            for model in body_part.iter_models().unwrap() {
+                dbg!(model.name().unwrap());
+                model.meshes().unwrap();
+            }
+        }
+        for animation in header.iter_animation_descs().unwrap() {
+            dbg!(animation.name().unwrap());
+            dbg!(animation.flags());
+
+            animation.movements().unwrap();
+
+            if let Some(sections) = animation.iter_animation_sections().unwrap() {
+                for section in sections {
+                    read_animation_section(animation, section);
+                }
+            } else if let Some(section) = animation.animation_section().unwrap() {
+                read_animation_section(animation, section);
+            }
+        }
+    }
+
+    fn read_animation_section(animation: AnimationDescRef, section: AnimationSectionRef) {
+        if animation.flags().contains(AnimationDescFlags::FRAMEANIM) {
+            let frame_animation = section.frame_animation().unwrap();
+            dbg!(frame_animation.animation_data().unwrap());
+        } else {
+            for bone_anim in section.iter_bone_animations() {
+                let bone_anim = bone_anim.unwrap();
+                dbg!(bone_anim.animation_data().unwrap());
+            }
+        }
     }
 }

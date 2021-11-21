@@ -1,3 +1,4 @@
+mod binary_utils;
 mod mdl;
 mod vtx;
 mod vvd;
