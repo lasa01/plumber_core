@@ -381,14 +381,14 @@ mod tests {
                             .read()
                             .unwrap_or_else(|err| panic!("{}:\n{}", entry.path().as_str(), err));
 
-                        from_bytes(&vmt_contents).unwrap_or_else(|err| {
+                        if let Err(err) = from_bytes(&vmt_contents) {
                             panic!(
                                 "{}:\n{}\n\n{}",
                                 entry.path().as_str(),
                                 err,
                                 String::from_utf8_lossy(&vmt_contents)
-                            )
-                        });
+                            );
+                        }
                     }
                 }
                 DirEntryType::Directory => recurse(entry.read_dir()),

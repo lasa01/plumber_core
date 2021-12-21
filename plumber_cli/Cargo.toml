@@ -1,0 +1,15 @@
+[package]
+name = "plumber_cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI utilities for debugging plumber_core"
+repository = "https://github.com/lasa01/plumber_core"
+readme = "../README.md"
+keywords = ["plumber_core"]
+categories = ["command-line-utilities"]
+authors = ["Lassi Säike"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+clap = "3.0.0-beta.5"
+plumber_core = { version = "0.1.0", path = "../plumber_core" }

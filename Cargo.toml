@@ -1,5 +1,5 @@
 [workspace]
-members = ["plumber_core", "plumber_vdf", "plumber_vpk"]
+members = ["plumber_core", "plumber_vdf", "plumber_vpk", "plumber_cli"]
 
 [patch.crates-io]
 serde = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }

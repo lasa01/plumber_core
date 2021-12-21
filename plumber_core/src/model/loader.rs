@@ -1,9 +1,11 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::{Condvar, Mutex},
 };
 
-use super::{Bone, Face, Mesh, Model, Result, Vertex};
+use super::{
+    Animation, AnimationDescFlags, Bone, BoneAnimationData, Face, Mesh, Model, Result, Vertex,
+};
 
 use crate::fs::{OpenFileSystem, PathBuf};
 
@@ -14,6 +16,7 @@ pub struct LoadedModel {
     pub meshes: Vec<LoadedMesh>,
     pub materials: Vec<PathBuf>,
     pub bones: Vec<LoadedBone>,
+    pub animations: Vec<LoadedAnimation>,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +55,23 @@ impl LoadedBone {
             parent_bone_index: bone.parent_bone_index,
             position: bone.position,
             rotation: bone.rotation,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadedAnimation {
+    pub name: String,
+    pub flags: AnimationDescFlags,
+    pub data: Option<BTreeMap<usize, BoneAnimationData>>,
+}
+
+impl LoadedAnimation {
+    fn new(animation: Animation) -> Self {
+        Self {
+            name: animation.name.to_owned(),
+            flags: animation.flags,
+            data: animation.data,
         }
     }
 }
@@ -151,6 +171,17 @@ impl Loader {
 
         let bones = verified.bones()?.into_iter().map(LoadedBone::new).collect();
 
+        let animations = verified
+            .animations()?
+            .filter_map(|res| match res {
+                Ok(animation) => Some(LoadedAnimation::new(animation)),
+                Err(_err) => {
+                    // TODO: handle error
+                    None
+                }
+            })
+            .collect();
+
         let info = ModelInfo {
             static_prop: verified.is_static_prop(),
         };
@@ -161,6 +192,7 @@ impl Loader {
             meshes,
             materials,
             bones,
+            animations,
         })
     }
 }

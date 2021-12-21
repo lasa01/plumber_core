@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::f64::consts::FRAC_PI_2;
 use std::fmt;
 use std::ops::Deref;
 use std::{io, mem::size_of, str};
@@ -5,6 +7,7 @@ use std::{io, mem::size_of, str};
 use bitflags::bitflags;
 use itertools::Itertools;
 use maligned::A4;
+use nalgebra::UnitQuaternion;
 use zerocopy::FromBytes;
 
 use crate::fs::GameFile;
@@ -1223,6 +1226,21 @@ impl<'a> AnimationDescRef<'a> {
             }))
     }
 
+    pub fn data(&self) -> Result<Option<BTreeMap<usize, BoneAnimationData>>> {
+        let frame_animation = self.flags().contains(AnimationDescFlags::FRAMEANIM);
+
+        if let Some(_sections) = self.iter_animation_sections()? {
+            Err(Error::Unsupported {
+                ty: FileType::Mdl,
+                feature: "animation sections",
+            })
+        } else if let Some(section) = self.animation_section()? {
+            section.data(frame_animation).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
     fn animation_sections(&self) -> Result<Option<AnimationSectionsRef<'a>>> {
         if self.animation_desc.section_offset == 0 || self.animation_desc.section_frame_count < 0 {
             return Ok(None);
@@ -1252,7 +1270,7 @@ impl<'a> AnimationDescRef<'a> {
         }))
     }
 
-    pub fn iter_animation_sections(
+    fn iter_animation_sections(
         &self,
     ) -> Result<Option<impl Iterator<Item = AnimationSectionRef<'a>>>> {
         let sections = match self.animation_sections() {
@@ -1300,7 +1318,7 @@ impl<'a> AnimationDescRef<'a> {
         ))
     }
 
-    pub fn animation_section(&self) -> Result<Option<AnimationSectionRef<'a>>> {
+    fn animation_section(&self) -> Result<Option<AnimationSectionRef<'a>>> {
         if self.animation_desc.anim_block != 0 {
             return Ok(None);
         }
@@ -1348,7 +1366,7 @@ struct AnimationSectionsRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct AnimationSectionRef<'a> {
+struct AnimationSectionRef<'a> {
     anim_offset: usize,
     anim_block: i32,
     bones: &'a [Bone],
@@ -1358,7 +1376,35 @@ pub struct AnimationSectionRef<'a> {
 }
 
 impl<'a> AnimationSectionRef<'a> {
-    pub fn frame_animation(&self) -> Result<FrameAnimationRef<'a>> {
+    fn data(&self, frame_animation: bool) -> Result<BTreeMap<usize, BoneAnimationData>> {
+        let mut data: BTreeMap<usize, BoneAnimationData> = if frame_animation {
+            Ok(self
+                .frame_animation()?
+                .animation_data()?
+                .into_iter()
+                .enumerate()
+                .collect())
+        } else {
+            self.iter_bone_animations()
+                .map(|res| {
+                    res.and_then(|anim| {
+                        let bone_index = anim.animation.bone_index as usize;
+                        anim.animation_data().map(|data| (bone_index, data))
+                    })
+                })
+                .try_collect()
+        }?;
+
+        for (&bone_i, bone_data) in &mut data {
+            if self.bones[bone_i].parent_bone_index < 0 {
+                bone_data.apply_root_correction();
+            }
+        }
+
+        Ok(data)
+    }
+
+    fn frame_animation(&self) -> Result<FrameAnimationRef<'a>> {
         let offset = self.anim_offset;
 
         let frame_animation = parse(self.bytes, offset).ok_or_else(|| {
@@ -1375,7 +1421,7 @@ impl<'a> AnimationSectionRef<'a> {
         })
     }
 
-    pub fn iter_bone_animations(&self) -> impl Iterator<Item = Result<AnimationRef<'a>>> {
+    fn iter_bone_animations(&self) -> impl Iterator<Item = Result<AnimationRef<'a>>> {
         IterBoneAnimations {
             offset: self.anim_offset,
             bones: self.bones,
@@ -1455,7 +1501,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Quaternion {
     pub x: f64,
     pub y: f64,
@@ -1464,6 +1510,7 @@ pub struct Quaternion {
 }
 
 impl Quaternion {
+    #[must_use]
     pub fn from_bytes_48(bytes: [u8; 6]) -> Self {
         let a = (u16::from(bytes[1] & 0x7f) << 8) | u16::from(bytes[0]);
         let b = (u16::from(bytes[3] & 0x7f) << 8) | u16::from(bytes[2]);
@@ -1509,6 +1556,7 @@ impl Quaternion {
         }
     }
 
+    #[must_use]
     pub fn from_bytes_64(bytes: [u8; 8]) -> Self {
         let x = u32::from(bytes[0]) | u32::from(bytes[1]) << 8 | u32::from(bytes[2] & 0x1f) << 16;
         let x = (f64::from(x) - 1_048_576.0) / 1_048_576.5;
@@ -1530,6 +1578,7 @@ impl Quaternion {
         Self { x, y, z, w }
     }
 
+    #[must_use]
     pub fn from_u16s(u16s: [u16; 3]) -> Self {
         let x = (f64::from(u16s[0]) - 32768.0) / 32768.0;
         let y = (f64::from(u16s[1]) - 32768.0) / 32768.0;
@@ -1540,6 +1589,17 @@ impl Quaternion {
         let w = (1.0 - x * x - y * y - z * z).sqrt() * w_sign;
 
         Self { x, y, z, w }
+    }
+
+    fn apply_root_rotation_correction(&mut self) {
+        let mut new_rotation = UnitQuaternion::new_normalize(nalgebra::Quaternion::new(
+            self.w, self.x, self.y, self.z,
+        ));
+        new_rotation *= UnitQuaternion::from_euler_angles(0.0, 0.0, -FRAC_PI_2);
+        self.x = new_rotation.i;
+        self.y = new_rotation.j;
+        self.z = new_rotation.k;
+        self.w = new_rotation.w;
     }
 }
 
@@ -1569,14 +1629,15 @@ fn f16_to_f64(f16: u16) -> f64 {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Vector {
-    x: f64,
-    y: f64,
-    z: f64,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
 }
 
 impl Vector {
+    #[must_use]
     pub fn from_u16s(u16s: [u16; 3]) -> Self {
         Self {
             x: f16_to_f64(u16s[0]),
@@ -1584,10 +1645,20 @@ impl Vector {
             z: f16_to_f64(u16s[2]),
         }
     }
+
+    fn apply_root_position_correction(&mut self) {
+        let old_position = *self;
+        self.x = old_position.y;
+        self.y = -old_position.x;
+    }
+
+    fn apply_root_rotation_correction(&mut self) {
+        self.z -= FRAC_PI_2;
+    }
 }
 
 /// Rotation animation data of a bone.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AnimationRotationData {
     /// The rotation of the bone stays constant during the animation.
     Constant(Quaternion),
@@ -1606,7 +1677,7 @@ impl Default for AnimationRotationData {
 }
 
 /// Position animation data of a bone.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AnimationPositionData {
     /// The position of the bone stays constant during the animation.
     Constant(Vector),
@@ -1629,8 +1700,37 @@ pub struct BoneAnimationData {
     pub position: AnimationPositionData,
 }
 
+impl BoneAnimationData {
+    fn apply_root_correction(&mut self) {
+        match &mut self.rotation {
+            AnimationRotationData::Constant(rotation) => rotation.apply_root_rotation_correction(),
+            AnimationRotationData::Animated(rotations) => {
+                for rotation in rotations {
+                    rotation.apply_root_rotation_correction();
+                }
+            }
+            AnimationRotationData::AnimatedEuler(rotations) => {
+                for rotation in rotations {
+                    rotation.apply_root_rotation_correction();
+                }
+            }
+            AnimationRotationData::None => (),
+        }
+
+        match &mut self.position {
+            AnimationPositionData::Constant(position) => position.apply_root_position_correction(),
+            AnimationPositionData::Animated(positions) => {
+                for position in positions {
+                    position.apply_root_position_correction();
+                }
+            }
+            AnimationPositionData::None => (),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
-pub struct FrameAnimationRef<'a> {
+struct FrameAnimationRef<'a> {
     frame_animation: &'a FrameAnimation,
     offset: usize,
     bone_count: usize,
@@ -1648,7 +1748,7 @@ impl<'a> FrameAnimationRef<'a> {
             .ok_or_else(|| corrupted("frame animation bone flags out of bounds"))
     }
 
-    pub fn animation_data(&self) -> Result<Vec<BoneAnimationData>> {
+    fn animation_data(&self) -> Result<Vec<BoneAnimationData>> {
         let bone_flags = self.bone_flags()?;
 
         let mut data = vec![BoneAnimationData::default(); bone_flags.len()];
@@ -1842,7 +1942,7 @@ impl AnimationValue {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct AnimationRef<'a> {
+struct AnimationRef<'a> {
     animation: &'a Animation,
     offset: usize,
     frame_count: usize,
@@ -1851,7 +1951,7 @@ pub struct AnimationRef<'a> {
 }
 
 impl<'a> AnimationRef<'a> {
-    pub fn animation_data(&self) -> Result<BoneAnimationData> {
+    fn animation_data(&self) -> Result<BoneAnimationData> {
         let mut bytes = self
             .bytes
             .get(self.offset + size_of::<Animation>()..)
@@ -1960,6 +2060,12 @@ impl<'a> AnimationRef<'a> {
                 }
             }
 
+            for frame in &mut frames {
+                frame.x += f64::from(self.bone.rotation[0]);
+                frame.y += f64::from(self.bone.rotation[1]);
+                frame.z += f64::from(self.bone.rotation[2]);
+            }
+
             data.rotation = AnimationRotationData::AnimatedEuler(frames);
         }
 
@@ -2011,6 +2117,12 @@ impl<'a> AnimationRef<'a> {
                 for (i, frame) in frames.iter_mut().enumerate() {
                     frame.z = extract_animation_value(i, &z_values, self.bone.position_scale[2]);
                 }
+            }
+
+            for frame in &mut frames {
+                frame.x += f64::from(self.bone.position[0]);
+                frame.y += f64::from(self.bone.position[1]);
+                frame.z += f64::from(self.bone.position[2]);
             }
 
             data.position = AnimationPositionData::Animated(frames);

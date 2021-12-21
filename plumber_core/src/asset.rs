@@ -176,11 +176,18 @@ where
         let model_loader = self.model_loader.clone();
         let mut asset_handler = self.asset_handler.clone();
         let file_system = self.file_system.clone();
+        let material_job_sender = self.material_job_sender.clone();
 
         self.pool.spawn(move || {
             match model_loader.load_model(path.clone(), &file_system) {
                 Ok((_info, model)) => {
                     if let Some(model) = model {
+                        for material in &model.materials {
+                            material_job_sender
+                                .send(material.clone())
+                                .expect("material job channel shouldn't be disconnected");
+                        }
+
                         asset_handler.handle_model(model);
                     }
                 }
@@ -189,15 +196,47 @@ where
         });
     }
 
+    /// The passed function `f` is ran on the thread that called this function,
+    /// while other threads load the model.
+    ///
     /// # Errors
     ///
-    /// Returns `Err` if the model loading fails or has failed in the past
-    pub fn import_mdl_blocking(&mut self, path: PathBuf) -> Result<ModelInfo, ModelError> {
-        let (info, model) = self.model_loader.load_model(path, &self.file_system)?;
-        if let Some(model) = model {
-            self.asset_handler.handle_model(model);
-        }
-        Ok(info)
+    /// Returns `Err` if the model loading fails or has failed in the past.
+    pub fn import_mdl_blocking(
+        mut self,
+        path: PathBuf,
+        f: impl FnOnce(),
+    ) -> Result<ModelInfo, ModelError> {
+        let mut result = None;
+
+        self.pool.in_place_scope(|scope| {
+            scope.spawn(|_| {
+                match self.model_loader.load_model(path, &self.file_system) {
+                    Ok((info, model)) => {
+                        if let Some(model) = model {
+                            for material in &model.materials {
+                                self.material_job_sender
+                                    .send(material.clone())
+                                    .expect("material job channel shouldn't be disconnected");
+                            }
+
+                            self.asset_handler.handle_model(model);
+                        }
+                        result = Some(Ok(info));
+                    }
+                    Err(error) => result = Some(Err(error)),
+                };
+
+                drop(self.asset_handler);
+                drop(self.material_job_sender);
+                // Dropping these disconnects the channels that keep the import process alive,
+                // signaling that the import is finished (and preventing deadlocks)
+            });
+
+            f();
+        });
+
+        result.expect("a value should have been assigned to result")
     }
 
     /// The passed function `f` is ran on the thread that called this function,

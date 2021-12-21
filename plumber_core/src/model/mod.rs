@@ -6,6 +6,7 @@ mod vvd;
 pub mod loader;
 
 use std::{
+    collections::BTreeMap,
     fmt::{self, Display},
     io,
     mem::size_of,
@@ -13,6 +14,10 @@ use std::{
 };
 
 use mdl::Mdl;
+pub use mdl::{
+    AnimationDescFlags, AnimationPositionData, AnimationRotationData, BoneAnimationData,
+    Quaternion, Vector,
+};
 pub use vtx::Face;
 use vtx::Vtx;
 use vvd::Vvd;
@@ -35,6 +40,8 @@ pub enum Error {
     ChecksumMismatch(FileType),
     #[error("{ty} corrupted: {error}")]
     Corrupted { ty: FileType, error: &'static str },
+    #[error("{ty} {feature} unsupported")]
+    Unsupported { ty: FileType, feature: &'static str },
 }
 
 #[derive(Debug, Clone)]
@@ -272,7 +279,7 @@ impl<'a> Verified<'a> {
 
     /// # Errors
     ///
-    /// Returns `Err` if something goes wrong.
+    /// Returns `Err` if reading the bones fails due to corrupted mdl.
     pub fn bones(&self) -> Result<Vec<Bone>> {
         self.mdl_header
             .iter_bones()?
@@ -283,9 +290,34 @@ impl<'a> Verified<'a> {
                     parent_bone_index: bone.parent_bone_index.try_into().ok(),
                     position: bone.position,
                     rotation: bone.rotation,
+                    pose_to_bone: bone.pose_to_bone,
                 })
             })
             .try_collect()
+    }
+
+    /// # Errors
+    ///
+    /// Returns `Err` if reading the animations fails due to corrupted mdl.
+    pub fn animations(&self) -> Result<impl Iterator<Item = Result<Animation>>> {
+        Ok(self
+            .mdl_header
+            .iter_animation_descs()?
+            .map(|animation_desc| {
+                let flags = animation_desc.flags();
+                let name = animation_desc.name()?;
+
+                if animation_desc.iter_movements()?.count() > 0 {
+                    return Err(Error::Unsupported {
+                        ty: FileType::Mdl,
+                        feature: "animation movements",
+                    });
+                }
+
+                let data = animation_desc.data()?;
+
+                Ok(Animation { name, flags, data })
+            }))
     }
 }
 
@@ -333,6 +365,14 @@ pub struct Bone<'a> {
     pub parent_bone_index: Option<usize>,
     pub position: [f32; 3],
     pub rotation: [f32; 3],
+    pub pose_to_bone: [f32; 12],
+}
+
+#[derive(Debug, Clone)]
+pub struct Animation<'a> {
+    pub name: &'a str,
+    pub flags: AnimationDescFlags,
+    pub data: Option<BTreeMap<usize, BoneAnimationData>>,
 }
 
 #[cfg(test)]
@@ -391,6 +431,8 @@ mod tests {
         eprintln!("reading `{}`", verified.name()?);
         verified.meshes()?;
         verified.materials(file_system)?;
+        verified.bones()?;
+        verified.animations()?.try_for_each(|r| r.map(|_| ()))?;
         Ok(())
     }
 
