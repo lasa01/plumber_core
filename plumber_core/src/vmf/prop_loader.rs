@@ -14,8 +14,8 @@ use thiserror::Error;
 pub enum PropError {
     #[error("error parsing prop: {0}")]
     Parse(#[from] EntityParseError),
-    #[error("error loading model: {0}")]
-    Model(#[from] model::Error),
+    #[error("error loading model `{model}`: {error}")]
+    Model { model: String, error: model::Error },
 }
 
 #[derive(Debug)]
@@ -40,7 +40,10 @@ impl<'a> Prop<'a> {
         let model_path = PathBuf::from(model);
         let (model_info, model) = match model_loader.load_model(model_path, file_system) {
             Ok(r) => r,
-            Err(e) => return Err((self, e.into())),
+            Err(error) => {
+                let model = model.to_string();
+                return Err((self, PropError::Model { model, error }));
+            }
         };
         Ok((
             LoadedProp {
