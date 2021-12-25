@@ -8,6 +8,7 @@ use std::{
     slice,
 };
 
+use log::{debug, warn};
 use plumber_vdf as vdf;
 use plumber_vpk as vpk;
 use vpk::DirectoryReadError;
@@ -183,6 +184,11 @@ impl FileSystem {
                 }
                 let maybe_gameinfo_path = entry.path().join("gameinfo.txt");
                 if maybe_gameinfo_path.is_file() {
+                    debug!(
+                        "gameinfo.txt for `{}` found in `{}`",
+                        app.name,
+                        maybe_gameinfo_path.to_string_lossy()
+                    );
                     break maybe_gameinfo_path;
                 }
             } else {
@@ -294,7 +300,11 @@ impl FileSystem {
                         Err(err) => {
                             if let DirectoryReadError::Io(inner) = &err {
                                 if inner.kind() == io::ErrorKind::NotFound {
-                                    continue;
+                                    warn!(
+                                        "opening filesystem `{}`: vpk file `{}` not found",
+                                        self.name,
+                                        path.to_string_lossy()
+                                    );
                                 }
                             }
                             return Err(OpenError::new(path, err.into()));
@@ -321,7 +331,13 @@ impl FileSystem {
                         open_search_paths.push(OpenSearchPath::Directory(path.clone()));
                     }
                     Err(err) => {
-                        if err.kind() != io::ErrorKind::NotFound {
+                        if err.kind() == io::ErrorKind::NotFound {
+                            warn!(
+                                "opening filesystem `{}`: directory `{}` not found",
+                                self.name,
+                                path.to_string_lossy()
+                            );
+                        } else {
                             return Err(OpenError::new(path, err.into()));
                         }
                     }
@@ -343,7 +359,13 @@ impl FileSystem {
                         }
                     }
                     Err(err) => {
-                        if err.kind() != io::ErrorKind::NotFound {
+                        if err.kind() == io::ErrorKind::NotFound {
+                            warn!(
+                                "opening filesystem `{}`: directory `{}` not found",
+                                self.name,
+                                path.to_string_lossy()
+                            );
+                        } else {
                             return Err(OpenError::new(path, err.into()));
                         }
                     }

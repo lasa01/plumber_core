@@ -21,6 +21,7 @@ use crate::{
 
 use plumber_vdf as vdf;
 
+use log::error;
 use rayon::ThreadPoolBuilder;
 use thiserror::Error;
 
@@ -44,7 +45,9 @@ pub enum Error {
 pub trait Handler: Clone + Send + Sync + 'static {
     type MaterialData: Send + Sync + 'static;
 
-    fn handle_error(&mut self, error: Error);
+    fn handle_error(&mut self, error: Error) {
+        error!("{}", error);
+    }
 
     /// # Errors
     ///

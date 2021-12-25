@@ -3,6 +3,8 @@ use std::{
     sync::{Condvar, Mutex},
 };
 
+use log::error;
+
 use super::{
     Animation, AnimationDescFlags, Bone, BoneAnimationData, Face, Mesh, Model, Result, Vertex,
 };
@@ -175,8 +177,8 @@ impl Loader {
             .animations()?
             .filter_map(|res| match res {
                 Ok(animation) => Some(LoadedAnimation::new(animation)),
-                Err(_err) => {
-                    // TODO: handle error
+                Err(err) => {
+                    error!("model `{}`: animation loading failed: {}", model_path, err);
                     None
                 }
             })
