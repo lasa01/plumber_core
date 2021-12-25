@@ -4,6 +4,7 @@ use crate::parsers::{bracketed, parenthesed, space_separated};
 
 use std::fmt::{self, Display};
 
+use glam::{Vec2, Vec3};
 use nom::sequence::tuple;
 use rgb::RGB8;
 use serde::{
@@ -96,7 +97,7 @@ impl Display for Color {
     }
 }
 
-pub struct Vector2(pub nalgebra::Vector2<f64>);
+pub struct Vector2(pub Vec2);
 
 impl<'de> Deserialize<'de> for Vector2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -124,7 +125,7 @@ impl<'de> Deserialize<'de> for Vector2 {
                         let y = y.parse().map_err(|_| {
                             de::Error::invalid_value(de::Unexpected::Str(y), &"float")
                         })?;
-                        Ok(Vector2(nalgebra::Vector2::new(x, y)))
+                        Ok(Vector2(Vec2::new(x, y)))
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
                 }
@@ -150,7 +151,7 @@ impl Display for Vector2 {
     }
 }
 
-pub struct Vector3(pub nalgebra::Vector3<f64>);
+pub struct Vector3(pub Vec3);
 
 impl<'de> Deserialize<'de> for Vector3 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -181,7 +182,7 @@ impl<'de> Deserialize<'de> for Vector3 {
                         let z = z.parse().map_err(|_| {
                             de::Error::invalid_value(de::Unexpected::Str(z), &"float")
                         })?;
-                        Ok(Vector3(nalgebra::Vector3::new(x, y, z)))
+                        Ok(Vector3(Vec3::new(x, y, z)))
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
                 }
@@ -214,7 +215,7 @@ pub mod bracketed_vector2 {
         use super::*;
 
         pub fn serialize<S>(
-            vector: &Option<nalgebra::Vector2<f64>>,
+            vector: &Option<Vec2>,
             serializer: S,
         ) -> Result<S::Ok, S::Error>
         where
@@ -225,7 +226,7 @@ pub mod bracketed_vector2 {
 
         pub fn deserialize<'de, D>(
             deserializer: D,
-        ) -> Result<Option<nalgebra::Vector2<f64>>, D::Error>
+        ) -> Result<Option<Vec2>, D::Error>
         where
             D: Deserializer<'de>,
         {
@@ -235,7 +236,7 @@ pub mod bracketed_vector2 {
     }
 }
 
-pub struct BracketedVector2(pub nalgebra::Vector2<f64>);
+pub struct BracketedVector2(pub Vec2);
 
 impl<'de> Deserialize<'de> for BracketedVector2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -263,7 +264,7 @@ impl<'de> Deserialize<'de> for BracketedVector2 {
                         let y = y.parse().map_err(|_| {
                             de::Error::invalid_value(de::Unexpected::Str(y), &"float")
                         })?;
-                        Ok(BracketedVector2(nalgebra::Vector2::new(x, y)))
+                        Ok(BracketedVector2(Vec2::new(x, y)))
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
                 }
@@ -292,7 +293,7 @@ impl Display for BracketedVector2 {
 pub mod bracketed_vector3 {
     use super::*;
 
-    pub fn serialize<S>(vector: &nalgebra::Vector3<f64>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(vector: &Vec3, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -300,7 +301,7 @@ pub mod bracketed_vector3 {
     }
 }
 
-pub struct BracketedVector3(pub nalgebra::Vector3<f64>);
+pub struct BracketedVector3(pub Vec3);
 
 impl<'de> Deserialize<'de> for BracketedVector3 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -331,7 +332,7 @@ impl<'de> Deserialize<'de> for BracketedVector3 {
                         let z = z.parse().map_err(|_| {
                             de::Error::invalid_value(de::Unexpected::Str(z), &"float")
                         })?;
-                        Ok(BracketedVector3(nalgebra::Vector3::new(x, y, z)))
+                        Ok(BracketedVector3(Vec3::new(x, y, z)))
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
                 }
@@ -359,17 +360,17 @@ impl Display for BracketedVector3 {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Plane(
-    pub nalgebra::Point3<f64>,
-    pub nalgebra::Point3<f64>,
-    pub nalgebra::Point3<f64>,
+    pub Vec3,
+    pub Vec3,
+    pub Vec3,
 );
 
 impl Default for Plane {
     fn default() -> Self {
         Self(
-            nalgebra::Point3::new(0.0, 0.0, 0.0),
-            nalgebra::Point3::new(0.0, 0.0, 0.0),
-            nalgebra::Point3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.0),
         )
     }
 }
@@ -427,9 +428,9 @@ impl<'de> Deserialize<'de> for Plane {
                             de::Error::invalid_value(de::Unexpected::Str(z2), &"a float")
                         })?;
                         Ok(Plane(
-                            nalgebra::Point3::new(x0, y0, z0),
-                            nalgebra::Point3::new(x1, y1, z1),
-                            nalgebra::Point3::new(x2, y2, z2),
+                            Vec3::new(x0, y0, z0),
+                            Vec3::new(x1, y1, z1),
+                            Vec3::new(x2, y2, z2),
                         ))
                     }
                     Err(..) => Err(de::Error::invalid_value(de::Unexpected::Str(v), &Self)),
@@ -470,7 +471,7 @@ impl Display for Plane {
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct UvAxis {
-    pub axis: nalgebra::Vector3<f64>,
+    pub axis: Vec3,
     pub translation: f64,
     pub scale: f64,
 }
@@ -520,7 +521,7 @@ impl<'de> Deserialize<'de> for UvAxis {
                             de::Error::invalid_value(de::Unexpected::Str(scale), &"a float")
                         })?;
                         Ok(UvAxis {
-                            axis: nalgebra::Vector3::new(x, y, z),
+                            axis: Vec3::new(x, y, z),
                             translation,
                             scale,
                         })

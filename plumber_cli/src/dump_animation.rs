@@ -15,7 +15,7 @@ pub struct DumpAnimation {
     bones: bool,
 }
 
-pub fn dump_animation(opts: DumpAnimation, file_system: FileSystem) {
+pub fn dump_animation(opts: DumpAnimation, file_system: &FileSystem) {
     let file_system = file_system.open().unwrap();
 
     let model = Model::read(PathBuf::from(opts.mdl_path), &file_system).unwrap();

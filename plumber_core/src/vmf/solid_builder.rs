@@ -8,7 +8,7 @@ use crate::{
 
 use super::{
     builder_utils::{
-        lerp_uv, polygon_center, polygon_normal, GeometrySettings, NdPlane, PolygonClassification,
+        polygon_center, polygon_normal, GeometrySettings, NdPlane, PolygonClassification,
     },
     overlay_builder::SideFacesMap,
     Entity, Side, Solid, World,
@@ -16,8 +16,8 @@ use super::{
 
 use approx::relative_eq;
 use float_ord::FloatOrd;
+use glam::{Vec3, Vec2};
 use itertools::{izip, Itertools};
-use nalgebra::{geometry::Point3, Vector3};
 use ndarray::{Array2, Array3, Zip};
 use thiserror::Error;
 
@@ -30,8 +30,8 @@ pub enum SolidError {
 #[derive(Debug)]
 pub struct BuiltSolid {
     pub id: i32,
-    pub position: Point3<f64>,
-    pub vertices: Vec<Point3<f64>>,
+    pub position: Vec3,
+    pub vertices: Vec<Vec3>,
     pub faces: Vec<Face>,
     pub materials: Vec<SolidMaterial>,
 }
@@ -51,7 +51,7 @@ impl PartialEq for SolidMaterial {
 #[derive(Debug)]
 pub struct Face {
     pub vertice_indices: Vec<usize>,
-    pub vertice_uvs: Vec<[f64; 2]>,
+    pub vertice_uvs: Vec<Vec2>,
     pub material_index: usize,
 }
 
@@ -60,7 +60,7 @@ struct FaceBuilder<'a> {
     side: &'a Side,
     plane: NdPlane,
     vertice_indices: Vec<usize>,
-    vertice_uvs: Vec<[f64; 2]>,
+    vertice_uvs: Vec<Vec2>,
     material_index: usize,
 }
 
@@ -87,8 +87,8 @@ impl<'a> Debug for FaceBuilder<'a> {
 }
 
 impl<'a> FaceBuilder<'a> {
-    fn new(side: &'a Side, center: Point3<f64>) -> Self {
-        let plane = NdPlane::from_plane(&side.plane, &center);
+    fn new(side: &'a Side, center: Vec3) -> Self {
+        let plane = NdPlane::from_plane(&side.plane, center);
         Self {
             side,
             plane,
@@ -128,22 +128,22 @@ impl<'a> FaceBuilder<'a> {
             .map(|info| 2 * (info.dimension() - 1).pow(2))
     }
 
-    fn sort_vertices(&mut self, vertices: &mut Vec<Point3<f64>>) {
-        let center: Point3<f64> = polygon_center(self.vertice_indices.iter().map(|&i| vertices[i]));
+    fn sort_vertices(&mut self, vertices: &mut Vec<Vec3>) {
+        let center = polygon_center(self.vertice_indices.iter().map(|&i| vertices[i]));
 
         for i in 0..self.vertice_indices.len() - 2 {
-            let vertice = &vertices[self.vertice_indices[i]];
-            let to_current: Vector3<f64> = (vertice - center).normalize();
+            let vertice = vertices[self.vertice_indices[i]];
+            let to_current = (vertice - center).normalize();
             let filter_plane =
-                NdPlane::from_points(vertice, &center, &(center + self.plane.normal.as_ref()));
+                NdPlane::from_points(vertice, center, center + self.plane.normal);
 
             if let Some((next_idx, _)) = self.vertice_indices[i + 1..]
                 .iter()
                 .enumerate()
-                .filter(|(_, &vi)| filter_plane.distance_to_point(&vertices[vi]) >= 0.0)
+                .filter(|(_, &vi)| filter_plane.distance_to_point(vertices[vi]) >= 0.0)
                 .map(|(i, &vi)| {
-                    let to_candidate: Vector3<f64> = (vertices[vi] - center).normalize();
-                    let dot = to_current.dot(&to_candidate);
+                    let to_candidate = (vertices[vi] - center).normalize();
+                    let dot = to_current.dot(to_candidate);
                     (i, dot)
                 })
                 // max because smaller angle -> bigger dot product
@@ -154,7 +154,7 @@ impl<'a> FaceBuilder<'a> {
         }
 
         // reverse if the normal is facing the wrong way
-        if polygon_normal(self.vertice_indices.iter().map(|i| vertices[*i])).dot(&self.plane.normal)
+        if polygon_normal(self.vertice_indices.iter().map(|i| vertices[*i])).dot(self.plane.normal)
             < 0.0
         {
             self.vertice_indices.reverse();
@@ -163,8 +163,8 @@ impl<'a> FaceBuilder<'a> {
 
     fn build_uvs(
         &mut self,
-        center: &Point3<f64>,
-        vertices: &[Point3<f64>],
+        center: Vec3,
+        vertices: &[Vec3],
         materials: &mut Vec<SolidMaterial>,
         get_material_info: &mut impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
     ) {
@@ -190,31 +190,39 @@ impl<'a> FaceBuilder<'a> {
 
         self.material_index = material_index;
 
-        let texture_width = f64::from(material.info.width());
-        let texture_height = f64::from(material.info.height());
+        let texture_width = material.info.width() as f32;
+        let texture_height = material.info.height() as f32;
         self.vertice_uvs.reserve_exact(self.vertice_indices.len());
         let u_axis = self.side.u_axis;
         let v_axis = self.side.v_axis;
         for &vi in &self.vertice_indices {
-            let u = (vertices[vi].coords + center.coords).dot(&u_axis.axis)
-                / (texture_width * u_axis.scale)
-                + u_axis.translation / texture_width;
-            let v = (vertices[vi].coords + center.coords).dot(&v_axis.axis)
-                / (texture_height * v_axis.scale)
-                + v_axis.translation / texture_height;
-            self.vertice_uvs.push([u, v]);
+            let u = (vertices[vi] + center).dot(u_axis.axis)
+                / (texture_width * u_axis.scale as f32)
+                + u_axis.translation as f32 / texture_width as f32;
+            let v = (vertices[vi] + center).dot(v_axis.axis)
+                / (texture_height * v_axis.scale as f32)
+                + v_axis.translation as f32 / texture_height as f32;
+            self.vertice_uvs.push(Vec2::new(u, v));
         }
 
         // normalize
-        let mut nearest_u = f64::MAX;
-        let mut nearest_v = f64::MAX;
-        for [u, _] in &self.vertice_uvs {
-            if u.abs() <= 1.0 {
+        let mut nearest_u = f32::MAX;
+        let mut nearest_v = f32::MAX;
+        for uv in &self.vertice_uvs {
+            if uv.x.abs() <= 1.0 {
                 nearest_u = 0.0;
                 break;
             }
-            if u.abs() < nearest_u.abs() {
-                nearest_u = *u;
+            if uv.x.abs() < nearest_u.abs() {
+                nearest_u = uv.x;
+            }
+
+            if uv.y.abs() <= 1.0 {
+                nearest_v = 0.0;
+                break;
+            }
+            if uv.y.abs() < nearest_v.abs() {
+                nearest_v = uv.y;
             }
         }
         nearest_u = if nearest_u > 0.0 {
@@ -223,24 +231,15 @@ impl<'a> FaceBuilder<'a> {
             nearest_u.ceil()
         };
 
-        for [_, v] in &self.vertice_uvs {
-            if v.abs() <= 1.0 {
-                nearest_v = 0.0;
-                break;
-            }
-            if v.abs() < nearest_v.abs() {
-                nearest_v = *v;
-            }
-        }
         nearest_v = if nearest_v > 0.0 {
             nearest_v.floor()
         } else {
             nearest_v.ceil()
         };
 
-        for [u, v] in &mut self.vertice_uvs {
-            *u -= nearest_u;
-            *v -= nearest_v;
+        for uv in &mut self.vertice_uvs {
+            uv.x -= nearest_u;
+            uv.y -= nearest_v;
         }
     }
 
@@ -257,16 +256,16 @@ impl<'a> FaceBuilder<'a> {
 
     fn maybe_build_displacement(
         &mut self,
-        center: &Point3<f64>,
-        old_vertices: &[Point3<f64>],
-        vertices: &mut Vec<Point3<f64>>,
+        center: Vec3,
+        old_vertices: &[Vec3],
+        vertices: &mut Vec<Vec3>,
         faces: &mut Vec<FaceBuilder<'a>>,
     ) -> Result<(), SolidError> {
         if let Some(info) = &self.side.disp_info {
             self.verify_displacement()?;
 
             // find out which corner vertice the displacement start position is
-            let start_position = info.start_position - center.coords;
+            let start_position = info.start_position - center;
 
             let (start_i, _) = self
                 .vertice_indices
@@ -274,7 +273,7 @@ impl<'a> FaceBuilder<'a> {
                 .enumerate()
                 .min_by_key(|(_, &vertice_i)| {
                     let vertice = old_vertices[vertice_i];
-                    FloatOrd(vertice.coords.metric_distance(&start_position))
+                    FloatOrd(vertice.distance(start_position))
                 })
                 .expect("vertice_indices shouldn't be empty");
 
@@ -294,15 +293,15 @@ impl<'a> FaceBuilder<'a> {
             let mut disp_vertice_is = Array2::zeros((dimension, dimension));
 
             for (row_i, mut row) in disp_vertice_is.rows_mut().into_iter().enumerate() {
-                let blend = row_i as f64 / last_i as f64;
+                let blend = row_i as f32 / last_i as f32;
 
-                let vert_left = top_left_vert.coords.lerp(&btm_left_vert.coords, blend);
+                let vert_left = top_left_vert.lerp(btm_left_vert, blend);
                 let vert_left_i = vertices.len();
-                vertices.push(vert_left.into());
+                vertices.push(vert_left);
 
-                let vert_right = top_right_vert.coords.lerp(&btm_right_vert.coords, blend);
+                let vert_right = top_right_vert.lerp(btm_right_vert, blend);
                 let vert_right_i = vertices.len();
-                vertices.push(vert_right.into());
+                vertices.push(vert_right);
 
                 for (col_i, vert_i) in row.indexed_iter_mut() {
                     *vert_i = if col_i == 0 {
@@ -313,8 +312,7 @@ impl<'a> FaceBuilder<'a> {
                         let i = vertices.len();
                         vertices.push(
                             vert_left
-                                .lerp(&vert_right, col_i as f64 / last_i as f64)
-                                .into(),
+                                .lerp(vert_right, col_i as f32 / last_i as f32),
                         );
                         i
                     };
@@ -325,29 +323,21 @@ impl<'a> FaceBuilder<'a> {
                 .and(&info.offsets.data)
                 .and(&info.normals.data)
                 .and(&info.distances.data)
-                .for_each(|&v_i, offset, normal, &distance| {
+                .for_each(|&v_i, &offset, &normal, &distance| {
                     vertices[v_i] +=
-                        offset + distance * normal + self.plane.normal.as_ref() * info.elevation;
+                        offset + distance as f32 * normal + self.plane.normal * info.elevation as f32;
                 });
 
             let mut disp_uvs = Array2::default((dimension, dimension));
 
             for (row_i, mut row) in disp_uvs.rows_mut().into_iter().enumerate() {
-                let blend = row_i as f64 / last_i as f64;
+                let blend = row_i as f32 / last_i as f32;
 
-                let uv_left = lerp_uv(
-                    self.vertice_uvs[top_left_i],
-                    self.vertice_uvs[btm_left_i],
-                    blend,
-                );
-                let uv_right = lerp_uv(
-                    self.vertice_uvs[top_right_i],
-                    self.vertice_uvs[btm_right_i],
-                    blend,
-                );
+                let uv_left = self.vertice_uvs[top_left_i].lerp(self.vertice_uvs[btm_left_i], blend);
+                let uv_right = self.vertice_uvs[top_right_i].lerp(self.vertice_uvs[btm_right_i], blend);
 
                 for (col_i, vert_uv) in row.indexed_iter_mut() {
-                    *vert_uv = lerp_uv(uv_left, uv_right, col_i as f64 / last_i as f64);
+                    *vert_uv = uv_left.lerp(uv_right, col_i as f32 / last_i as f32);
                 }
             }
 
@@ -385,20 +375,20 @@ impl<'a> FaceBuilder<'a> {
     #[allow(clippy::too_many_arguments)]
     fn clip_to_sides(
         self,
-        self_center: Point3<f64>,
+        self_center: Vec3,
         clipped_sides: &mut Vec<Self>,
-        vertices: &mut Vec<Point3<f64>>,
+        vertices: &mut Vec<Vec3>,
         sides: &[FaceBuilder],
-        sides_center: Point3<f64>,
+        sides_center: Vec3,
         clip_on_plane: bool,
-        epsilon: f64,
+        epsilon: f32,
     ) -> bool {
         // solids are convex, so if self is in front of any side it's outside the solid and doesn't need clipping
         if sides.iter().any(|side| {
             side.plane.classify_polygon(
                 self.vertice_indices
                     .iter()
-                    .map(|&i| vertices[i] + self_center.coords - sides_center.coords),
+                    .map(|&i| vertices[i] + self_center - sides_center),
                 epsilon,
             ) == PolygonClassification::Front
         }) {
@@ -416,7 +406,7 @@ impl<'a> FaceBuilder<'a> {
         match side.plane.classify_polygon(
             self.vertice_indices
                 .iter()
-                .map(|&i| vertices[i] + self_center.coords - sides_center.coords),
+                .map(|&i| vertices[i] + self_center - sides_center),
             epsilon,
         ) {
             PolygonClassification::Front => unreachable!("checked earlier"),
@@ -493,18 +483,18 @@ impl<'a> FaceBuilder<'a> {
 
     fn split(
         &self,
-        self_center: Point3<f64>,
-        vertices: &mut Vec<Point3<f64>>,
+        self_center: Vec3,
+        vertices: &mut Vec<Vec3>,
         plane: &NdPlane,
-        plane_center: Point3<f64>,
-        epsilon: f64,
+        plane_center: Vec3,
+        epsilon: f32,
     ) -> (Self, Self) {
         let vertice_positions = self
             .vertice_indices
             .iter()
             .map(|&i| {
                 plane.classify_point(
-                    &(vertices[i] + self_center.coords - plane_center.coords),
+                    vertices[i] + self_center - plane_center,
                     epsilon,
                 )
             })
@@ -518,8 +508,8 @@ impl<'a> FaceBuilder<'a> {
             izip!(&self.vertice_indices, &self.vertice_uvs, vertice_positions)
                 .circular_tuple_windows()
         {
-            let vert = vertices[i] + self_center.coords - plane_center.coords;
-            let vert_next = vertices[i_next] + self_center.coords - plane_center.coords;
+            let vert = vertices[i] + self_center - plane_center;
+            let vert_next = vertices[i_next] + self_center - plane_center;
 
             match pos {
                 PointClassification::Front => {
@@ -550,13 +540,13 @@ impl<'a> FaceBuilder<'a> {
 
             // otherwise split the edge, creating a new vertex
             let (new_vert, factor) =
-                if let Some(v) = plane.intersect_line_with_factor(&vert, &vert_next, epsilon) {
+                if let Some(v) = plane.intersect_line_with_factor(vert, vert_next, epsilon) {
                     v
                 } else {
                     continue;
                 };
 
-            let new_vert = new_vert + plane_center.coords - self_center.coords;
+            let new_vert = new_vert + plane_center - self_center;
             // check if the new vertex already exists
             let new_i = vertices
                 .iter()
@@ -570,7 +560,7 @@ impl<'a> FaceBuilder<'a> {
             back.vertice_indices.push(new_i);
 
             // calculate uvs
-            let new_uv = lerp_uv(uv, uv_next, factor);
+            let new_uv = uv.lerp(uv_next, factor);
             front.vertice_uvs.push(new_uv);
             back.vertice_uvs.push(new_uv);
         }
@@ -590,13 +580,13 @@ impl<'a> FaceBuilder<'a> {
 #[derive(Clone, PartialEq)]
 struct SolidBuilder<'a> {
     solid: &'a Solid,
-    center: Point3<f64>,
+    center: Vec3,
     faces: Vec<FaceBuilder<'a>>,
-    vertices: Vec<Point3<f64>>,
+    vertices: Vec<Vec3>,
     materials: Vec<SolidMaterial>,
     is_displacement: bool,
-    aabb_min: Point3<f64>,
-    aabb_max: Point3<f64>,
+    aabb_min: Vec3,
+    aabb_max: Vec3,
 }
 
 impl<'a> Debug for SolidBuilder<'a> {
@@ -617,7 +607,7 @@ impl<'a> SolidBuilder<'a> {
             solid
                 .sides
                 .iter()
-                .map(|side| (side.plane.0 + side.plane.1.coords + side.plane.2.coords) / 3.0),
+                .map(|side| (side.plane.0 + side.plane.1 + side.plane.2) / 3.0),
         );
 
         Self {
@@ -631,12 +621,12 @@ impl<'a> SolidBuilder<'a> {
             vertices: Vec::new(),
             materials: Vec::new(),
             is_displacement: false,
-            aabb_min: Point3::new(0.0, 0.0, 0.0),
-            aabb_max: Point3::new(0.0, 0.0, 0.0),
+            aabb_min: Vec3::new(0.0, 0.0, 0.0),
+            aabb_max: Vec3::new(0.0, 0.0, 0.0),
         }
     }
 
-    fn intersect_sides(&mut self, epsilon: f64, cut_threshold: f64) {
+    fn intersect_sides(&mut self, epsilon: f32, cut_threshold: f32) {
         for (i1, i2, i3) in (0..self.faces.len()).tuple_combinations() {
             if let Some(point) = NdPlane::intersect(
                 &self.faces[i1].plane,
@@ -650,7 +640,7 @@ impl<'a> SolidBuilder<'a> {
                     .iter()
                     .enumerate()
                     .filter(|&(i, _)| i != i1 && i != i2 && i != i3)
-                    .any(|(_, builder)| builder.plane.distance_to_point(&point) > cut_threshold)
+                    .any(|(_, builder)| builder.plane.distance_to_point(point) > cut_threshold)
                 {
                     continue;
                 }
@@ -691,7 +681,7 @@ impl<'a> SolidBuilder<'a> {
         let vertices = &self.vertices;
         for builder in &mut self.faces {
             builder.build_uvs(
-                &self.center,
+                self.center,
                 vertices,
                 &mut self.materials,
                 &mut get_material_info,
@@ -712,7 +702,7 @@ impl<'a> SolidBuilder<'a> {
         };
 
         let old_vertices = &self.vertices;
-        let mut vertices: Vec<Point3<f64>> = Vec::with_capacity(vertices_len);
+        let mut vertices: Vec<Vec3> = Vec::with_capacity(vertices_len);
 
         let faces_len = self
             .faces
@@ -723,7 +713,7 @@ impl<'a> SolidBuilder<'a> {
 
         for builder in &mut self.faces {
             builder.maybe_build_displacement(
-                &self.center,
+                self.center,
                 old_vertices,
                 &mut vertices,
                 &mut faces,
@@ -745,7 +735,7 @@ impl<'a> SolidBuilder<'a> {
                 builder
                     .vertice_indices
                     .iter()
-                    .map(|&i| self.center + self.vertices[i].coords)
+                    .map(|&i| self.center + self.vertices[i])
                     .collect(),
             );
         }
@@ -772,12 +762,12 @@ impl<'a> SolidBuilder<'a> {
             .vertices
             .first()
             .copied()
-            .unwrap_or_else(|| Point3::new(0.0, 0.0, 0.0));
+            .unwrap_or_else(|| Vec3::new(0.0, 0.0, 0.0));
         let mut max = min;
 
-        for vertice in &self.vertices {
-            min.coords = min.coords.inf(&vertice.coords);
-            max.coords = max.coords.sup(&vertice.coords);
+        for &vertice in &self.vertices {
+            min = min.min(vertice);
+            max = max.max(vertice);
         }
 
         self.aabb_min = min;
@@ -793,7 +783,7 @@ impl<'a> SolidBuilder<'a> {
             && other.aabb_min.z < self.aabb_max.z
     }
 
-    fn clip_to_solid(&mut self, solid: &Self, clip_on_plane: bool, epsilon: f64) {
+    fn clip_to_solid(&mut self, solid: &Self, clip_on_plane: bool, epsilon: f32) {
         let faces = mem::take(&mut self.faces);
 
         for builder in faces {
@@ -839,7 +829,7 @@ impl<'a> SolidBuilder<'a> {
     }
 
     fn recenter(&mut self) {
-        let center = polygon_center(self.vertices.iter().copied()).coords;
+        let center = polygon_center(self.vertices.iter().copied());
         for vertice in &mut self.vertices {
             *vertice -= center;
         }
@@ -880,13 +870,13 @@ impl Solid {
 
 #[derive(Debug)]
 pub struct MergedSolids {
-    pub vertices: Vec<Point3<f64>>,
+    pub vertices: Vec<Vec3>,
     pub faces: Vec<Face>,
     pub materials: Vec<SolidMaterial>,
 }
 
 impl MergedSolids {
-    fn merge(mut solids: Vec<SolidBuilder>, epsilon: f64, optimize: bool) -> Self {
+    fn merge(mut solids: Vec<SolidBuilder>, epsilon: f32, optimize: bool) -> Self {
         let merge_solids: Vec<SolidBuilder>;
 
         if optimize {
@@ -923,7 +913,7 @@ impl MergedSolids {
         let mut faces = Vec::with_capacity(merge_solids.iter().map(|s| s.faces.len()).sum());
 
         for clipped_solid in merge_solids {
-            let center = clipped_solid.center.coords;
+            let center = clipped_solid.center;
 
             let vertice_i_map = clipped_solid
                 .vertices
@@ -1100,7 +1090,6 @@ impl World {
 
 #[cfg(test)]
 mod tests {
-    use nalgebra::Unit;
     use plumber_vdf as vdf;
 
     use super::*;
@@ -1214,14 +1203,14 @@ mod tests {
         builder.recenter();
 
         let expected_vertices = vec![
-            Point3::new(-64.0, 64.0, 32.0),
-            Point3::new(-64.0, -64.0, 32.0),
-            Point3::new(64.0, 64.0, 32.0),
-            Point3::new(64.0, -64.0, 32.0),
-            Point3::new(-64.0, 64.0, -32.0),
-            Point3::new(-64.0, -64.0, -32.0),
-            Point3::new(64.0, 64.0, -32.0),
-            Point3::new(64.0, -64.0, -32.0),
+            Vec3::new(-64.0, 64.0, 32.0),
+            Vec3::new(-64.0, -64.0, 32.0),
+            Vec3::new(64.0, 64.0, 32.0),
+            Vec3::new(64.0, -64.0, 32.0),
+            Vec3::new(-64.0, 64.0, -32.0),
+            Vec3::new(-64.0, -64.0, -32.0),
+            Vec3::new(64.0, 64.0, -32.0),
+            Vec3::new(64.0, -64.0, -32.0),
         ];
 
         let mut is = vec![0; expected_vertices.len()];
@@ -1245,7 +1234,7 @@ mod tests {
 
         assert_relative_eq!(
             builder.center,
-            Point3::new(-896.0, 0.0, 32.0),
+            Vec3::new(-896.0, 0.0, 32.0),
             epsilon = 1e-3
         );
 
@@ -1289,22 +1278,16 @@ mod tests {
             .vertice_indices
             .iter()
             .map(|&i| match is.iter().position(|&j| j == i).unwrap() {
-                0 => (-0.75, -0.25),
-                1 => (-0.75, 0.25),
-                2 => (-0.25, -0.25),
-                3 => (-0.25, 0.25),
+                0 => Vec2::new(-0.75, -0.25),
+                1 => Vec2::new(-0.75, 0.25),
+                2 => Vec2::new(-0.25, -0.25),
+                3 => Vec2::new(-0.25, 0.25),
                 _ => unreachable!(),
             })
             .collect_vec();
         for (uv, expected_uv) in side.vertice_uvs.iter().zip(&expected_uvs) {
             assert!(
-                relative_eq!(uv[0], expected_uv.0, epsilon = 1e-3),
-                "got {:?}, expected {:?}",
-                side.vertice_uvs,
-                expected_uvs
-            );
-            assert!(
-                relative_eq!(uv[1], expected_uv.1, epsilon = 1e-3),
+                relative_eq!(uv, expected_uv, epsilon = 1e-3),
                 "got {:?}, expected {:?}",
                 side.vertice_uvs,
                 expected_uvs
@@ -1489,87 +1472,87 @@ mod tests {
         builder.recenter();
 
         let expected_vertices = vec![
-            Point3::new(-393.92199516296387, -511.9999885559082, 334.96716022491455),
-            Point3::new(449.9849796295166, -511.9999885559082, -245.03345489501953),
-            Point3::new(-288.43352794647217, -511.9999885559082, 262.46702671051025),
-            Point3::new(-182.94509649276733, -511.9999885559082, 189.9669885635376),
-            Point3::new(-77.45669484138489, -511.9999885559082, 117.46692657470703),
-            Point3::new(28.031721711158752, -511.9999885559082, 44.966840744018555),
-            Point3::new(133.52017402648926, -511.9999885559082, -27.533242106437683),
-            Point3::new(239.00854587554932, -511.9999885559082, -100.03330707550049),
-            Point3::new(344.4969415664673, -511.9999885559082, -172.53336906433105),
-            Point3::new(-416.57819747924805, -383.99999141693115, 302.00212001800537),
-            Point3::new(365.0245666503906, -383.99999141693115, -368.65246295928955),
-            Point3::new(-313.92178535461426, -383.99999141693115, 225.38139820098877),
-            Point3::new(-208.81378650665283, -383.99999141693115, 152.3277997970581),
-            Point3::new(-100.11293888092041, -383.99999141693115, 84.5018744468689),
-            Point3::new(5.375472828745842, -383.99999141693115, 12.001800537109375),
-            Point3::new(105.53817749023438, -383.99999141693115, -68.24725866317749),
-            Point3::new(210.99896430969238, -383.99999141693115, -140.78748226165771),
-            Point3::new(319.0086603164673, -383.99999141693115, -209.61904525756836),
-            Point3::new(-416.57819747924805, -255.9999942779541, 302.00212001800537),
-            Point3::new(365.0245666503906, -255.9999942779541, -368.65246295928955),
-            Point3::new(-261.8278741836548, -255.9999942779541, 301.1784553527832),
-            Point3::new(-253.22809219360352, -255.9999942779541, 87.7045750617981),
-            Point3::new(-100.11293888092041, -255.9999942779541, 84.5018744468689),
-            Point3::new(5.375472828745842, -255.9999942779541, 12.001800537109375),
-            Point3::new(65.64663648605347, -255.9999942779541, -126.28982067108154),
-            Point3::new(266.79527759552, -255.9999942779541, -59.603333473205566),
-            Point3::new(335.66174507141113, -255.9999942779541, -185.38867235183716),
-            Point3::new(-416.57819747924805, -127.99999713897705, 302.00212001800537),
-            Point3::new(365.0245666503906, -127.99999713897705, -368.65246295928955),
-            Point3::new(-330.7098865509033, -127.99999713897705, 200.95453262329102),
-            Point3::new(-266.5200710296631, -127.99999713897705, 68.36463809013367),
-            Point3::new(112.11632490158081, -127.99999713897705, 157.73917436599731),
-            Point3::new(-6.679397076368332, -127.99999713897705, -5.5381543934345245),
-            Point3::new(126.35641098022461, -127.99999713897705, -37.95653581619263),
-            Point3::new(199.80257749557495, -127.99999713897705, -157.0783257484436),
-            Point3::new(305.0049066543579, -127.99999713897705, -229.99463081359863),
-            Point3::new(-416.57819747924805, 0.0, 302.00212001800537),
-            Point3::new(365.0245666503906, 7.680699631862353e-7, -368.65246295928955),
-            Point3::new(-299.06609058380127, 0.0, 246.9965696334839),
-            Point3::new(-247.02234268188477, 0.0, 96.73402309417725),
-            Point3::new(-108.19641351699829, 0.0, 58.01798701286316),
-            Point3::new(-16.1965474486351, 0.0, -19.385695457458496),
-            Point3::new(105.04977703094482, 0.0, -68.95790696144104),
-            Point3::new(208.98315906524658, 0.0, -143.7205195426941),
-            Point3::new(324.2499113082886, 0.0, -201.99296474456787),
-            Point3::new(-416.57819747924805, 127.99999713897705, 302.00212001800537),
-            Point3::new(365.0245666503906, 127.99999713897705, -368.65246295928955),
-            Point3::new(-284.31975841522217, 127.99999713897705, 268.4526205062866),
-            Point3::new(-261.9521141052246, 127.99999713897705, 75.01106262207031),
-            Point3::new(-92.20115542411804, 127.99999713897705, 96.01361155509949),
-            Point3::new(23.052367568016052, 127.99999713897705, 22.99945056438446),
-            Point3::new(105.71578741073608, 127.99999713897705, -67.98886060714722),
-            Point3::new(220.52206993103027, 127.99999713897705, -126.93129777908325),
-            Point3::new(312.89656162261963, 127.99999713897705, -218.5122013092041),
-            Point3::new(-416.57819747924805, 255.9999942779541, 302.00212001800537),
-            Point3::new(365.0245666503906, 255.9999942779541, -368.65246295928955),
-            Point3::new(-295.18823623657227, 255.9999942779541, 252.6388645172119),
-            Point3::new(-217.91810989379883, 255.9999942779541, 139.0809178352356),
-            Point3::new(-121.96284532546997, 255.9999942779541, 52.710068225860596),
-            Point3::new(-14.600066840648651, 255.9999942779541, -17.06281304359436),
-            Point3::new(140.01083374023438, 255.9999942779541, -91.70113205909729),
-            Point3::new(184.2336654663086, 255.9999942779541, -179.73122596740723),
-            Point3::new(287.46042251586914, 255.9999942779541, -255.5220365524292),
-            Point3::new(-416.57819747924805, 383.99999141693115, 302.00212001800537),
-            Point3::new(365.0245666503906, 383.99999141693115, -368.65246295928955),
-            Point3::new(-320.8559274673462, 383.99999141693115, 215.2921438217163),
-            Point3::new(-208.43336582183838, 383.99999141693115, 152.88132429122925),
-            Point3::new(-102.94497013092041, 383.99999141693115, 80.3812563419342),
-            Point3::new(-35.60705482959747, 383.99999141693115, -47.6281613111496),
-            Point3::new(108.03189277648926, 383.99999141693115, -64.61890935897827),
-            Point3::new(215.79504013061523, 383.99999141693115, -133.80916118621826),
-            Point3::new(317.04962253570557, 383.99999141693115, -212.469482421875),
-            Point3::new(-416.57819747924805, 511.9999885559082, 302.00212001800537),
-            Point3::new(365.0245666503906, 511.9999885559082, -368.65246295928955),
-            Point3::new(-313.92178535461426, 511.9999885559082, 225.38139820098877),
-            Point3::new(-208.43336582183838, 511.9999885559082, 152.88132429122925),
-            Point3::new(-102.94497013092041, 511.9999885559082, 80.3812563419342),
-            Point3::new(2.5434570387005806, 511.9999885559082, 7.881172001361847),
-            Point3::new(108.03189277648926, 511.9999885559082, -64.61890935897827),
-            Point3::new(213.52026462554932, 511.9999885559082, -137.1189832687378),
-            Point3::new(319.0086603164673, 511.9999885559082, -209.61904525756836),
+            Vec3::new(-393.922, -511.9999885559082, 334.967_16),
+            Vec3::new(449.985, -511.9999885559082, -245.033_45),
+            Vec3::new(-288.433_53, -511.9999885559082, 262.467_04),
+            Vec3::new(-182.945_1, -511.9999885559082, 189.967),
+            Vec3::new(-77.456_696, -511.9999885559082, 117.466_93),
+            Vec3::new(28.031_721, -511.9999885559082, 44.966_843),
+            Vec3::new(133.520_17, -511.9999885559082, -27.533_241),
+            Vec3::new(239.008_54, -511.9999885559082, -100.033_31),
+            Vec3::new(344.496_95, -511.9999885559082, -172.533_37),
+            Vec3::new(-416.578_2, -383.99999141693115, 302.002_1),
+            Vec3::new(365.024_57, -383.99999141693115, -368.652_47),
+            Vec3::new(-313.921_78, -383.99999141693115, 225.381_4),
+            Vec3::new(-208.813_78, -383.99999141693115, 152.327_8),
+            Vec3::new(-100.112_94, -383.99999141693115, 84.501_88),
+            Vec3::new(5.375_473, -383.99999141693115, 12.001_801),
+            Vec3::new(105.538_18, -383.99999141693115, -68.247_26),
+            Vec3::new(210.998_96, -383.99999141693115, -140.787_48),
+            Vec3::new(319.008_67, -383.99999141693115, -209.619_05),
+            Vec3::new(-416.578_2, -255.9999942779541, 302.002_1),
+            Vec3::new(365.024_57, -255.9999942779541, -368.652_47),
+            Vec3::new(-261.827_88, -255.9999942779541, 301.178_47),
+            Vec3::new(-253.228_09, -255.9999942779541, 87.704_575),
+            Vec3::new(-100.112_94, -255.9999942779541, 84.501_88),
+            Vec3::new(5.375_473, -255.9999942779541, 12.001_801),
+            Vec3::new(65.646_64, -255.9999942779541, -126.289_82),
+            Vec3::new(266.795_3, -255.9999942779541, -59.603_333),
+            Vec3::new(335.661_74, -255.9999942779541, -185.388_67),
+            Vec3::new(-416.578_2, -127.99999713897705, 302.002_1),
+            Vec3::new(365.024_57, -127.99999713897705, -368.652_47),
+            Vec3::new(-330.709_9, -127.99999713897705, 200.954_53),
+            Vec3::new(-266.520_08, -127.99999713897705, 68.364_64),
+            Vec3::new(112.116_325, -127.99999713897705, 157.739_18),
+            Vec3::new(-6.679_397, -127.99999713897705, -5.538_154_6),
+            Vec3::new(126.356_415, -127.99999713897705, -37.956_535),
+            Vec3::new(199.802_58, -127.99999713897705, -157.078_32),
+            Vec3::new(305.004_9, -127.99999713897705, -229.994_63),
+            Vec3::new(-416.578_2, 0.0, 302.002_1),
+            Vec3::new(365.024_57, 7.680_7e-7, -368.652_47),
+            Vec3::new(-299.066_1, 0.0, 246.996_57),
+            Vec3::new(-247.022_34, 0.0, 96.734_024),
+            Vec3::new(-108.196_41, 0.0, 58.017_986),
+            Vec3::new(-16.196_547, 0.0, -19.385_695),
+            Vec3::new(105.049_774, 0.0, -68.957_91),
+            Vec3::new(208.983_15, 0.0, -143.720_52),
+            Vec3::new(324.249_9, 0.0, -201.992_97),
+            Vec3::new(-416.578_2, 127.99999713897705, 302.002_1),
+            Vec3::new(365.024_57, 127.99999713897705, -368.652_47),
+            Vec3::new(-284.319_76, 127.99999713897705, 268.452_6),
+            Vec3::new(-261.952_12, 127.99999713897705, 75.011_06),
+            Vec3::new(-92.201_16, 127.99999713897705, 96.013_61),
+            Vec3::new(23.052_368, 127.99999713897705, 22.999_45),
+            Vec3::new(105.715_79, 127.99999713897705, -67.988_86),
+            Vec3::new(220.522_06, 127.99999713897705, -126.931_3),
+            Vec3::new(312.896_58, 127.99999713897705, -218.512_2),
+            Vec3::new(-416.578_2, 255.9999942779541, 302.002_1),
+            Vec3::new(365.024_57, 255.9999942779541, -368.652_47),
+            Vec3::new(-295.188_23, 255.9999942779541, 252.638_87),
+            Vec3::new(-217.918_1, 255.9999942779541, 139.080_92),
+            Vec3::new(-121.962_845, 255.9999942779541, 52.710_068),
+            Vec3::new(-14.600_067, 255.9999942779541, -17.062_813),
+            Vec3::new(140.010_83, 255.9999942779541, -91.701_13),
+            Vec3::new(184.233_67, 255.9999942779541, -179.731_23),
+            Vec3::new(287.460_42, 255.9999942779541, -255.522_03),
+            Vec3::new(-416.578_2, 383.99999141693115, 302.002_1),
+            Vec3::new(365.024_57, 383.99999141693115, -368.652_47),
+            Vec3::new(-320.855_93, 383.99999141693115, 215.292_14),
+            Vec3::new(-208.433_36, 383.99999141693115, 152.881_32),
+            Vec3::new(-102.944_97, 383.99999141693115, 80.381_256),
+            Vec3::new(-35.607_056, 383.99999141693115, -47.628_162),
+            Vec3::new(108.031_89, 383.99999141693115, -64.618_91),
+            Vec3::new(215.795_04, 383.99999141693115, -133.809_16),
+            Vec3::new(317.049_62, 383.99999141693115, -212.469_48),
+            Vec3::new(-416.578_2, 511.9999885559082, 302.002_1),
+            Vec3::new(365.024_57, 511.9999885559082, -368.652_47),
+            Vec3::new(-313.921_78, 511.9999885559082, 225.381_4),
+            Vec3::new(-208.433_36, 511.9999885559082, 152.881_32),
+            Vec3::new(-102.944_97, 511.9999885559082, 80.381_256),
+            Vec3::new(2.543_457, 511.9999885559082, 7.881_172),
+            Vec3::new(108.031_89, 511.9999885559082, -64.618_91),
+            Vec3::new(213.520_26, 511.9999885559082, -137.118_99),
+            Vec3::new(319.008_67, 511.9999885559082, -209.619_05),
         ];
 
         assert_eq!(builder.vertices.len(), expected_vertices.len());
@@ -1586,7 +1569,7 @@ mod tests {
 
         assert_relative_eq!(
             builder.center,
-            Point3::new(146.974, 0.0, 131.398),
+            Vec3::new(146.974, 0.0, 131.398),
             epsilon = 1e-3
         );
 
@@ -1605,12 +1588,12 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     fn side_clipping() {
         let mut vertices = vec![
-            Point3::new(-2.0, 1.0, 0.0),
-            Point3::new(-2.0, -1.0, 0.0),
-            Point3::new(0.0, -1.0, 0.0),
-            Point3::new(2.0, 1.0, 0.0),
-            Point3::new(-2.0, -1.0, 2.0),
-            Point3::new(-2.0, 1.0, 2.0),
+            Vec3::new(-2.0, 1.0, 0.0),
+            Vec3::new(-2.0, -1.0, 0.0),
+            Vec3::new(0.0, -1.0, 0.0),
+            Vec3::new(2.0, 1.0, 0.0),
+            Vec3::new(-2.0, -1.0, 2.0),
+            Vec3::new(-2.0, 1.0, 2.0),
         ];
 
         let dummy_side = Side::default();
@@ -1619,8 +1602,8 @@ mod tests {
             FaceBuilder {
                 side: &dummy_side,
                 plane: NdPlane::from_point_normal(
-                    Point3::new(-1.0, 0.0, 0.0),
-                    Unit::new_normalize(Vector3::new(-1.0, 0.0, 0.0)),
+                    Vec3::new(-1.0, 0.0, 0.0),
+                    Vec3::new(-1.0, 0.0, 0.0),
                 ),
                 vertice_indices: Vec::new(),
                 vertice_uvs: Vec::new(),
@@ -1629,8 +1612,8 @@ mod tests {
             FaceBuilder {
                 side: &dummy_side,
                 plane: NdPlane::from_point_normal(
-                    Point3::new(1.0, 0.0, 0.0),
-                    Unit::new_normalize(Vector3::new(1.0, 0.0, 0.0)),
+                    Vec3::new(1.0, 0.0, 0.0),
+                    Vec3::new(1.0, 0.0, 0.0),
                 ),
                 vertice_indices: Vec::new(),
                 vertice_uvs: Vec::new(),
@@ -1639,8 +1622,8 @@ mod tests {
             FaceBuilder {
                 side: &dummy_side,
                 plane: NdPlane::from_point_normal(
-                    Point3::new(0.0, -2.0, 0.0),
-                    Unit::new_normalize(Vector3::new(0.0, -1.0, 0.0)),
+                    Vec3::new(0.0, -2.0, 0.0),
+                    Vec3::new(0.0, -1.0, 0.0),
                 ),
                 vertice_indices: Vec::new(),
                 vertice_uvs: Vec::new(),
@@ -1649,8 +1632,8 @@ mod tests {
             FaceBuilder {
                 side: &dummy_side,
                 plane: NdPlane::from_point_normal(
-                    Point3::new(0.0, 2.0, 0.0),
-                    Unit::new_normalize(Vector3::new(0.0, 1.0, 0.0)),
+                    Vec3::new(0.0, 2.0, 0.0),
+                    Vec3::new(0.0, 1.0, 0.0),
                 ),
                 vertice_indices: Vec::new(),
                 vertice_uvs: Vec::new(),
@@ -1661,22 +1644,22 @@ mod tests {
         let clipped_side = FaceBuilder {
             side: &dummy_side,
             plane: NdPlane::from_point_normal(
-                Point3::new(2.0, 2.0, 0.0),
-                Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0)),
+                Vec3::new(2.0, 2.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
             ),
             vertice_indices: vec![0, 1, 2, 3],
-            vertice_uvs: vec![[0.0, 0.0]; 4],
+            vertice_uvs: vec![Vec2::ZERO; 4],
             material_index: 0,
         };
 
         let mut clipped = Vec::new();
 
         clipped_side.clip_to_sides(
-            Point3::new(3.0, 2.0, 0.0),
+            Vec3::new(3.0, 2.0, 0.0),
             &mut clipped,
             &mut vertices,
             &clipping_sides,
-            Point3::new(5.0, 2.0, 0.0),
+            Vec3::new(5.0, 2.0, 0.0),
             false,
             1e-3,
         );
@@ -1684,14 +1667,14 @@ mod tests {
         assert_relative_eq!(
             &vertices[..],
             &[
-                Point3::new(-2.0, 1.0, 0.0),
-                Point3::new(-2.0, -1.0, 0.0),
-                Point3::new(0.0, -1.0, 0.0),
-                Point3::new(2.0, 1.0, 0.0),
-                Point3::new(-2.0, -1.0, 2.0),
-                Point3::new(-2.0, 1.0, 2.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
+                Vec3::new(-2.0, 1.0, 0.0),
+                Vec3::new(-2.0, -1.0, 0.0),
+                Vec3::new(0.0, -1.0, 0.0),
+                Vec3::new(2.0, 1.0, 0.0),
+                Vec3::new(-2.0, -1.0, 2.0),
+                Vec3::new(-2.0, 1.0, 2.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(1.0, 1.0, 0.0),
             ][..],
             epsilon = 1e-3
         );
@@ -1701,11 +1684,11 @@ mod tests {
             vec![FaceBuilder {
                 side: &dummy_side,
                 plane: NdPlane::from_point_normal(
-                    Point3::new(2.0, 2.0, 0.0),
-                    Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0))
+                    Vec3::new(2.0, 2.0, 0.0),
+                    Vec3::new(0.0, 0.0, 1.0)
                 ),
                 vertice_indices: vec![0, 1, 2, 6, 7],
-                vertice_uvs: vec![[0.0, 0.0]; 5],
+                vertice_uvs: vec![Vec2::ZERO; 5],
                 material_index: 0,
             }]
         );
@@ -1713,22 +1696,22 @@ mod tests {
         let clipped_side = FaceBuilder {
             side: &dummy_side,
             plane: NdPlane::from_point_normal(
-                Point3::new(-2.0, 0.0, 2.0),
-                Unit::new_normalize(Vector3::new(-1.0, 0.0, 0.0)),
+                Vec3::new(-2.0, 0.0, 2.0),
+                Vec3::new(-1.0, 0.0, 0.0),
             ),
             vertice_indices: vec![0, 1, 4, 5],
-            vertice_uvs: vec![[0.0, 0.0]; 4],
+            vertice_uvs: vec![Vec2::ZERO; 4],
             material_index: 0,
         };
 
         let mut clipped = Vec::new();
 
         clipped_side.clone().clip_to_sides(
-            Point3::new(3.0, 2.0, 0.0),
+            Vec3::new(3.0, 2.0, 0.0),
             &mut clipped,
             &mut vertices,
             &clipping_sides,
-            Point3::new(5.0, 2.0, 0.0),
+            Vec3::new(5.0, 2.0, 0.0),
             false,
             1e-3,
         );
@@ -1738,22 +1721,22 @@ mod tests {
         let clipped_side = FaceBuilder {
             side: &dummy_side,
             plane: NdPlane::from_point_normal(
-                Point3::new(1.0, 0.0, 0.0),
-                Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0)),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
             ),
             vertice_indices: vec![3, 7, 6],
-            vertice_uvs: vec![[0.0, 0.0]; 2],
+            vertice_uvs: vec![Vec2::ZERO; 2],
             material_index: 0,
         };
 
         let mut clipped = Vec::new();
 
         clipped_side.clone().clip_to_sides(
-            Point3::new(3.0, 2.0, 0.0),
+            Vec3::new(3.0, 2.0, 0.0),
             &mut clipped,
             &mut vertices,
             &clipping_sides,
-            Point3::new(5.0, 2.0, 0.0),
+            Vec3::new(5.0, 2.0, 0.0),
             false,
             1e-3,
         );
@@ -1769,13 +1752,13 @@ mod tests {
 
         let clipping_solid = SolidBuilder {
             solid: &dummy_solid,
-            center: Point3::new(5.0, 2.0, 0.0),
+            center: Vec3::new(5.0, 2.0, 0.0),
             faces: vec![
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(-1.0, 0.0, 0.0),
-                        Unit::new_normalize(Vector3::new(-1.0, 0.0, 0.0)),
+                        Vec3::new(-1.0, 0.0, 0.0),
+                        Vec3::new(-1.0, 0.0, 0.0),
                     ),
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
@@ -1784,8 +1767,8 @@ mod tests {
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(1.0, 0.0, 0.0),
-                        Unit::new_normalize(Vector3::new(1.0, 0.0, 0.0)),
+                        Vec3::new(1.0, 0.0, 0.0),
+                        Vec3::new(1.0, 0.0, 0.0),
                     ),
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
@@ -1794,8 +1777,8 @@ mod tests {
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(0.0, -2.0, 0.0),
-                        Unit::new_normalize(Vector3::new(0.0, -1.0, 0.0)),
+                        Vec3::new(0.0, -2.0, 0.0),
+                        Vec3::new(0.0, -1.0, 0.0),
                     ),
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
@@ -1804,8 +1787,8 @@ mod tests {
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(0.0, 2.0, 0.0),
-                        Unit::new_normalize(Vector3::new(0.0, 1.0, 0.0)),
+                        Vec3::new(0.0, 2.0, 0.0),
+                        Vec3::new(0.0, 1.0, 0.0),
                     ),
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
@@ -1814,8 +1797,8 @@ mod tests {
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(0.0, 0.0, -1.0),
-                        Unit::new_normalize(Vector3::new(0.0, 0.0, -1.0)),
+                        Vec3::new(0.0, 0.0, -1.0),
+                        Vec3::new(0.0, 0.0, -1.0),
                     ),
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
@@ -1824,8 +1807,8 @@ mod tests {
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(0.0, 0.0, 1.0),
-                        Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0)),
+                        Vec3::new(0.0, 0.0, 1.0),
+                        Vec3::new(0.0, 0.0, 1.0),
                     ),
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
@@ -1835,89 +1818,89 @@ mod tests {
             vertices: Vec::new(),
             materials: Vec::new(),
             is_displacement: false,
-            aabb_min: Point3::new(0.0, 0.0, 0.0),
-            aabb_max: Point3::new(0.0, 0.0, 0.0),
+            aabb_min: Vec3::new(0.0, 0.0, 0.0),
+            aabb_max: Vec3::new(0.0, 0.0, 0.0),
         };
 
         let mut clipped_solid = SolidBuilder {
             solid: &dummy_solid,
-            center: Point3::new(6.0, 4.0, 0.0),
+            center: Vec3::new(6.0, 4.0, 0.0),
             faces: vec![
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(-1.0, 2.0, 0.0),
-                        Unit::new_normalize(Vector3::new(-1.0, 1.0, 0.0)),
+                        Vec3::new(-1.0, 2.0, 0.0),
+                        Vec3::new(-1.0, 1.0, 0.0).normalize(),
                     ),
                     vertice_indices: vec![0, 1, 5, 4],
-                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
                 },
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(-2.0, 1.0, 0.0),
-                        Unit::new_normalize(Vector3::new(-1.0, -1.0, 0.0)),
+                        Vec3::new(-2.0, 1.0, 0.0),
+                        Vec3::new(-1.0, -1.0, 0.0).normalize(),
                     ),
                     vertice_indices: vec![1, 2, 6, 5],
-                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
                 },
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(1.0, -2.0, 0.0),
-                        Unit::new_normalize(Vector3::new(1.0, -1.0, 0.0)),
+                        Vec3::new(1.0, -2.0, 0.0),
+                        Vec3::new(1.0, -1.0, 0.0).normalize(),
                     ),
                     vertice_indices: vec![2, 3, 7, 6],
-                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
                 },
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(2.0, -1.0, 0.0),
-                        Unit::new_normalize(Vector3::new(1.0, 1.0, 0.0)),
+                        Vec3::new(2.0, -1.0, 0.0),
+                        Vec3::new(1.0, 1.0, 0.0).normalize(),
                     ),
                     vertice_indices: vec![3, 0, 4, 7],
-                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
                 },
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(0.0, 0.0, 1.0),
-                        Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0)),
+                        Vec3::new(0.0, 0.0, 1.0),
+                        Vec3::new(0.0, 0.0, 1.0),
                     ),
                     vertice_indices: vec![0, 1, 2, 3],
-                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
                 },
                 FaceBuilder {
                     side: &dummy_side,
                     plane: NdPlane::from_point_normal(
-                        Point3::new(0.0, 0.0, -1.0),
-                        Unit::new_normalize(Vector3::new(0.0, 0.0, -1.0)),
+                        Vec3::new(0.0, 0.0, -1.0),
+                        Vec3::new(0.0, 0.0, -1.0),
                     ),
                     vertice_indices: vec![7, 6, 5, 4],
-                    vertice_uvs: vec![[0.0, 0.0]; 4],
+                    vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
                 },
             ],
             vertices: vec![
-                Point3::new(-1.0, 2.0, 1.0),
-                Point3::new(-2.0, 1.0, 1.0),
-                Point3::new(1.0, -2.0, 1.0),
-                Point3::new(2.0, -1.0, 1.0),
-                Point3::new(-1.0, 2.0, -1.0),
-                Point3::new(-2.0, 1.0, -1.0),
-                Point3::new(1.0, -2.0, -1.0),
-                Point3::new(2.0, -1.0, -1.0),
+                Vec3::new(-1.0, 2.0, 1.0),
+                Vec3::new(-2.0, 1.0, 1.0),
+                Vec3::new(1.0, -2.0, 1.0),
+                Vec3::new(2.0, -1.0, 1.0),
+                Vec3::new(-1.0, 2.0, -1.0),
+                Vec3::new(-2.0, 1.0, -1.0),
+                Vec3::new(1.0, -2.0, -1.0),
+                Vec3::new(2.0, -1.0, -1.0),
             ],
             materials: Vec::new(),
             is_displacement: false,
-            aabb_min: Point3::new(0.0, 0.0, 0.0),
-            aabb_max: Point3::new(0.0, 0.0, 0.0),
+            aabb_min: Vec3::new(0.0, 0.0, 0.0),
+            aabb_max: Vec3::new(0.0, 0.0, 0.0),
         };
 
         clipped_solid.clip_to_solid(&clipping_solid, false, 1e-3);

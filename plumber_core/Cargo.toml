@@ -15,13 +15,12 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 plumber_vdf = { version = "0.1.0", path = "../plumber_vdf" }
 plumber_vpk = { version = "0.1.0", path = "../plumber_vpk", features = ["serde"] }
-approx = "0.4.0"
+approx = "0.5.0"
 float-ord = "0.3.1"
 itertools = "0.10.0"
-nalgebra = "0.25.4"
 ndarray = "0.15.1"
 rgb = "0.8.27"
-serde = "= 1.0.125"
+serde = { version = "= 1.0.125", features = ["derive"] }
 serde_derive = "= 1.0.125"
 thiserror = "1.0.24"
 uncased = { version = "0.9.6", features = ["with-serde-alloc"] }
@@ -36,6 +35,7 @@ zerocopy = { version = "0.5.0" }
 byteorder = { version = "1.4.3" }
 maligned = { version = "0.2.1" }
 bitflags = { version = "1.2.1" }
+glam = { version = "0.20.2", features = ["approx"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = { version = "0.8" }

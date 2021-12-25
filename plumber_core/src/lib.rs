@@ -6,6 +6,8 @@
 #![allow(clippy::cast_sign_loss)]
 // causes too long living borrows
 #![allow(clippy::option_if_let_else)]
+// approx triggers this
+#![allow(clippy::manual_assert)]
 
 pub mod asset;
 pub mod fs;

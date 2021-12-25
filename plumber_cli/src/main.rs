@@ -35,6 +35,6 @@ fn main() {
     let file_system = FileSystem::from_app(&app).unwrap();
 
     match opts.subcommand {
-        SubCommand::DumpAnimation(opts) => dump_animation(opts, file_system),
+        SubCommand::DumpAnimation(opts) => dump_animation(opts, &file_system),
     }
 }

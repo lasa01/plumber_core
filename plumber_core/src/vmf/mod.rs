@@ -7,6 +7,7 @@ mod solid_builder;
 mod types;
 
 use crate::fs::PathBuf;
+use glam::{Vec3, Vec2};
 use types::{bracketed_vector2, bracketed_vector3, color, BracketedVector3, Plane, UvAxis};
 
 use plumber_vdf as vdf;
@@ -18,7 +19,6 @@ use std::{
 };
 
 use itertools::Itertools;
-use nalgebra::{Vector2, Vector3};
 use ndarray::Array2;
 use rgb::RGB8;
 use serde::{
@@ -205,7 +205,7 @@ pub struct Side {
 pub struct DispInfo {
     pub power: u8,
     #[serde(rename = "startposition", with = "bracketed_vector3")]
-    pub start_position: Vector3<f64>,
+    pub start_position: Vec3,
     pub elevation: f64,
     pub subdiv: bool,
     pub normals: Vector3DispData,
@@ -467,7 +467,7 @@ impl Serialize for RowKey {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vector3DispData {
-    pub data: Array2<nalgebra::Vector3<f64>>,
+    pub data: Array2<Vec3>,
 }
 
 impl Vector3DispData {
@@ -778,7 +778,7 @@ pub struct Editor {
         default,
         with = "bracketed_vector2::option"
     )]
-    pub logical_pos: Option<Vector2<f64>>,
+    pub logical_pos: Option<Vec2>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]

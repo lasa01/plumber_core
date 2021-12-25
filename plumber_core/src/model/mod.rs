@@ -16,7 +16,6 @@ use std::{
 use mdl::Mdl;
 pub use mdl::{
     AnimationDescFlags, AnimationPositionData, AnimationRotationData, BoneAnimationData,
-    Quaternion, Vector,
 };
 pub use vtx::Face;
 use vtx::Vtx;

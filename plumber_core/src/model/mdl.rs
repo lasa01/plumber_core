@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
-use std::f64::consts::FRAC_PI_2;
+use std::f32::consts::FRAC_PI_2;
 use std::fmt;
 use std::ops::Deref;
 use std::{io, mem::size_of, str};
 
 use bitflags::bitflags;
+use glam::{EulerRot, Quat, Vec3};
 use itertools::Itertools;
 use maligned::A4;
-use nalgebra::UnitQuaternion;
 use zerocopy::FromBytes;
 
 use crate::fs::GameFile;
@@ -1501,109 +1501,65 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct Quaternion {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
-    pub w: f64,
-}
+fn quat_from_bytes_48(bytes: [u8; 6]) -> Quat {
+    let a = (u16::from(bytes[1] & 0x7f) << 8) | u16::from(bytes[0]);
+    let b = (u16::from(bytes[3] & 0x7f) << 8) | u16::from(bytes[2]);
+    let c = (u16::from(bytes[5] & 0x7f) << 8) | u16::from(bytes[4]);
 
-impl Quaternion {
-    #[must_use]
-    pub fn from_bytes_48(bytes: [u8; 6]) -> Self {
-        let a = (u16::from(bytes[1] & 0x7f) << 8) | u16::from(bytes[0]);
-        let b = (u16::from(bytes[3] & 0x7f) << 8) | u16::from(bytes[2]);
-        let c = (u16::from(bytes[5] & 0x7f) << 8) | u16::from(bytes[4]);
+    let missing_component_index = ((bytes[1] & 0x80) >> 6) | ((bytes[3] & 0x80) >> 7);
+    let missing_component_sign = if bytes[5] & 0x80 > 0 { -1.0 } else { 1.0 };
 
-        let missing_component_index = ((bytes[1] & 0x80) >> 6) | ((bytes[3] & 0x80) >> 7);
-        let missing_component_sign = if bytes[5] & 0x80 > 0 { -1.0 } else { 1.0 };
+    let a = (f32::from(a) - 16384.0) / 23168.0;
+    let b = (f32::from(b) - 16384.0) / 23168.0;
+    let c = (f32::from(c) - 16384.0) / 23168.0;
 
-        let a = (f64::from(a) - 16384.0) / 23168.0;
-        let b = (f64::from(b) - 16384.0) / 23168.0;
-        let c = (f64::from(c) - 16384.0) / 23168.0;
+    let missing_component = (1.0 - a * a - b * b - c * c).sqrt() * missing_component_sign;
 
-        let missing_component = (1.0 - a * a - b * b - c * c).sqrt() * missing_component_sign;
-
-        match missing_component_index {
-            1 => Self {
-                x: missing_component,
-                y: a,
-                z: b,
-                w: c,
-            },
-            2 => Self {
-                x: c,
-                y: missing_component,
-                z: a,
-                w: b,
-            },
-            3 => Self {
-                x: b,
-                y: c,
-                z: missing_component,
-                w: a,
-            },
-            0 => Self {
-                x: a,
-                y: b,
-                z: c,
-                w: missing_component,
-            },
-            4.. => unreachable!(
-                "missing component index has only 2 nonzero bits, so maximum value is 3"
-            ),
+    match missing_component_index {
+        1 => Quat::from_xyzw(missing_component, a, b, c),
+        2 => Quat::from_xyzw(c, missing_component, a, b),
+        3 => Quat::from_xyzw(b, c, missing_component, a),
+        0 => Quat::from_xyzw(a, b, c, missing_component),
+        4.. => {
+            unreachable!("missing component index has only 2 nonzero bits, so maximum value is 3")
         }
     }
-
-    #[must_use]
-    pub fn from_bytes_64(bytes: [u8; 8]) -> Self {
-        let x = u32::from(bytes[0]) | u32::from(bytes[1]) << 8 | u32::from(bytes[2] & 0x1f) << 16;
-        let x = (f64::from(x) - 1_048_576.0) / 1_048_576.5;
-
-        let y = u32::from(bytes[2] & 0xe0) >> 5
-            | u32::from(bytes[3]) << 3
-            | u32::from(bytes[4]) << 11
-            | u32::from(bytes[5] & 0x3) << 19;
-        let y = (f64::from(y) - 1_048_576.0) / 1_048_576.5;
-
-        let z = u32::from(bytes[5] & 0xfc) >> 2
-            | u32::from(bytes[6]) << 6
-            | u32::from(bytes[7] & 0x7f) << 14;
-        let z = (f64::from(z) - 1_048_576.0) / 1_048_576.5;
-
-        let w_sign = if bytes[7] & 0x80 > 0 { -1.0 } else { 1.0 };
-        let w = (1.0 - x * x - y * y - z * z).sqrt() * w_sign;
-
-        Self { x, y, z, w }
-    }
-
-    #[must_use]
-    pub fn from_u16s(u16s: [u16; 3]) -> Self {
-        let x = (f64::from(u16s[0]) - 32768.0) / 32768.0;
-        let y = (f64::from(u16s[1]) - 32768.0) / 32768.0;
-        let z = (f64::from(u16s[2] & 0x7fff) - 16384.0) / 16384.0;
-
-        let w_sign = if u16s[2] & 0x8000 > 0 { -1.0 } else { 1.0 };
-
-        let w = (1.0 - x * x - y * y - z * z).sqrt() * w_sign;
-
-        Self { x, y, z, w }
-    }
-
-    fn apply_root_rotation_correction(&mut self) {
-        let mut new_rotation = UnitQuaternion::new_normalize(nalgebra::Quaternion::new(
-            self.w, self.x, self.y, self.z,
-        ));
-        new_rotation *= UnitQuaternion::from_euler_angles(0.0, 0.0, -FRAC_PI_2);
-        self.x = new_rotation.i;
-        self.y = new_rotation.j;
-        self.z = new_rotation.k;
-        self.w = new_rotation.w;
-    }
 }
 
-fn f16_to_f64(f16: u16) -> f64 {
+fn quat_from_bytes_64(bytes: [u8; 8]) -> Quat {
+    let x = u32::from(bytes[0]) | u32::from(bytes[1]) << 8 | u32::from(bytes[2] & 0x1f) << 16;
+    let x = (x as f32 - 1_048_576.0) / 1_048_576.5;
+
+    let y = u32::from(bytes[2] & 0xe0) >> 5
+        | u32::from(bytes[3]) << 3
+        | u32::from(bytes[4]) << 11
+        | u32::from(bytes[5] & 0x3) << 19;
+    let y = (y as f32 - 1_048_576.0) / 1_048_576.5;
+
+    let z = u32::from(bytes[5] & 0xfc) >> 2
+        | u32::from(bytes[6]) << 6
+        | u32::from(bytes[7] & 0x7f) << 14;
+    let z = (z as f32 - 1_048_576.0) / 1_048_576.5;
+
+    let w_sign = if bytes[7] & 0x80 > 0 { -1.0 } else { 1.0 };
+    let w = (1.0 - x * x - y * y - z * z).sqrt() * w_sign;
+
+    Quat::from_xyzw(x, y, z, w)
+}
+
+fn quat_from_u16s(u16s: [u16; 3]) -> Quat {
+    let x = (f32::from(u16s[0]) - 32768.0) / 32768.0;
+    let y = (f32::from(u16s[1]) - 32768.0) / 32768.0;
+    let z = (f32::from(u16s[2] & 0x7fff) - 16384.0) / 16384.0;
+
+    let w_sign = if u16s[2] & 0x8000 > 0 { -1.0 } else { 1.0 };
+
+    let w = (1.0 - x * x - y * y - z * z).sqrt() * w_sign;
+
+    Quat::from_xyzw(x, y, z, w)
+}
+
+fn f16_to_f32(f16: u16) -> f32 {
     let mantissa = u32::from(f16 & 0x3ff);
     let biased_exponent = u32::from((f16 & 0x7c00) >> 10);
     let sign = u32::from((f16 & 0x8000) >> 15);
@@ -1620,52 +1576,38 @@ fn f16_to_f64(f16: u16) -> f64 {
     }
 
     if biased_exponent == 0 && mantissa != 0 {
-        let float_mantissa = f64::from(mantissa) / 1024.0;
+        let float_mantissa = mantissa as f32 / 1024.0;
         float_sign * float_mantissa / 16384.0
     } else {
-        f64::from(f32::from_bits(
-            sign << 31 | (biased_exponent + 127 - 15) << 23 | mantissa << (23 - 10),
-        ))
+        f32::from_bits(sign << 31 | (biased_exponent + 127 - 15) << 23 | mantissa << (23 - 10))
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct Vector {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
+pub fn vec3_from_u16s(u16s: [u16; 3]) -> Vec3 {
+    Vec3::new(
+        f16_to_f32(u16s[0]),
+        f16_to_f32(u16s[1]),
+        f16_to_f32(u16s[2]),
+    )
 }
 
-impl Vector {
-    #[must_use]
-    pub fn from_u16s(u16s: [u16; 3]) -> Self {
-        Self {
-            x: f16_to_f64(u16s[0]),
-            y: f16_to_f64(u16s[1]),
-            z: f16_to_f64(u16s[2]),
-        }
-    }
+fn apply_root_position_correction(vec: &mut Vec3) {
+    let old_position = *vec;
+    vec.x = old_position.y;
+    vec.y = -old_position.x;
+}
 
-    fn apply_root_position_correction(&mut self) {
-        let old_position = *self;
-        self.x = old_position.y;
-        self.y = -old_position.x;
-    }
-
-    fn apply_root_rotation_correction(&mut self) {
-        self.z -= FRAC_PI_2;
-    }
+fn apply_root_rotation_correction(quat: &mut Quat) {
+    *quat *= Quat::from_rotation_z(-FRAC_PI_2);
 }
 
 /// Rotation animation data of a bone.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnimationRotationData {
     /// The rotation of the bone stays constant during the animation.
-    Constant(Quaternion),
+    Constant(Quat),
     /// The rotation of the bone is animated. Contains one rotation quaternion for each frame.
-    Animated(Vec<Quaternion>),
-    /// The rotation of the bone is animated. Contains one rotation euler for each frame.
-    AnimatedEuler(Vec<Vector>),
+    Animated(Vec<Quat>),
     /// The animation has no data of the rotation of the bone.
     None,
 }
@@ -1680,9 +1622,9 @@ impl Default for AnimationRotationData {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnimationPositionData {
     /// The position of the bone stays constant during the animation.
-    Constant(Vector),
+    Constant(Vec3),
     /// The position of the bone is animated. Contains one position for each frame.
-    Animated(Vec<Vector>),
+    Animated(Vec<Vec3>),
     /// The animation has no data of the position of the bone.
     None,
 }
@@ -1703,25 +1645,20 @@ pub struct BoneAnimationData {
 impl BoneAnimationData {
     fn apply_root_correction(&mut self) {
         match &mut self.rotation {
-            AnimationRotationData::Constant(rotation) => rotation.apply_root_rotation_correction(),
+            AnimationRotationData::Constant(rotation) => apply_root_rotation_correction(rotation),
             AnimationRotationData::Animated(rotations) => {
                 for rotation in rotations {
-                    rotation.apply_root_rotation_correction();
-                }
-            }
-            AnimationRotationData::AnimatedEuler(rotations) => {
-                for rotation in rotations {
-                    rotation.apply_root_rotation_correction();
+                    apply_root_rotation_correction(rotation);
                 }
             }
             AnimationRotationData::None => (),
         }
 
         match &mut self.position {
-            AnimationPositionData::Constant(position) => position.apply_root_position_correction(),
+            AnimationPositionData::Constant(position) => apply_root_position_correction(position),
             AnimationPositionData::Animated(positions) => {
                 for position in positions {
-                    position.apply_root_position_correction();
+                    apply_root_position_correction(position);
                 }
             }
             AnimationPositionData::None => (),
@@ -1780,8 +1717,7 @@ impl<'a> FrameAnimationRef<'a> {
                     .ok_or_else(|| corrupted("frame animation bone constants out of bounds"))?
                     .try_into()
                     .expect("slice must have correct length");
-                data.rotation =
-                    AnimationRotationData::Constant(Quaternion::from_bytes_48(value_bytes));
+                data.rotation = AnimationRotationData::Constant(quat_from_bytes_48(value_bytes));
 
                 bytes = &bytes[6..];
             }
@@ -1791,7 +1727,7 @@ impl<'a> FrameAnimationRef<'a> {
                     corrupted("frame animation bone constants out of bounds or misaligned")
                 })?;
 
-                data.rotation = AnimationRotationData::Constant(Quaternion::from_u16s(
+                data.rotation = AnimationRotationData::Constant(quat_from_u16s(
                     u16s.try_into().expect("slice must have correct length"),
                 ));
             }
@@ -1801,7 +1737,7 @@ impl<'a> FrameAnimationRef<'a> {
                     corrupted("frame animation bone constants out of bounds or misaligned")
                 })?;
 
-                data.position = AnimationPositionData::Constant(Vector::from_u16s(
+                data.position = AnimationPositionData::Constant(vec3_from_u16s(
                     u16s.try_into().expect("slice must have correct length"),
                 ));
             }
@@ -1854,7 +1790,7 @@ impl<'a> FrameAnimationRef<'a> {
                         .expect("slice must have correct length");
 
                     if let AnimationRotationData::Animated(frames) = &mut data.rotation {
-                        frames.push(Quaternion::from_bytes_48(value_bytes));
+                        frames.push(quat_from_bytes_48(value_bytes));
                     } else {
                         unreachable!();
                     }
@@ -1868,7 +1804,7 @@ impl<'a> FrameAnimationRef<'a> {
                     })?;
 
                     if let AnimationRotationData::Animated(frames) = &mut data.rotation {
-                        frames.push(Quaternion::from_u16s(
+                        frames.push(quat_from_u16s(
                             u16s.try_into().expect("slice must have correct length"),
                         ));
                     } else {
@@ -1882,7 +1818,7 @@ impl<'a> FrameAnimationRef<'a> {
                     })?;
 
                     if let AnimationPositionData::Animated(frames) = &mut data.position {
-                        frames.push(Vector::from_u16s(
+                        frames.push(vec3_from_u16s(
                             u16s.try_into().expect("slice must have correct length"),
                         ));
                     } else {
@@ -1896,11 +1832,7 @@ impl<'a> FrameAnimationRef<'a> {
                     })?;
 
                     if let AnimationPositionData::Animated(frames) = &mut data.position {
-                        frames.push(Vector {
-                            x: f64::from(f32s[0]),
-                            y: f64::from(f32s[1]),
-                            z: f64::from(f32s[2]),
-                        });
+                        frames.push(Vec3::from_slice(f32s));
                     } else {
                         unreachable!();
                     }
@@ -1978,7 +1910,7 @@ impl<'a> AnimationRef<'a> {
                 .ok_or_else(|| corrupted("animation constants out of bounds"))?
                 .try_into()
                 .expect("slice must have correct length");
-            data.rotation = AnimationRotationData::Constant(Quaternion::from_bytes_64(value_bytes));
+            data.rotation = AnimationRotationData::Constant(quat_from_bytes_64(value_bytes));
 
             *bytes = &bytes[8..];
         }
@@ -1987,7 +1919,7 @@ impl<'a> AnimationRef<'a> {
             let u16s = parse_slice_mut(bytes, 3)
                 .ok_or_else(|| corrupted("animation constants out of bounds"))?;
 
-            data.rotation = AnimationRotationData::Constant(Quaternion::from_u16s(
+            data.rotation = AnimationRotationData::Constant(quat_from_u16s(
                 u16s.try_into().expect("slice must have correct length"),
             ));
         }
@@ -1996,7 +1928,7 @@ impl<'a> AnimationRef<'a> {
             let u16s = parse_slice_mut(bytes, 3)
                 .ok_or_else(|| corrupted("animation constants out of bounds"))?;
 
-            data.position = AnimationPositionData::Constant(Vector::from_u16s(
+            data.position = AnimationPositionData::Constant(vec3_from_u16s(
                 u16s.try_into().expect("slice must have correct length"),
             ));
         };
@@ -2022,7 +1954,7 @@ impl<'a> AnimationRef<'a> {
             let z_offset: i16 = *parse_mut(&mut bytes)
                 .ok_or_else(|| corrupted("animation offsets out of bounds"))?;
 
-            let mut frames = vec![Vector::default(); self.frame_count];
+            let mut frames = vec![Vec3::ZERO; self.frame_count];
 
             if x_offset > 0 {
                 let x_values = self.read_animation_values(
@@ -2061,12 +1993,17 @@ impl<'a> AnimationRef<'a> {
             }
 
             for frame in &mut frames {
-                frame.x += f64::from(self.bone.rotation[0]);
-                frame.y += f64::from(self.bone.rotation[1]);
-                frame.z += f64::from(self.bone.rotation[2]);
+                frame.x += self.bone.rotation[0];
+                frame.y += self.bone.rotation[1];
+                frame.z += self.bone.rotation[2];
             }
 
-            data.rotation = AnimationRotationData::AnimatedEuler(frames);
+            let quat_frames = frames
+                .into_iter()
+                .map(|e| Quat::from_euler(EulerRot::XYZ, e.x, e.y, e.z))
+                .collect();
+
+            data.rotation = AnimationRotationData::Animated(quat_frames);
         }
 
         if flags.contains(AnimationFlags::ANIMPOS) {
@@ -2081,7 +2018,7 @@ impl<'a> AnimationRef<'a> {
             let z_offset: i16 = *parse_mut(&mut bytes)
                 .ok_or_else(|| corrupted("animation offsets out of bounds"))?;
 
-            let mut frames = vec![Vector::default(); self.frame_count];
+            let mut frames = vec![Vec3::ZERO; self.frame_count];
 
             if x_offset > 0 {
                 let x_values = self.read_animation_values(
@@ -2120,9 +2057,9 @@ impl<'a> AnimationRef<'a> {
             }
 
             for frame in &mut frames {
-                frame.x += f64::from(self.bone.position[0]);
-                frame.y += f64::from(self.bone.position[1]);
-                frame.z += f64::from(self.bone.position[2]);
+                frame.x += self.bone.position[0];
+                frame.y += self.bone.position[1];
+                frame.z += self.bone.position[2];
             }
 
             data.position = AnimationPositionData::Animated(frames);
@@ -2167,7 +2104,7 @@ fn read_animation_value(bytes: &mut &[u8]) -> Result<AnimationValue> {
     Ok(AnimationValue::from_bytes(value_bytes))
 }
 
-fn extract_animation_value(frame: usize, values: &[AnimationValue], scale: f32) -> f64 {
+fn extract_animation_value(frame: usize, values: &[AnimationValue], scale: f32) -> f32 {
     let mut k = frame;
     let mut i = 0;
 
@@ -2193,7 +2130,7 @@ fn extract_animation_value(frame: usize, values: &[AnimationValue], scale: f32) 
             }
         })
         .and_then(|i| values.get(i))
-        .map(|&v| f64::from(v.0) * f64::from(scale))
+        .map(|&v| f32::from(v.0) * scale)
         .unwrap_or_default()
 }
 

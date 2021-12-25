@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
+use glam::Vec3;
 use itertools::Itertools;
-use nalgebra::{Point3, Vector3};
 use plumber_vpk::PathBuf;
 use rgb::RGB8;
 use thiserror::Error;
@@ -90,7 +90,7 @@ pub trait BaseEntity {
     fn parse_float_parameter(
         &self,
         parameter: &'static str,
-    ) -> Result<Option<f64>, EntityParseError> {
+    ) -> Result<Option<f32>, EntityParseError> {
         self.parse_parameter(parameter, "not a valid float")
     }
 
@@ -165,12 +165,12 @@ pub trait BaseEntity {
     fn parse_vector3_parameter(
         &self,
         parameter: &'static str,
-    ) -> Result<Option<Vector3<f64>>, EntityParseError> {
+    ) -> Result<Option<Vec3>, EntityParseError> {
         if let Some(value) = self.entity().properties.get(parameter.as_uncased()) {
             let (x, y, z) = value
                 .split_ascii_whitespace()
                 .map(|s| {
-                    s.parse::<f64>()
+                    s.parse::<f32>()
                         .map_err(|_| EntityParseError::InvalidParameterValue {
                             parameter,
                             reason: "contains an invalid float",
@@ -182,7 +182,7 @@ pub trait BaseEntity {
                     reason: "contains less than 3 values",
                 })?;
 
-            Ok(Some(nalgebra::Vector3::new(x?, y?, z?)))
+            Ok(Some(Vec3::new(x?, y?, z?)))
         } else {
             Ok(None)
         }
@@ -193,9 +193,9 @@ pub trait PointEntity: BaseEntity {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `origin` is missing or can't be parsed.
-    fn origin(&self) -> Result<nalgebra::Point3<f64>, EntityParseError> {
+    fn origin(&self) -> Result<Vec3, EntityParseError> {
         self.parse_vector3_parameter("origin")
-            .map(|o| o.unwrap_or_default().into())
+            .map(Option::unwrap_or_default)
     }
 }
 
@@ -205,7 +205,7 @@ pub trait AngledEntity: BaseEntity {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `angles` can't be parsed.
-    fn angles(&self) -> Result<Vector3<f64>, EntityParseError> {
+    fn angles(&self) -> Result<Vec3, EntityParseError> {
         self.parse_vector3_parameter("angles")
             .map(Option::unwrap_or_default)
     }
@@ -239,7 +239,7 @@ pub trait LightEntity: PointEntity {
     fn parse_color_brightness(
         &self,
         parameter: &'static str,
-    ) -> Result<(RGB8, f64), EntityParseError> {
+    ) -> Result<(RGB8, f32), EntityParseError> {
         let light = self
             .entity()
             .properties
@@ -270,7 +270,7 @@ pub trait LightEntity: PointEntity {
         };
 
         let brightness = split.next().map_or(Ok(0.0), |s| {
-            s.parse::<f64>()
+            s.parse::<f32>()
                 .map_err(|_| EntityParseError::InvalidParameterValue {
                     parameter,
                     reason: "4th value is not a valid float",
@@ -286,7 +286,7 @@ pub trait LightEntity: PointEntity {
     fn parse_hdr_color_brightness(
         &self,
         parameter: &'static str,
-    ) -> Result<Option<(RGB8, f64)>, EntityParseError> {
+    ) -> Result<Option<(RGB8, f32)>, EntityParseError> {
         if let Some(light) = self.entity().properties.get(parameter.as_uncased()) {
             let mut split = light.split_ascii_whitespace();
 
@@ -316,7 +316,7 @@ pub trait LightEntity: PointEntity {
                 let color = RGB8 { r, g, b };
 
                 let brightness = split.next().map_or(Ok(0.0), |s| {
-                    s.parse::<f64>()
+                    s.parse::<f32>()
                         .map_err(|_| EntityParseError::InvalidParameterValue {
                             parameter,
                             reason: "4th value is not a valid float",
@@ -332,21 +332,21 @@ pub trait LightEntity: PointEntity {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_light` is missing or can't be parsed.
-    fn color_brightness(&self) -> Result<(RGB8, f64), EntityParseError> {
+    fn color_brightness(&self) -> Result<(RGB8, f32), EntityParseError> {
         self.parse_color_brightness("_light")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_lightHDR` can't be parsed.
-    fn hdr_color_brightness(&self) -> Result<Option<(RGB8, f64)>, EntityParseError> {
+    fn hdr_color_brightness(&self) -> Result<Option<(RGB8, f32)>, EntityParseError> {
         self.parse_hdr_color_brightness("_lightHDR")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_lightscaleHDR` can't be parsed.
-    fn hdr_scale(&self) -> Result<f64, EntityParseError> {
+    fn hdr_scale(&self) -> Result<f32, EntityParseError> {
         self.parse_float_parameter("_lightscaleHDR")
             .map(|o| o.unwrap_or(1.0))
     }
@@ -368,35 +368,35 @@ pub trait LightEntity: PointEntity {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_constant_attn` can't be parsed.
-    fn constant_attenuation(&self) -> Result<Option<f64>, EntityParseError> {
+    fn constant_attenuation(&self) -> Result<Option<f32>, EntityParseError> {
         self.parse_float_parameter("_constant_attn")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_linear_attn` can't be parsed.
-    fn linear_attenuation(&self) -> Result<Option<f64>, EntityParseError> {
+    fn linear_attenuation(&self) -> Result<Option<f32>, EntityParseError> {
         self.parse_float_parameter("_linear_attn")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_quadratic_attn` can't be parsed.
-    fn quadratic_attenuation(&self) -> Result<Option<f64>, EntityParseError> {
+    fn quadratic_attenuation(&self) -> Result<Option<f32>, EntityParseError> {
         self.parse_float_parameter("_quadratic_attn")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_fifty_percent_distance` can't be parsed.
-    fn fifty_percent_distance(&self) -> Result<Option<f64>, EntityParseError> {
+    fn fifty_percent_distance(&self) -> Result<Option<f32>, EntityParseError> {
         self.parse_float_parameter("_fifty_percent_distance")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_zero_percent_distance` can't be parsed.
-    fn zero_percent_distance(&self) -> Result<Option<f64>, EntityParseError> {
+    fn zero_percent_distance(&self) -> Result<Option<f32>, EntityParseError> {
         self.parse_float_parameter("_zero_percent_distance")
     }
 }
@@ -453,7 +453,7 @@ impl<'a> SpotLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_inner_cone` is missing or can't be parsed.
-    pub fn inner_cone(&self) -> Result<f64, EntityParseError> {
+    pub fn inner_cone(&self) -> Result<f32, EntityParseError> {
         self.parse_float_parameter("_inner_cone")
             .and_then(|o| o.ok_or(EntityParseError::MissingParameter("_inner_cone")))
     }
@@ -461,7 +461,7 @@ impl<'a> SpotLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_cone` is missing or can't be parsed.
-    pub fn outer_cone(&self) -> Result<f64, EntityParseError> {
+    pub fn outer_cone(&self) -> Result<f32, EntityParseError> {
         self.parse_float_parameter("_cone")
             .and_then(|o| o.ok_or(EntityParseError::MissingParameter("_cone")))
     }
@@ -469,7 +469,7 @@ impl<'a> SpotLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_exponent` is missing or can't be parsed.
-    pub fn exponent(&self) -> Result<f64, EntityParseError> {
+    pub fn exponent(&self) -> Result<f32, EntityParseError> {
         self.parse_float_parameter("_exponent")
             .and_then(|o| o.ok_or(EntityParseError::MissingParameter("_exponent")))
     }
@@ -477,7 +477,7 @@ impl<'a> SpotLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_distance` is missing or can't be parsed.
-    pub fn distance(&self) -> Result<f64, EntityParseError> {
+    pub fn distance(&self) -> Result<f32, EntityParseError> {
         self.parse_float_parameter("_distance")
             .and_then(|o| o.ok_or(EntityParseError::MissingParameter("_distance")))
     }
@@ -490,10 +490,10 @@ impl<'a> SpotLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `angles` or `pitch` doesn't exist or can't be parsed.
-    pub fn angles(&self) -> Result<Vector3<f64>, EntityParseError> {
+    pub fn angles(&self) -> Result<Vec3, EntityParseError> {
         let mut original = AngledEntity::angles(self)?;
         if let Some(pitch) = self.parse_float_parameter("pitch")? {
-            original.data[0] = -pitch;
+            original.x = -pitch;
         }
         Ok(original)
     }
@@ -523,21 +523,21 @@ impl<'a> EnvLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_ambient` is missing or can't be parsed.
-    pub fn ambient_color_brightness(&self) -> Result<(RGB8, f64), EntityParseError> {
+    pub fn ambient_color_brightness(&self) -> Result<(RGB8, f32), EntityParseError> {
         self.parse_color_brightness("_ambient")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_ambientHDR` can't be parsed.
-    pub fn ambient_hdr_color_brightness(&self) -> Result<Option<(RGB8, f64)>, EntityParseError> {
+    pub fn ambient_hdr_color_brightness(&self) -> Result<Option<(RGB8, f32)>, EntityParseError> {
         self.parse_hdr_color_brightness("_ambientHDR")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_AmbientScaleHDR` can't be parsed.
-    pub fn ambient_hdr_scale(&self) -> Result<f64, EntityParseError> {
+    pub fn ambient_hdr_scale(&self) -> Result<f32, EntityParseError> {
         self.parse_float_parameter("_AmbientScaleHDR")
             .map(|o| o.unwrap_or(1.0))
     }
@@ -545,7 +545,7 @@ impl<'a> EnvLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_SunSpreadAngle` can't be parsed.
-    pub fn sun_spread_angle(&self) -> Result<f64, EntityParseError> {
+    pub fn sun_spread_angle(&self) -> Result<f32, EntityParseError> {
         self.parse_float_parameter("_SunSpreadAngle")
             .map(Option::unwrap_or_default)
     }
@@ -558,10 +558,10 @@ impl<'a> EnvLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `angles` or `pitch` doesn't exist or can't be parsed.
-    pub fn angles(&self) -> Result<Vector3<f64>, EntityParseError> {
+    pub fn angles(&self) -> Result<Vec3, EntityParseError> {
         let mut original = AngledEntity::angles(self)?;
         if let Some(pitch) = self.parse_float_parameter("pitch")? {
-            original.data[0] = -pitch;
+            original.x = -pitch;
         }
         Ok(original)
     }
@@ -590,7 +590,7 @@ impl<'a> SkyCamera<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `scale` can't be parsed.
-    pub fn scale(&self) -> Result<f64, EntityParseError> {
+    pub fn scale(&self) -> Result<f32, EntityParseError> {
         self.parse_float_parameter("scale")
             .map(|o| o.unwrap_or(16.0))
     }
@@ -626,13 +626,13 @@ impl<'a> SkyCamera<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct SkyCameraFogSettings {
-    pub blend: f64,
+    pub blend: f32,
     pub color: RGB8,
     pub color_2: RGB8,
-    pub direction: Option<Vector3<f64>>,
-    pub start: Option<f64>,
-    pub end: Option<f64>,
-    pub max_density: Option<f64>,
+    pub direction: Option<Vec3>,
+    pub start: Option<f32>,
+    pub end: Option<f32>,
+    pub max_density: Option<f32>,
 }
 
 #[derive(Debug)]
@@ -658,7 +658,7 @@ impl<'a> Prop<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `modelscale` or `uniformscale` can't be parsed.
-    pub fn scale(&self) -> Result<f64, EntityParseError> {
+    pub fn scale(&self) -> Result<f32, EntityParseError> {
         if let Some(scale) = self.parse_float_parameter("modelscale")? {
             return Ok(scale);
         }
@@ -823,24 +823,24 @@ impl<'a> Overlay<'a> {
             start_v,
             end_u,
             end_v,
-            basis_origin: basis_origin.into(),
+            basis_origin,
             basis_u,
             basis_v,
             basis_normal,
-            uvs: [uv_0.into(), uv_1.into(), uv_2.into(), uv_3.into()],
+            uvs: [uv_0, uv_1, uv_2, uv_3],
         })
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct OverlayUvInfo {
-    pub start_u: f64,
-    pub start_v: f64,
-    pub end_u: f64,
-    pub end_v: f64,
-    pub basis_origin: Point3<f64>,
-    pub basis_u: Vector3<f64>,
-    pub basis_v: Vector3<f64>,
-    pub basis_normal: Vector3<f64>,
-    pub uvs: [Point3<f64>; 4],
+    pub start_u: f32,
+    pub start_v: f32,
+    pub end_u: f32,
+    pub end_v: f32,
+    pub basis_origin: Vec3,
+    pub basis_u: Vec3,
+    pub basis_v: Vec3,
+    pub basis_normal: Vec3,
+    pub uvs: [Vec3; 4],
 }

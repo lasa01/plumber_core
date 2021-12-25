@@ -11,11 +11,11 @@ use super::{
 };
 
 use approx::relative_eq;
+use glam::{Vec3, Mat3, Vec2, Vec3Swizzles};
 use itertools::Itertools;
-use nalgebra::{geometry::Point3, Matrix3, Point2, Unit, Vector3};
 use thiserror::Error;
 
-pub(crate) type SideFacesMap = BTreeMap<i32, Vec<Vec<Point3<f64>>>>;
+pub(crate) type SideFacesMap = BTreeMap<i32, Vec<Vec<Vec3>>>;
 
 #[derive(Debug, Error)]
 pub enum OverlayError {
@@ -32,8 +32,8 @@ pub enum OverlayError {
 #[derive(Debug)]
 pub struct BuiltOverlay<'a> {
     pub overlay: Overlay<'a>,
-    pub position: Point3<f64>,
-    pub vertices: Vec<Point3<f64>>,
+    pub position: Vec3,
+    pub vertices: Vec<Vec3>,
     pub faces: Vec<BuiltOverlayFace>,
     pub material: PathBuf,
 }
@@ -41,13 +41,13 @@ pub struct BuiltOverlay<'a> {
 #[derive(Debug)]
 pub struct BuiltOverlayFace {
     pub vertice_indices: Vec<usize>,
-    pub vertice_uvs: Vec<[f64; 2]>,
+    pub vertice_uvs: Vec<Vec2>,
 }
 
 #[derive(Debug)]
 struct OverlayFaceBuilder {
     vertice_indices: Vec<usize>,
-    vertice_uvs: Vec<[f64; 2]>,
+    vertice_uvs: Vec<Vec2>,
 }
 
 impl OverlayFaceBuilder {
@@ -62,12 +62,12 @@ impl OverlayFaceBuilder {
 struct OverlayBuilder<'a> {
     overlay: Overlay<'a>,
     uv_info: OverlayUvInfo,
-    origin: Point3<f64>,
-    uv_to_global_matrix: Matrix3<f64>,
-    global_to_uv_matrix: Matrix3<f64>,
+    origin: Vec3,
+    uv_to_global_matrix: Mat3,
+    global_to_uv_matrix: Mat3,
     faces: Vec<OverlayFaceBuilder>,
-    vertices: Vec<Point3<f64>>,
-    uv_space_vertices: Vec<Point3<f64>>,
+    vertices: Vec<Vec3>,
+    uv_space_vertices: Vec<Vec3>,
 }
 
 impl<'a> OverlayBuilder<'a> {
@@ -82,15 +82,9 @@ impl<'a> OverlayBuilder<'a> {
         let normal = uv_info.basis_normal;
         let origin = uv_info.basis_origin;
 
-        let uv_to_global_matrix = Matrix3::from_row_slice(&[
-            u_axis.x, v_axis.x, normal.x, u_axis.y, v_axis.y, normal.y, u_axis.z, v_axis.z,
-            normal.z,
-        ]);
+        let uv_to_global_matrix = Mat3::from_cols(u_axis, v_axis, normal);
 
-        let global_to_uv_matrix = match uv_to_global_matrix.try_inverse() {
-            Some(r) => r,
-            None => return Err((overlay, OverlayError::InvalidUvData)),
-        };
+        let global_to_uv_matrix = uv_to_global_matrix.inverse();
 
         Ok(Self {
             overlay,
@@ -107,7 +101,7 @@ impl<'a> OverlayBuilder<'a> {
     fn create_vertices(
         &mut self,
         side_faces_map: &Mutex<SideFacesMap>,
-        epsilon: f64,
+        epsilon: f32,
     ) -> Result<(), OverlayError> {
         for side_i in self.overlay.sides()? {
             let side_faces_map = side_faces_map.lock().expect("mutex shouldn't be poisoned");
@@ -145,8 +139,8 @@ impl<'a> OverlayBuilder<'a> {
     }
 
     fn offset_vertices(&mut self) -> Result<(), OverlayError> {
-        let offset = f64::from(self.overlay.render_order()? + 1) * 0.1;
-        let mut offset_directions = vec![Vector3::zeros(); self.vertices.len()];
+        let offset = f32::from(self.overlay.render_order()? + 1) * 0.1;
+        let mut offset_directions = vec![Vec3::ZERO; self.vertices.len()];
 
         for builder in &self.faces {
             let normal = polygon_normal(builder.vertice_indices.iter().map(|&i| self.vertices[i]));
@@ -162,26 +156,26 @@ impl<'a> OverlayBuilder<'a> {
         Ok(())
     }
 
-    fn cut_faces(&mut self, epsilon: f64, cut_threshold: f64) -> Result<(), OverlayError> {
+    fn cut_faces(&mut self, epsilon: f32, cut_threshold: f32) -> Result<(), OverlayError> {
         let vertices = &mut self.vertices;
-        let global_to_uv_matrix = &self.global_to_uv_matrix;
-        let origin = &self.origin;
+        let global_to_uv_matrix = self.global_to_uv_matrix;
+        let origin = self.origin;
 
         let mut uv_space_vertices = vertices
             .iter()
-            .map(|v| Point3::from(global_to_uv_matrix * (v - origin)))
+            .map(|&v| global_to_uv_matrix * (v - origin))
             .collect_vec();
 
-        let up = Vector3::new(0.0, 0.0, 1.0);
+        let up = Vec3::new(0.0, 0.0, 1.0);
 
         // cut faces partially outside uv borders
-        for (side_vert_a, side_vert_b) in self.uv_info.uvs.iter().circular_tuple_windows() {
-            let cut_plane_normal = Unit::new_normalize(up.cross(&(side_vert_b - side_vert_a)));
-            let cut_plane = NdPlane::from_point_normal(*side_vert_a, cut_plane_normal);
+        for (&side_vert_a, &side_vert_b) in self.uv_info.uvs.iter().circular_tuple_windows() {
+            let cut_plane_normal = up.cross(side_vert_b - side_vert_a).normalize();
+            let cut_plane = NdPlane::from_point_normal(side_vert_a, cut_plane_normal);
 
             let outside_vertice_is = uv_space_vertices
                 .iter()
-                .positions(|v| cut_plane.distance_to_point(v) > cut_threshold)
+                .positions(|&v| cut_plane.distance_to_point(v) > cut_threshold)
                 .collect_vec();
 
             for builder in &mut self.faces {
@@ -215,10 +209,10 @@ impl<'a> OverlayBuilder<'a> {
 
                 // create new vertice on the uv border by intersecting the first edge crossing the uv border with the uv border plane
                 let new_uv_space_vertice = cut_plane
-                    .intersect_line(&first_line_a, &(first_line_b - first_line_a), epsilon)
+                    .intersect_line(first_line_a, first_line_b - first_line_a, epsilon)
                     .ok_or(OverlayError::InvalidUvData)?;
                 let new_vertice =
-                    self.origin + self.uv_to_global_matrix * new_uv_space_vertice.coords;
+                    self.origin + self.uv_to_global_matrix * new_uv_space_vertice;
 
                 let first_new_i = vertices
                     .iter()
@@ -241,10 +235,10 @@ impl<'a> OverlayBuilder<'a> {
                 let last_line_b = uv_space_vertices[builder.vertice_indices[last_outside_i]];
 
                 let new_uv_space_vertice = cut_plane
-                    .intersect_line(&last_line_a, &(last_line_b - last_line_a), epsilon)
+                    .intersect_line(last_line_a, last_line_b - last_line_a, epsilon)
                     .ok_or(OverlayError::InvalidUvData)?;
                 let new_vertice =
-                    self.origin + self.uv_to_global_matrix * new_uv_space_vertice.coords;
+                    self.origin + self.uv_to_global_matrix * new_uv_space_vertice;
 
                 let last_new_i = vertices
                     .iter()
@@ -258,7 +252,7 @@ impl<'a> OverlayBuilder<'a> {
                 // replace the face vertices that were outside the uv border with the 2 newly created ones
                 builder.vertice_indices.splice(
                     first_outside_i..=last_outside_i,
-                    [first_new_i, last_new_i].into_iter(),
+                    [first_new_i, last_new_i],
                 );
             }
         }
@@ -268,18 +262,17 @@ impl<'a> OverlayBuilder<'a> {
         Ok(())
     }
 
-    fn remove_vertices_outside(&mut self, cut_threshold: f64) {
+    fn remove_vertices_outside(&mut self, cut_threshold: f32) {
         let mut vertices_to_remove = Vec::new();
-        let up = Vector3::new(0.0, 0.0, 1.0);
 
-        for (side_vert_a, side_vert_b) in self.uv_info.uvs.iter().circular_tuple_windows() {
-            let cut_plane_normal = Unit::new_normalize(up.cross(&(side_vert_b - side_vert_a)));
-            let cut_plane = NdPlane::from_point_normal(*side_vert_a, cut_plane_normal);
+        for (&side_vert_a, &side_vert_b) in self.uv_info.uvs.iter().circular_tuple_windows() {
+            let cut_plane_normal = Vec3::Z.cross(side_vert_b - side_vert_a).normalize();
+            let cut_plane = NdPlane::from_point_normal(side_vert_a, cut_plane_normal);
             for (i, _) in self
                 .uv_space_vertices
                 .iter()
                 .enumerate()
-                .filter(|(_, v)| cut_plane.distance_to_point(v) > cut_threshold)
+                .filter(|(_, &v)| cut_plane.distance_to_point(v) > cut_threshold)
             {
                 if !vertices_to_remove.contains(&i) {
                     vertices_to_remove.push(i);
@@ -326,7 +319,7 @@ impl<'a> OverlayBuilder<'a> {
         Ok(())
     }
 
-    fn create_uvs(&mut self) -> Result<(), OverlayError> {
+    fn create_uvs(&mut self) {
         for builder in &mut self.faces {
             // uv calculations are 2 affine transformations of triangles
 
@@ -338,12 +331,11 @@ impl<'a> OverlayBuilder<'a> {
                     self.uv_info.uvs[2].xy(),
                 ],
                 [
-                    Point2::new(self.uv_info.start_u, self.uv_info.start_v),
-                    Point2::new(self.uv_info.start_u, self.uv_info.end_v),
-                    Point2::new(self.uv_info.end_u, self.uv_info.end_v),
+                    Vec2::new(self.uv_info.start_u, self.uv_info.start_v),
+                    Vec2::new(self.uv_info.start_u, self.uv_info.end_v),
+                    Vec2::new(self.uv_info.end_u, self.uv_info.end_v),
                 ],
-            )
-            .ok_or(OverlayError::InvalidUvData)?;
+            );
 
             // same for second triangle (uv points 2, 3, 0)
             let affine_matrix_b = affine_matrix(
@@ -353,41 +345,39 @@ impl<'a> OverlayBuilder<'a> {
                     self.uv_info.uvs[0].xy(),
                 ],
                 [
-                    Point2::new(self.uv_info.end_u, self.uv_info.end_v),
-                    Point2::new(self.uv_info.end_u, self.uv_info.start_v),
-                    Point2::new(self.uv_info.start_u, self.uv_info.start_v),
+                    Vec2::new(self.uv_info.end_u, self.uv_info.end_v),
+                    Vec2::new(self.uv_info.end_u, self.uv_info.start_v),
+                    Vec2::new(self.uv_info.start_u, self.uv_info.start_v),
                 ],
-            )
-            .ok_or(OverlayError::InvalidUvData)?;
+            );
 
             for &vert_i in &builder.vertice_indices {
                 let uv_vert = self.uv_space_vertices[vert_i].xy();
 
                 // determine which triangle this vertice is inside of
                 let affine_matrix = if is_point_left_of_line(
-                    &self.uv_info.uvs[0].xy(),
-                    &self.uv_info.uvs[2].xy(),
-                    &uv_vert,
+                    self.uv_info.uvs[0].xy(),
+                    self.uv_info.uvs[2].xy(),
+                    uv_vert,
                 ) {
-                    &affine_matrix_a
+                    affine_matrix_a
                 } else {
-                    &affine_matrix_b
+                    affine_matrix_b
                 };
 
                 let uv = affine_transform_point(affine_matrix, uv_vert);
-                builder.vertice_uvs.push([uv.x, uv.y]);
+                builder.vertice_uvs.push(uv);
             }
         }
-        Ok(())
     }
 
     fn recenter(&mut self) {
-        let center = polygon_center(self.vertices.iter().copied()).coords;
+        let center = polygon_center(self.vertices.iter().copied());
         for vertice in &mut self.vertices {
             *vertice -= center;
         }
         // vertices are global space before this point
-        self.origin = center.into();
+        self.origin = center;
     }
 
     fn finish(self) -> Result<BuiltOverlay<'a>, (Overlay<'a>, OverlayError)> {
@@ -435,9 +425,7 @@ impl<'a> Overlay<'a> {
         if let Err(e) = builder.ensure_not_empty() {
             return Err((builder.overlay, e));
         }
-        if let Err(e) = builder.create_uvs() {
-            return Err((builder.overlay, e));
-        }
+        builder.create_uvs();
         builder.recenter();
         builder.finish()
     }
@@ -445,7 +433,7 @@ impl<'a> Overlay<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::FRAC_1_SQRT_2;
+    use std::f32::consts::FRAC_1_SQRT_2;
 
     use plumber_vdf as vdf;
 
@@ -671,12 +659,12 @@ mod tests {
         builder.create_vertices(&side_faces_map, 1e-3).unwrap();
 
         let expected_vertices = vec![
-            Point3::new(-960.0, 64.0, 64.0),
-            Point3::new(-960.0, -64.0, 64.0),
-            Point3::new(-832.0, 64.0, 64.0),
-            Point3::new(-832.0, -64.0, 64.0),
-            Point3::new(-960.0, -64.0, 0.0),
-            Point3::new(-832.0, -64.0, 0.0),
+            Vec3::new(-960.0, 64.0, 64.0),
+            Vec3::new(-960.0, -64.0, 64.0),
+            Vec3::new(-832.0, 64.0, 64.0),
+            Vec3::new(-832.0, -64.0, 64.0),
+            Vec3::new(-960.0, -64.0, 0.0),
+            Vec3::new(-832.0, -64.0, 0.0),
         ];
 
         assert_eq!(builder.vertices.len(), expected_vertices.len());
@@ -694,20 +682,20 @@ mod tests {
         builder.offset_vertices().unwrap();
 
         let expected_vertices = vec![
-            Point3::new(-960.0, 64.0, 64.0 + 0.1),
-            Point3::new(
+            Vec3::new(-960.0, 64.0, 64.0 + 0.1),
+            Vec3::new(
                 -960.0,
                 -64.0 - FRAC_1_SQRT_2 * 0.1,
                 64.0 + FRAC_1_SQRT_2 * 0.1,
             ),
-            Point3::new(-832.0, 64.0, 64.0 + 0.1),
-            Point3::new(
+            Vec3::new(-832.0, 64.0, 64.0 + 0.1),
+            Vec3::new(
                 -832.0,
                 -64.0 - FRAC_1_SQRT_2 * 0.1,
                 64.0 + FRAC_1_SQRT_2 * 0.1,
             ),
-            Point3::new(-960.0, -64.0 - 0.1, 0.0),
-            Point3::new(-832.0, -64.0 - 0.1, 0.0),
+            Vec3::new(-960.0, -64.0 - 0.1, 0.0),
+            Vec3::new(-832.0, -64.0 - 0.1, 0.0),
         ];
 
         for vertice in &builder.vertices {
@@ -723,41 +711,41 @@ mod tests {
         builder.cut_faces(1e-3, 1e-3).unwrap();
         builder.remove_vertices_outside(1e-3);
         builder.ensure_not_empty().unwrap();
-        builder.create_uvs().unwrap();
+        builder.create_uvs();
         builder.recenter();
 
         let mut is = vec![0; expected_vertices.len()];
 
         let expected_vertices = vec![
-            Point3::new(
-                -35.934_752_225_875_854,
-                -31.288_081_407_546_997,
-                15.476_860_105_991_364,
+            Vec3::new(
+                -35.934_752,
+                -31.288_08,
+                15.476_86,
             ),
-            Point3::new(
-                -36.673_888_564_109_8,
-                50.222_676_992_416_38,
-                15.476_852_655_410_767,
+            Vec3::new(
+                -36.673_89,
+                50.222_676,
+                15.476_852,
             ),
-            Point3::new(
-                32.293_945_550_918_58,
-                74.929_660_558_700_56,
-                15.476_860_105_991_364,
+            Vec3::new(
+                32.293_945,
+                74.929_66,
+                15.476_86,
             ),
-            Point3::new(
-                37.192_076_444_625_854,
-                -31.288_081_407_546_997,
-                15.476_860_105_991_364,
+            Vec3::new(
+                37.192_076,
+                -31.288_08,
+                15.476_86,
             ),
-            Point3::new(
-                38.820_615_410_804_75,
-                -31.288_081_407_546_997,
-                -37.880_241_870_880_13,
+            Vec3::new(
+                38.820_615,
+                -31.288_08,
+                -37.880_24,
             ),
-            Point3::new(
-                -35.697_692_632_675_17,
-                -31.288_081_407_546_997,
-                -24.027_198_553_085_327,
+            Vec3::new(
+                -35.697_692,
+                -31.288_08,
+                -24.027_198,
             ),
         ];
 
@@ -794,24 +782,17 @@ mod tests {
             .vertice_indices
             .iter()
             .map(|&i| match is.iter().position(|&j| j == i).unwrap() {
-                0 => (0.0, 1.0 - 0.232_844),
-                1 => (0.0, 0.0),
-                2 => (1.0, 0.0),
-                3 => (1.0, 1.0 - 0.236_098),
+                0 => Vec2::new(0.0, 1.0 - 0.232_844),
+                1 => Vec2::new(0.0, 0.0),
+                2 => Vec2::new(1.0, 0.0),
+                3 => Vec2::new(1.0, 1.0 - 0.236_098),
                 _ => unreachable!(),
             })
             .collect_vec();
         for (uv, expected_uv) in side.vertice_uvs.iter().zip(&expected_uvs) {
             assert!(
                 // test data has different offset algorithm, need large epsilon
-                relative_eq!(uv[0], expected_uv.0, epsilon = 0.1),
-                "got {:?}, expected {:?}",
-                side.vertice_uvs,
-                expected_uvs
-            );
-            assert!(
-                // test data has different offset algorithm, need large epsilon
-                relative_eq!(uv[1], expected_uv.1, epsilon = 0.1),
+                relative_eq!(uv, expected_uv, epsilon = 0.1),
                 "got {:?}, expected {:?}",
                 side.vertice_uvs,
                 expected_uvs
