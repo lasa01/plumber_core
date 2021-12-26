@@ -425,17 +425,16 @@ impl OpenSearchPath {
                 },
                 |f| Ok(Some(GameFile::Vpk(f))),
             ),
-            OpenSearchPath::Directory(path) => fs::File::open(path.join(file_path.as_str()))
-                .map_or_else(
-                    |e| {
-                        if e.kind() == io::ErrorKind::NotFound {
-                            Ok(None)
-                        } else {
-                            Err(e)
-                        }
-                    },
-                    |f| Ok(Some(GameFile::Fs(f))),
-                ),
+            OpenSearchPath::Directory(path) => open_fs_file(path, file_path).map_or_else(
+                |e| {
+                    if e.kind() == io::ErrorKind::NotFound {
+                        Ok(None)
+                    } else {
+                        Err(e)
+                    }
+                },
+                |f| Ok(Some(GameFile::Fs(f))),
+            ),
         }
     }
 
@@ -463,6 +462,49 @@ impl OpenSearchPath {
                         }))
                     },
                 ),
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn open_fs_file(path: &StdPathBuf, file_path: &Path) -> Result<fs::File, io::Error> {
+    fs::File::open(path.join(file_path.as_str()))
+}
+
+#[cfg(unix)]
+// "manual" case-insensitive file opening on Linux
+fn open_fs_file(root_path: &StdPath, file_path: &Path) -> Result<fs::File, io::Error> {
+    use std::io::ErrorKind;
+
+    match fs::File::open(root_path.join(file_path.as_str())) {
+        Ok(f) => Ok(f),
+        Err(err) => {
+            if err.kind() != ErrorKind::NotFound {
+                return Err(err);
+            }
+
+            let mut target_path = root_path.to_path_buf();
+            for path_part in file_path.as_str().split('/') {
+                let target_part = fs::read_dir(&target_path)?.find_map(|res| {
+                    res.ok().and_then(|entry| {
+                        let file_name = entry.file_name();
+                        if file_name.eq_ignore_ascii_case(path_part) {
+                            Some(file_name)
+                        } else {
+                            None
+                        }
+                    })
+                });
+
+                if let Some(target_part) = target_part {
+                    target_path.push(target_part);
+                } else {
+                    // return the original "not found" error
+                    return Err(err);
+                }
+            }
+
+            fs::File::open(target_path)
         }
     }
 }
@@ -552,6 +594,7 @@ fn initial_buffer_size(file: &GameFile) -> usize {
 
 impl OpenFileSystem {
     /// Opens the specified file if it exists.
+    /// The path is case-insensitive even when the underlying filesystem is not.
     ///
     /// # Errors
     ///
@@ -567,6 +610,7 @@ impl OpenFileSystem {
     }
 
     /// Reads the specified file into a [`Vec`].
+    /// The path is case-insensitive even when the underlying filesystem is not.
     ///
     /// # Errors
     ///
@@ -579,6 +623,7 @@ impl OpenFileSystem {
     }
 
     /// Reads the specified file into a [`String`].
+    /// The path is case-insensitive even when the underlying filesystem is not.
     ///
     /// # Errors
     ///
@@ -892,5 +937,30 @@ mod tests {
                 ]
             }
         );
+    }
+
+    #[test]
+    fn case_insensitive_file_opening() {
+        let root_path = StdPath::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("test_filesystem");
+        let game_info_path = root_path.join("game").join("gameinfo.txt");
+
+        let file_system = FileSystem::from_paths(root_path, game_info_path)
+            .unwrap()
+            .open()
+            .unwrap();
+
+        assert!(file_system
+            .open_file(PathBuf::from("materials/ar_dizzy/Dizzy_FACADE_cOlOr.VmT"))
+            .is_ok());
+        assert!(file_system
+            .open_file(PathBuf::from("MOdelS/props/De_Mirage/bench_a.mdl"))
+            .is_ok());
+
+        let does_not_exist =
+            file_system.open_file(PathBuf::from("MOdelS/props/De_Mirage/bench_abc.mdl"));
+
+        assert!(does_not_exist.unwrap_err().kind() == io::ErrorKind::NotFound);
     }
 }
