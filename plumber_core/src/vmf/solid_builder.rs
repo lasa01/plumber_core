@@ -1,7 +1,7 @@
 use std::{fmt::Debug, mem, ptr, sync::Mutex};
 
 use crate::{
-    fs::{Path, PathBuf},
+    fs::{GamePathBuf, PathBuf},
     vmf::builder_utils::PointClassification,
     vmt::loader::{MaterialInfo, MaterialLoadError},
 };
@@ -38,7 +38,7 @@ pub struct BuiltSolid {
 
 #[derive(Debug, Clone)]
 pub struct SolidMaterial {
-    pub name: PathBuf,
+    pub name: GamePathBuf,
     pub info: MaterialInfo,
 }
 
@@ -166,9 +166,9 @@ impl<'a> FaceBuilder<'a> {
         center: Vec3,
         vertices: &[Vec3],
         materials: &mut Vec<SolidMaterial>,
-        get_material_info: &mut impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        get_material_info: &mut impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
     ) {
-        let mut material_path = PathBuf::from("materials");
+        let mut material_path = GamePathBuf::from("materials");
         material_path.push(&self.side.material);
 
         let (material_index, material) = if let Some(r) = materials
@@ -179,9 +179,14 @@ impl<'a> FaceBuilder<'a> {
             r
         } else {
             let index = materials.len();
+            let material_path = PathBuf::from(material_path);
             let info = get_material_info(&material_path).unwrap_or_default();
             let material = SolidMaterial {
-                name: material_path,
+                name: if let PathBuf::Game(path) = material_path {
+                    path
+                } else {
+                    unreachable!()
+                },
                 info,
             };
             materials.push(material);
@@ -676,7 +681,7 @@ impl<'a> SolidBuilder<'a> {
 
     fn build_uvs(
         &mut self,
-        mut get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        mut get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
     ) {
         let vertices = &self.vertices;
         for builder in &mut self.faces {
@@ -743,7 +748,7 @@ impl<'a> SolidBuilder<'a> {
 
     fn build(
         &mut self,
-        get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
     ) -> Result<(), SolidError> {
@@ -857,7 +862,7 @@ impl Solid {
     /// Returns `Err` if the mesh creation fails.
     pub fn build_mesh(
         &self,
-        get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
     ) -> Result<BuiltSolid, SolidError> {
@@ -976,7 +981,7 @@ impl<'a> BuiltBrushEntity<'a> {
         solids: &[Solid],
         id: i32,
         class_name: &'a str,
-        mut get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        mut get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
     ) -> Result<Self, SolidError> {
@@ -1052,7 +1057,7 @@ impl Entity {
     /// Returns `Err` if the building fails.
     pub fn build_brush(
         &self,
-        get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
     ) -> Result<BuiltBrushEntity, SolidError> {
@@ -1073,7 +1078,7 @@ impl World {
     /// Returns `Err` if the building fails.
     pub fn build_brush(
         &self,
-        get_material_info: impl FnMut(&Path) -> Result<MaterialInfo, MaterialLoadError>,
+        get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
     ) -> Result<BuiltBrushEntity, SolidError> {

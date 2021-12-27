@@ -9,14 +9,14 @@ use super::{
     Animation, AnimationDescFlags, Bone, BoneAnimationData, Face, Mesh, Model, Result, Vertex,
 };
 
-use crate::fs::{OpenFileSystem, PathBuf};
+use crate::fs::{GamePathBuf, OpenFileSystem, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct LoadedModel {
-    pub name: PathBuf,
+    pub name: GamePathBuf,
     pub info: ModelInfo,
     pub meshes: Vec<LoadedMesh>,
-    pub materials: Vec<PathBuf>,
+    pub materials: Vec<GamePathBuf>,
     pub bones: Vec<LoadedBone>,
     pub animations: Vec<LoadedAnimation>,
 }
@@ -112,9 +112,10 @@ impl Loader {
     /// Returns `Err` if the model loading failed or has failed in the past.
     pub fn load_model(
         &self,
-        model_path: PathBuf,
+        model_path: impl Into<PathBuf>,
         file_system: &OpenFileSystem,
     ) -> Result<(ModelInfo, Option<LoadedModel>)> {
+        let model_path = model_path.into();
         let mut guard = self
             .model_cache
             .lock()
@@ -188,8 +189,19 @@ impl Loader {
             static_prop: verified.is_static_prop(),
         };
 
+        let name = match model_path {
+            PathBuf::Game(path) => path,
+            // if the model is from outside the game file system, just use the filename as the name
+            PathBuf::Os(path) => path
+                .file_name()
+                .expect("file read succeeded, file_name should exist")
+                .to_string_lossy()
+                .into_owned()
+                .into(),
+        };
+
         Ok(LoadedModel {
-            name: model_path,
+            name,
             info,
             meshes,
             materials,

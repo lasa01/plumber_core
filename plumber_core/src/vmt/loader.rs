@@ -12,7 +12,7 @@ use uncased::AsUncased;
 use vtflib::{BoundVtfFile, VtfFile, VtfGuard, VtfLib};
 
 use crate::{
-    fs::{OpenFileSystem, Path, PathBuf},
+    fs::{GamePath, GamePathBuf, OpenFileSystem, PathBuf},
     vmt::Vmt,
 };
 
@@ -58,9 +58,9 @@ pub enum MaterialLoadError {
 }
 
 impl MaterialLoadError {
-    fn from_io(err: &io::Error, path: &Path) -> Self {
+    fn from_io(err: &io::Error, path: &impl ToString) -> Self {
         Self::Io {
-            path: path.as_str().to_string(),
+            path: path.to_string(),
             error: err.to_string(),
         }
     }
@@ -75,18 +75,16 @@ pub enum TextureLoadError {
 }
 
 impl TextureLoadError {
-    fn from_io(err: &io::Error, path: &Path) -> Self {
+    fn from_io(err: &io::Error, path: &impl ToString) -> Self {
         Self::Io {
-            path: path.as_str().to_string(),
+            path: path.to_string(),
             error: err.to_string(),
         }
     }
 }
 
-fn is_nodraw(material_path: &Path, shader: &Shader) -> bool {
-    let no_draw = NODRAW_MATERIALS
-        .iter()
-        .any(|m| material_path.as_str() == *m)
+fn is_nodraw(material_path: &PathBuf, shader: &Shader) -> bool {
+    let no_draw = NODRAW_MATERIALS.iter().any(|m| material_path == *m)
         || NODRAW_PARAMS.iter().any(|p| {
             shader
                 .parameters
@@ -104,7 +102,7 @@ fn get_dimension_reference(shader: &Shader) -> Option<&String> {
 
 #[derive(Clone)]
 pub struct LoadedMaterial<D: Send + Sync + 'static> {
-    pub name: PathBuf,
+    pub name: GamePathBuf,
     pub info: MaterialInfo,
     pub data: D,
 }
@@ -122,7 +120,7 @@ impl<D: Send + Sync + 'static> Debug for LoadedMaterial<D> {
 pub struct Loader {
     material_cache: Mutex<HashMap<PathBuf, Result<MaterialInfo, MaterialLoadError>>>,
     material_condvar: Condvar,
-    texture_cache: Mutex<HashMap<PathBuf, Result<TextureInfo, TextureLoadError>>>,
+    texture_cache: Mutex<HashMap<GamePathBuf, Result<TextureInfo, TextureLoadError>>>,
 }
 
 impl Loader {
@@ -146,9 +144,8 @@ impl Loader {
     /// Panics after 30 seconds if any materials haven't been loaded to prevent deadlocks.
     pub fn wait_for_material(
         &self,
-        material_path: impl AsRef<Path>,
+        material_path: &PathBuf,
     ) -> Result<MaterialInfo, MaterialLoadError> {
-        let material_path = material_path.as_ref();
         let mut guard = self
             .material_cache
             .lock()
@@ -260,7 +257,15 @@ impl Loader {
         let data = build(loaded_vmt)?;
 
         let loaded_material = LoadedMaterial {
-            name: material_path.clone(),
+            name: match material_path {
+                PathBuf::Game(path) => path.clone(),
+                PathBuf::Os(path) => path
+                    .file_name()
+                    .expect("file is already read, file_name should exist")
+                    .to_string_lossy()
+                    .into_owned()
+                    .into(),
+            },
             info,
             data,
         };
@@ -270,7 +275,7 @@ impl Loader {
 
     fn load_texture(
         &self,
-        texture_path: PathBuf,
+        texture_path: GamePathBuf,
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<(TextureInfo, Option<LoadedTexture>), TextureLoadError> {
@@ -351,7 +356,7 @@ pub struct LoadedVmt<'a> {
     loader: &'a Loader,
     vtf_lib: &'a mut (VtfLib, VtfGuard),
     file_system: &'a OpenFileSystem,
-    material_path: &'a Path,
+    material_path: &'a PathBuf,
     shader: Shader,
     textures: Vec<LoadedTexture>,
 }
@@ -360,7 +365,10 @@ impl<'a> LoadedVmt<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the texture loading fails.
-    pub fn load_texture(&mut self, texture_path: PathBuf) -> Result<TextureInfo, TextureLoadError> {
+    pub fn load_texture(
+        &mut self,
+        texture_path: GamePathBuf,
+    ) -> Result<TextureInfo, TextureLoadError> {
         let (info, texture) =
             self.loader
                 .load_texture(texture_path, self.file_system, self.vtf_lib)?;
@@ -425,19 +433,21 @@ impl TextureInfo {
 
 #[derive(Debug, Clone)]
 pub struct LoadedTexture {
-    pub name: PathBuf,
+    pub name: GamePathBuf,
     pub info: TextureInfo,
     pub data: RgbaImage,
 }
 
 impl LoadedTexture {
     fn load(
-        texture_path: &Path,
+        texture_path: &GamePath,
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<Self, TextureLoadError> {
         let (vtf_lib, guard) = vtf_lib;
-        let texture_path = Path::try_from_str("materials").unwrap().join(texture_path);
+        let texture_path = GamePath::try_from_str("materials")
+            .unwrap()
+            .join(texture_path);
         let vtf_bytes = file_system
             .read(&texture_path.with_extension("vtf"))
             .map_err(|err| TextureLoadError::from_io(&err, &texture_path))?;
@@ -446,7 +456,7 @@ impl LoadedTexture {
         Self::load_vtf(texture_path, &vtf)
     }
 
-    fn load_vtf(name: PathBuf, vtf: &BoundVtfFile) -> Result<Self, TextureLoadError> {
+    fn load_vtf(name: GamePathBuf, vtf: &BoundVtfFile) -> Result<Self, TextureLoadError> {
         let source = vtf.data(0, 0, 0, 0).ok_or(vtflib::Error::ImageNotLoaded)?;
         let format = vtf.format().ok_or(vtflib::Error::InvalidFormat)?;
         let width = vtf.width();

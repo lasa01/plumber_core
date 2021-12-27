@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Debug, sync::Mutex};
 
-use crate::fs::PathBuf;
+use crate::fs::GamePathBuf;
 
 use super::{
     builder_utils::{
@@ -35,7 +35,7 @@ pub struct BuiltOverlay<'a> {
     pub position: Vec3,
     pub vertices: Vec<Vec3>,
     pub faces: Vec<BuiltOverlayFace>,
-    pub material: PathBuf,
+    pub material: GamePathBuf,
 }
 
 #[derive(Debug)]
@@ -381,7 +381,7 @@ impl<'a> OverlayBuilder<'a> {
     }
 
     fn finish(self) -> Result<BuiltOverlay<'a>, (Overlay<'a>, OverlayError)> {
-        let mut material = PathBuf::from("materials");
+        let mut material = GamePathBuf::from("materials");
         let overlay_material = match self.overlay.material() {
             Ok(r) => r,
             Err(e) => return Err((self.overlay, e.into())),

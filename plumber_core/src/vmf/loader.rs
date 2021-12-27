@@ -3,12 +3,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use plumber_vpk::PathBuf;
 use rayon::prelude::*;
 
 use crate::{
     asset::{Error, Handler, Importer},
-    fs::OpenFileSystem,
+    fs::{GamePathBuf, OpenFileSystem, PathBuf},
     model::loader::Loader as ModelLoader,
     vmt::loader::Loader as MaterialLoader,
 };
@@ -180,17 +179,17 @@ impl Vmf {
         // because solid loading later requires the material info to be available
         for solid in &self.world.solids {
             for side in &solid.sides {
-                let mut material = PathBuf::from("materials");
+                let mut material = GamePathBuf::from("materials");
                 material.push(&side.material);
-                importer.import_vmt(material);
+                importer.import_vmt(PathBuf::Game(material));
             }
         }
         for entity in &self.entities {
             for solid in &entity.solids {
                 for side in &solid.sides {
-                    let mut material = PathBuf::from("materials");
+                    let mut material = GamePathBuf::from("materials");
                     material.push(&side.material);
-                    importer.import_vmt(material);
+                    importer.import_vmt(PathBuf::Game(material));
                 }
             }
         }
@@ -201,9 +200,9 @@ impl Vmf {
                 if let TypedEntity::Overlay(overlay) = entity.typed() {
                     match overlay.material() {
                         Ok(material) => {
-                            let mut path = PathBuf::from("materials");
+                            let mut path = GamePathBuf::from("materials");
                             path.push(&material);
-                            importer.import_vmt(material);
+                            importer.import_vmt(PathBuf::Game(material));
                         }
                         Err(error) => importer.asset_handler.handle_error(Error::Overlay {
                             id: entity.id,
@@ -250,7 +249,7 @@ impl Vmf {
                     if let Some(model) = model {
                         for material in &model.materials {
                             material_job_sender
-                                .send(material.clone())
+                                .send(PathBuf::Game(material.clone()))
                                 .expect("material job channel shouldn't be disconnected");
                         }
                         asset_handler.handle_model(model);

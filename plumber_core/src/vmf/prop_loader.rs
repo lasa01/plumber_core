@@ -1,5 +1,5 @@
 use crate::{
-    fs::{OpenFileSystem, PathBuf},
+    fs::{GamePathBuf, OpenFileSystem},
     model::{
         self,
         loader::{LoadedModel, ModelInfo},
@@ -37,7 +37,7 @@ impl<'a> Prop<'a> {
             Ok(r) => r,
             Err(e) => return Err((self, e.into())),
         };
-        let model_path = PathBuf::from(model);
+        let model_path = GamePathBuf::from(model);
         let (model_info, model) = match model_loader.load_model(model_path, file_system) {
             Ok(r) => r,
             Err(error) => {

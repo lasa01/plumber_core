@@ -25,7 +25,7 @@ pub use vvd::{BoneWeight, Vertex};
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::fs::{GameFile, OpenFileSystem, Path, PathBuf};
+use crate::fs::{GameFile, GamePathBuf, OpenFileSystem, Path, PathBuf};
 
 #[derive(Debug, Clone, Error)]
 pub enum Error {
@@ -63,9 +63,9 @@ impl Display for FileType {
 }
 
 impl Error {
-    fn from_io(err: &io::Error, path: &Path) -> Self {
+    fn from_io(err: &io::Error, path: &impl ToString) -> Self {
         Self::Io {
-            path: path.as_str().to_string(),
+            path: path.to_string(),
             error: err.to_string(),
         }
     }
@@ -74,7 +74,7 @@ impl Error {
 const VTX_EXTENSIONS: &[&str] = &["dx90.vtx", "dx80.vtx", "sw.vtx", "vtx"];
 
 fn find_vtx<'a>(
-    mdl_path: &Path,
+    mdl_path: Path,
     file_system: &'a OpenFileSystem,
 ) -> Result<(PathBuf, GameFile<'a>)> {
     for &extension in VTX_EXTENSIONS {
@@ -90,7 +90,7 @@ fn find_vtx<'a>(
         }
     }
     Err(Error::Io {
-        path: mdl_path.with_extension("*.vtx").into_string(),
+        path: mdl_path.with_extension("*.vtx").to_string(),
         error: "could not find a supported vtx file".to_owned(),
     })
 }
@@ -106,12 +106,12 @@ impl Model {
     /// # Errors
     ///
     /// Returns `Err` if reading the mdl file fails or if reading an associated vvd or vtx file fails.
-    pub fn read(path: impl AsRef<Path>, file_system: &OpenFileSystem) -> Result<Self> {
-        let path = path.as_ref();
+    pub fn read<'a>(path: impl Into<Path<'a>>, file_system: &OpenFileSystem) -> Result<Self> {
+        let path = path.into();
         let mdl_file = file_system
             .open_file(path)
-            .map_err(|err| Error::from_io(&err, path))?;
-        let mdl = Mdl::read(mdl_file).map_err(|err| Error::from_io(&err, path))?;
+            .map_err(|err| Error::from_io(&err, &path))?;
+        let mdl = Mdl::read(mdl_file).map_err(|err| Error::from_io(&err, &path))?;
 
         let vvd_path = path.with_extension("vvd");
         let vvd_file = file_system
@@ -267,7 +267,7 @@ impl<'a> Verified<'a> {
     /// # Errors
     ///
     /// Returns `Err` if a material path reading fails or a material isn't found.
-    pub fn materials(&self, file_system: &OpenFileSystem) -> Result<Vec<PathBuf>> {
+    pub fn materials(&self, file_system: &OpenFileSystem) -> Result<Vec<GamePathBuf>> {
         let texture_paths = self.mdl_header.texture_paths()?;
 
         self.mdl_header
@@ -324,12 +324,12 @@ fn find_material<'a>(
     texture: mdl::TextureRef,
     texture_paths: &[&str],
     file_system: &'a OpenFileSystem,
-) -> Result<PathBuf> {
-    let name = PathBuf::from(texture.name()?);
+) -> Result<GamePathBuf> {
+    let name = GamePathBuf::from(texture.name()?);
 
     for &path in texture_paths {
-        let mut candidate = PathBuf::from("materials");
-        candidate.push(PathBuf::from(path));
+        let mut candidate = GamePathBuf::from("materials");
+        candidate.push(GamePathBuf::from(path));
         candidate.push(&name);
         candidate.set_extension("vmt");
 
@@ -377,7 +377,7 @@ pub struct Animation<'a> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        fs::{DirEntryType, OpenFileSystem, Path, ReadDir},
+        fs::{DirEntryType, GamePath, OpenFileSystem, ReadDir},
         steam::Libraries,
     };
 
@@ -394,7 +394,7 @@ mod tests {
                     eprintln!("reading from filesystem: {}", filesystem.name);
                     let filesystem = filesystem.open().unwrap();
                     recurse(
-                        filesystem.read_dir(Path::try_from_str("models").unwrap()),
+                        filesystem.read_dir(GamePath::try_from_str("models").unwrap()),
                         &filesystem,
                     );
                 }

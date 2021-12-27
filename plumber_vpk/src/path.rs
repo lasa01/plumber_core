@@ -154,6 +154,12 @@ impl PartialEq<str> for Path {
     }
 }
 
+impl Display for Path {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// An owned, mutable vpk path.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Default)]
@@ -310,6 +316,12 @@ impl From<&str> for PathBuf {
 impl PartialEq<Path> for PathBuf {
     fn eq(&self, other: &Path) -> bool {
         self.as_str() == other.as_str()
+    }
+}
+
+impl PartialEq<str> for PathBuf {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
     }
 }
 

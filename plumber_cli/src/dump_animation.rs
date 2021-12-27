@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use plumber_core::{
-    fs::{FileSystem, PathBuf},
+    fs::{FileSystem, GamePathBuf},
     model::Model,
 };
 
@@ -18,7 +18,7 @@ pub struct DumpAnimation {
 pub fn dump_animation(opts: DumpAnimation, file_system: &FileSystem) {
     let file_system = file_system.open().unwrap();
 
-    let model = Model::read(PathBuf::from(opts.mdl_path), &file_system).unwrap();
+    let model = Model::read(&GamePathBuf::from(opts.mdl_path), &file_system).unwrap();
     let verified = model.verify().unwrap();
 
     if opts.bones {

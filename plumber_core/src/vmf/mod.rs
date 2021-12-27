@@ -6,8 +6,8 @@ mod prop_loader;
 mod solid_builder;
 mod types;
 
-use crate::fs::PathBuf;
-use glam::{Vec3, Vec2};
+use crate::fs::GamePathBuf;
+use glam::{Vec2, Vec3};
 use types::{bracketed_vector2, bracketed_vector3, color, BracketedVector3, Plane, UvAxis};
 
 use plumber_vdf as vdf;
@@ -154,7 +154,7 @@ pub struct World {
     #[serde(rename = "classname")]
     pub class_name: String,
     #[serde(rename = "skyname")]
-    pub sky_name: PathBuf,
+    pub sky_name: GamePathBuf,
     #[serde(flatten)]
     pub properties: BTreeMap<UncasedString, String>,
     #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
@@ -186,7 +186,7 @@ pub struct Group {
 pub struct Side {
     pub id: i32,
     pub plane: Plane,
-    pub material: PathBuf,
+    pub material: GamePathBuf,
     #[serde(rename = "uaxis")]
     pub u_axis: UvAxis,
     #[serde(rename = "vaxis")]

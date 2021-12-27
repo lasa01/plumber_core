@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     ffi::OsStr,
-    fmt::{Debug, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     fs::{self, FileType},
     io::{self, Read, Seek},
     path::{Path as StdPath, PathBuf as StdPathBuf},
@@ -12,7 +12,7 @@ use log::{debug, warn};
 use plumber_vdf as vdf;
 use plumber_vpk as vpk;
 use vpk::DirectoryReadError;
-pub use vpk::{Path, PathBuf};
+pub use vpk::{Path as GamePath, PathBuf as GamePathBuf};
 
 use crate::steam;
 
@@ -22,6 +22,123 @@ use serde::{
 };
 use thiserror::Error;
 use uncased::AsUncased;
+
+/// A borrowed path to import an asset from.
+/// Can be either a `Game` path to import assets from the game file system,
+/// or an `Os` path to import assets from the os file system.
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
+pub enum Path<'a> {
+    Game(&'a GamePath),
+    Os(&'a StdPath),
+}
+
+impl<'a> Path<'a> {
+    pub fn with_extension(self, extension: impl AsRef<str>) -> PathBuf {
+        match self {
+            Path::Game(p) => PathBuf::Game(p.with_extension(extension)),
+            Path::Os(p) => PathBuf::Os(p.with_extension(extension.as_ref())),
+        }
+    }
+}
+
+impl PartialEq<str> for Path<'_> {
+    fn eq(&self, other: &str) -> bool {
+        match self {
+            Path::Game(p) => *p == other,
+            Path::Os(p) => p.as_os_str() == other,
+        }
+    }
+}
+
+impl Display for Path<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Path::Game(p) => Display::fmt(&p, f),
+            Path::Os(p) => Display::fmt(&p.to_string_lossy(), f),
+        }
+    }
+}
+
+impl<'a> From<&'a PathBuf> for Path<'a> {
+    fn from(p: &'a PathBuf) -> Self {
+        match p {
+            PathBuf::Game(p) => Self::Game(p),
+            PathBuf::Os(p) => Self::Os(p),
+        }
+    }
+}
+
+impl<'a> From<&'a StdPath> for Path<'a> {
+    fn from(p: &'a StdPath) -> Self {
+        Self::Os(p)
+    }
+}
+
+impl<'a> From<&'a GamePath> for Path<'a> {
+    fn from(p: &'a GamePath) -> Self {
+        Self::Game(p)
+    }
+}
+
+impl<'a> From<&'a GamePathBuf> for Path<'a> {
+    fn from(p: &'a GamePathBuf) -> Self {
+        Self::Game(p)
+    }
+}
+
+impl<'a> From<&'a StdPathBuf> for Path<'a> {
+    fn from(p: &'a StdPathBuf) -> Self {
+        Self::Os(p)
+    }
+}
+
+/// An owned path to import an asset from.
+/// Can be either a `Game` path to import assets from the game file system,
+/// or an `Os` path to import assets from the os file system.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PathBuf {
+    Game(GamePathBuf),
+    Os(StdPathBuf),
+}
+
+impl PathBuf {
+    pub fn with_extension(&self, extension: impl AsRef<str>) -> PathBuf {
+        match self {
+            PathBuf::Game(p) => PathBuf::Game(p.with_extension(extension)),
+            PathBuf::Os(p) => PathBuf::Os(p.with_extension(extension.as_ref())),
+        }
+    }
+}
+
+impl From<GamePathBuf> for PathBuf {
+    fn from(p: GamePathBuf) -> Self {
+        Self::Game(p)
+    }
+}
+
+impl From<StdPathBuf> for PathBuf {
+    fn from(p: StdPathBuf) -> Self {
+        Self::Os(p)
+    }
+}
+
+impl PartialEq<str> for PathBuf {
+    fn eq(&self, other: &str) -> bool {
+        match self {
+            PathBuf::Game(p) => p == other,
+            PathBuf::Os(p) => p.as_os_str() == other,
+        }
+    }
+}
+
+impl Display for PathBuf {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            PathBuf::Game(p) => Display::fmt(p, f),
+            PathBuf::Os(p) => Display::fmt(&p.to_string_lossy(), f),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(case_insensitive)]
@@ -413,7 +530,7 @@ impl OpenSearchPath {
         }
     }
 
-    fn try_open_file(&self, file_path: &Path) -> io::Result<Option<GameFile>> {
+    fn try_open_file(&self, file_path: &GamePath) -> io::Result<Option<GameFile>> {
         match self {
             OpenSearchPath::Vpk(vpk) => vpk.open_file(file_path).map_or_else(
                 |e| {
@@ -438,7 +555,7 @@ impl OpenSearchPath {
         }
     }
 
-    fn try_read_dir<'a>(&'a self, path: &Path) -> io::Result<Option<ReadDirPart<'a>>> {
+    fn try_read_dir<'a>(&'a self, path: &GamePath) -> io::Result<Option<ReadDirPart<'a>>> {
         match self {
             OpenSearchPath::Vpk(vpk) => vpk.directory_contents(path).map_or(Ok(None), |contents| {
                 Ok(Some(ReadDirPart {
@@ -473,7 +590,7 @@ fn open_fs_file(path: &StdPathBuf, file_path: &Path) -> Result<fs::File, io::Err
 
 #[cfg(unix)]
 // "manual" case-insensitive file opening on Linux
-fn open_fs_file(root_path: &StdPath, file_path: &Path) -> Result<fs::File, io::Error> {
+fn open_fs_file(root_path: &StdPath, file_path: &GamePath) -> Result<fs::File, io::Error> {
     use std::io::ErrorKind;
 
     match fs::File::open(root_path.join(file_path.as_str())) {
@@ -522,7 +639,7 @@ enum ReadDirPartType<'a> {
 }
 
 impl<'a> ReadDirPart<'a> {
-    fn next_entry(&mut self, path: &'a Path) -> Option<io::Result<DirEntry<'a>>> {
+    fn next_entry(&mut self, path: &'a GamePath) -> Option<io::Result<DirEntry<'a>>> {
         match &mut self.ty {
             ReadDirPartType::Vpk(contents) => contents.next().map(|c| match c {
                 vpk::DirectoryContent::Directory(p) => Ok(DirEntry::new_borrowed(
@@ -599,14 +716,22 @@ impl OpenFileSystem {
     /// # Errors
     ///
     /// Returns `Err` if `file_path` doesn't exist or if the file can't be opened.
-    pub fn open_file(&self, file_path: impl AsRef<Path>) -> io::Result<GameFile> {
-        let file_path = file_path.as_ref();
-        for path in &self.search_paths {
-            if let Some(file) = path.try_open_file(file_path)? {
-                return Ok(file);
+    pub fn open_file<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<GameFile> {
+        let file_path = file_path.into();
+        match file_path {
+            Path::Game(file_path) => {
+                for path in &self.search_paths {
+                    if let Some(file) = path.try_open_file(file_path)? {
+                        return Ok(file);
+                    }
+                }
+                Err(io::Error::new(io::ErrorKind::NotFound, "no such file"))
+            }
+            Path::Os(file_path) => {
+                let file = fs::File::open(file_path)?;
+                Ok(GameFile::Fs(file))
             }
         }
-        Err(io::Error::new(io::ErrorKind::NotFound, "no such file"))
     }
 
     /// Reads the specified file into a [`Vec`].
@@ -615,7 +740,7 @@ impl OpenFileSystem {
     /// # Errors
     ///
     /// Returns `Err` if `file_path` doesn't exist or if the file can't be read.
-    pub fn read(&self, file_path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
+    pub fn read<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<Vec<u8>> {
         let mut file = self.open_file(file_path)?;
         let mut buffer = Vec::with_capacity(initial_buffer_size(&file));
         file.read_to_end(&mut buffer)?;
@@ -628,7 +753,7 @@ impl OpenFileSystem {
     /// # Errors
     ///
     /// Returns `Err` if `file_path` doesn't exist or if the file can't be read.
-    pub fn read_to_string(&self, file_path: impl AsRef<Path>) -> io::Result<String> {
+    pub fn read_to_string<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<String> {
         let mut file = self.open_file(file_path)?;
         let mut buffer = String::with_capacity(initial_buffer_size(&file));
         file.read_to_string(&mut buffer)?;
@@ -636,7 +761,7 @@ impl OpenFileSystem {
     }
 
     /// Returns an iterator over the entries within a directory.
-    pub fn read_dir<'a>(&'a self, path: &'a Path) -> ReadDir<'a> {
+    pub fn read_dir<'a>(&'a self, path: &'a GamePath) -> ReadDir<'a> {
         ReadDir {
             search_paths: self.search_paths.iter(),
             path,
@@ -650,7 +775,7 @@ impl OpenFileSystem {
 pub struct ReadDir<'a> {
     search_paths: slice::Iter<'a, OpenSearchPath>,
     current_readdir: Option<ReadDirPart<'a>>,
-    path: &'a Path,
+    path: &'a GamePath,
 }
 
 impl<'a> Iterator for ReadDir<'a> {
@@ -703,16 +828,16 @@ impl DirEntryType {
 #[derive(Debug, PartialEq)]
 pub struct DirEntry<'a> {
     search_path: &'a OpenSearchPath,
-    name: Cow<'a, Path>,
-    path: PathBuf,
+    name: Cow<'a, GamePath>,
+    path: GamePathBuf,
     ty: DirEntryType,
 }
 
 impl<'a> DirEntry<'a> {
     fn new_borrowed(
         search_path: &'a OpenSearchPath,
-        name: &'a Path,
-        path: &'a Path,
+        name: &'a GamePath,
+        path: &'a GamePath,
         ty: DirEntryType,
     ) -> Self {
         Self {
@@ -725,8 +850,8 @@ impl<'a> DirEntry<'a> {
 
     fn new_owned(
         search_path: &'a OpenSearchPath,
-        name: PathBuf,
-        path: &'a Path,
+        name: GamePathBuf,
+        path: &'a GamePath,
         ty: DirEntryType,
     ) -> Self {
         Self {
@@ -743,12 +868,12 @@ impl<'a> DirEntry<'a> {
     }
 
     #[must_use]
-    pub fn name(&self) -> &Path {
+    pub fn name(&self) -> &GamePath {
         &self.name
     }
 
     #[must_use]
-    pub fn path(&self) -> &Path {
+    pub fn path(&self) -> &GamePath {
         &self.path
     }
 
@@ -952,14 +1077,17 @@ mod tests {
             .unwrap();
 
         assert!(file_system
-            .open_file(PathBuf::from("materials/ar_dizzy/Dizzy_FACADE_cOlOr.VmT"))
+            .open_file(&PathBuf::Game(
+                "materials/ar_dizzy/Dizzy_FACADE_cOlOr.VmT".into()
+            ))
             .is_ok());
         assert!(file_system
-            .open_file(PathBuf::from("MOdelS/props/De_Mirage/bench_a.mdl"))
+            .open_file(&PathBuf::Game("MOdelS/props/De_Mirage/bench_a.mdl".into()))
             .is_ok());
 
-        let does_not_exist =
-            file_system.open_file(PathBuf::from("MOdelS/props/De_Mirage/bench_abc.mdl"));
+        let does_not_exist = file_system.open_file(&PathBuf::Game(
+            "MOdelS/props/De_Mirage/bench_abc.mdl".into(),
+        ));
 
         assert!(does_not_exist.unwrap_err().kind() == io::ErrorKind::NotFound);
     }

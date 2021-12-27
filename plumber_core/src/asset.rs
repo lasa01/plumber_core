@@ -167,7 +167,7 @@ where
     /// # Errors
     ///
     /// Returns `Err` if the material loading fails or has failed in the past
-    pub fn import_vmt_blocking(&self, path: PathBuf) -> Result<MaterialInfo, MaterialLoadError> {
+    pub fn import_vmt_blocking(&self, path: &PathBuf) -> Result<MaterialInfo, MaterialLoadError> {
         self.material_job_sender
             .send(path.clone())
             .expect("material job channel shouldn't be disconnected");
@@ -187,7 +187,7 @@ where
                     if let Some(model) = model {
                         for material in &model.materials {
                             material_job_sender
-                                .send(material.clone())
+                                .send(PathBuf::Game(material.clone()))
                                 .expect("material job channel shouldn't be disconnected");
                         }
 
@@ -219,7 +219,7 @@ where
                         if let Some(model) = model {
                             for material in &model.materials {
                                 self.material_job_sender
-                                    .send(material.clone())
+                                    .send(PathBuf::Game(material.clone()))
                                     .expect("material job channel shouldn't be disconnected");
                             }
 

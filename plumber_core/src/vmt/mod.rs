@@ -1,6 +1,6 @@
 pub mod loader;
 
-use crate::fs::{self, Path, PathBuf};
+use crate::fs::{self, GamePath, GamePathBuf};
 
 use plumber_vdf as vdf;
 use vdf::Value;
@@ -86,7 +86,7 @@ enum ShaderOrPatch {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct Patch {
-    include: PathBuf,
+    include: GamePathBuf,
     #[serde(default, alias = "replace")]
     insert: BTreeMap<UncasedString, String>,
 }
@@ -210,9 +210,9 @@ pub enum ShaderResolveError {
 }
 
 impl ShaderResolveError {
-    fn from_io(err: &io::Error, path: &Path) -> Self {
+    fn from_io(err: &io::Error, path: &GamePath) -> Self {
         Self::Io {
-            path: path.as_str().to_string(),
+            path: path.to_string(),
             error: err.to_string(),
         }
     }
@@ -337,7 +337,7 @@ impl Serialize for Vmt {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fs::{DirEntryType, Path, ReadDir};
+    use crate::fs::{DirEntryType, ReadDir};
     use crate::steam::Libraries;
 
     fn is_vmt_file(filename: &str) -> bool {
@@ -360,7 +360,7 @@ mod tests {
                 Ok(filesystem) => {
                     eprintln!("reading from filesystem: {}", filesystem.name);
                     let filesystem = filesystem.open().unwrap();
-                    recurse(filesystem.read_dir(Path::try_from_str("materials").unwrap()));
+                    recurse(filesystem.read_dir(GamePath::try_from_str("materials").unwrap()));
                 }
                 Err(err) => eprintln!("warning: failed filesystem discovery: {}", err),
             }

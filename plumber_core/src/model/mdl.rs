@@ -2139,7 +2139,7 @@ mod tests {
     use std::{collections::BTreeMap, result};
 
     use crate::{
-        fs::{DirEntryType, OpenFileSystem, Path, ReadDir},
+        fs::{DirEntryType, GamePath, OpenFileSystem, ReadDir},
         steam::Libraries,
     };
 
@@ -2157,7 +2157,7 @@ mod tests {
                     let filesystem = filesystem.open().unwrap();
                     let mut version_counter = BTreeMap::new();
                     recurse(
-                        filesystem.read_dir(Path::try_from_str("models").unwrap()),
+                        filesystem.read_dir(GamePath::try_from_str("models").unwrap()),
                         &filesystem,
                         &mut version_counter,
                     );
