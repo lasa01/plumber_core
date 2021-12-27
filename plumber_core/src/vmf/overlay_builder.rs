@@ -11,7 +11,7 @@ use super::{
 };
 
 use approx::relative_eq;
-use glam::{Vec3, Mat3, Vec2, Vec3Swizzles};
+use glam::{Mat3, Vec2, Vec3, Vec3Swizzles};
 use itertools::Itertools;
 use thiserror::Error;
 
@@ -211,8 +211,7 @@ impl<'a> OverlayBuilder<'a> {
                 let new_uv_space_vertice = cut_plane
                     .intersect_line(first_line_a, first_line_b - first_line_a, epsilon)
                     .ok_or(OverlayError::InvalidUvData)?;
-                let new_vertice =
-                    self.origin + self.uv_to_global_matrix * new_uv_space_vertice;
+                let new_vertice = self.origin + self.uv_to_global_matrix * new_uv_space_vertice;
 
                 let first_new_i = vertices
                     .iter()
@@ -237,8 +236,7 @@ impl<'a> OverlayBuilder<'a> {
                 let new_uv_space_vertice = cut_plane
                     .intersect_line(last_line_a, last_line_b - last_line_a, epsilon)
                     .ok_or(OverlayError::InvalidUvData)?;
-                let new_vertice =
-                    self.origin + self.uv_to_global_matrix * new_uv_space_vertice;
+                let new_vertice = self.origin + self.uv_to_global_matrix * new_uv_space_vertice;
 
                 let last_new_i = vertices
                     .iter()
@@ -250,10 +248,9 @@ impl<'a> OverlayBuilder<'a> {
                     });
 
                 // replace the face vertices that were outside the uv border with the 2 newly created ones
-                builder.vertice_indices.splice(
-                    first_outside_i..=last_outside_i,
-                    [first_new_i, last_new_i],
-                );
+                builder
+                    .vertice_indices
+                    .splice(first_outside_i..=last_outside_i, [first_new_i, last_new_i]);
             }
         }
 
@@ -717,36 +714,12 @@ mod tests {
         let mut is = vec![0; expected_vertices.len()];
 
         let expected_vertices = vec![
-            Vec3::new(
-                -35.934_752,
-                -31.288_08,
-                15.476_86,
-            ),
-            Vec3::new(
-                -36.673_89,
-                50.222_676,
-                15.476_852,
-            ),
-            Vec3::new(
-                32.293_945,
-                74.929_66,
-                15.476_86,
-            ),
-            Vec3::new(
-                37.192_076,
-                -31.288_08,
-                15.476_86,
-            ),
-            Vec3::new(
-                38.820_615,
-                -31.288_08,
-                -37.880_24,
-            ),
-            Vec3::new(
-                -35.697_692,
-                -31.288_08,
-                -24.027_198,
-            ),
+            Vec3::new(-35.934_752, -31.288_08, 15.476_86),
+            Vec3::new(-36.673_89, 50.222_676, 15.476_852),
+            Vec3::new(32.293_945, 74.929_66, 15.476_86),
+            Vec3::new(37.192_076, -31.288_08, 15.476_86),
+            Vec3::new(38.820_615, -31.288_08, -37.880_24),
+            Vec3::new(-35.697_692, -31.288_08, -24.027_198),
         ];
 
         assert_eq!(builder.vertices.len(), expected_vertices.len());

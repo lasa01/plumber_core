@@ -16,7 +16,7 @@ use super::{
 
 use approx::relative_eq;
 use float_ord::FloatOrd;
-use glam::{Vec3, Vec2};
+use glam::{Vec2, Vec3};
 use itertools::{izip, Itertools};
 use ndarray::{Array2, Array3, Zip};
 use thiserror::Error;
@@ -134,8 +134,7 @@ impl<'a> FaceBuilder<'a> {
         for i in 0..self.vertice_indices.len() - 2 {
             let vertice = vertices[self.vertice_indices[i]];
             let to_current = (vertice - center).normalize();
-            let filter_plane =
-                NdPlane::from_points(vertice, center, center + self.plane.normal);
+            let filter_plane = NdPlane::from_points(vertice, center, center + self.plane.normal);
 
             if let Some((next_idx, _)) = self.vertice_indices[i + 1..]
                 .iter()
@@ -315,10 +314,7 @@ impl<'a> FaceBuilder<'a> {
                         vert_right_i
                     } else {
                         let i = vertices.len();
-                        vertices.push(
-                            vert_left
-                                .lerp(vert_right, col_i as f32 / last_i as f32),
-                        );
+                        vertices.push(vert_left.lerp(vert_right, col_i as f32 / last_i as f32));
                         i
                     };
                 }
@@ -329,8 +325,9 @@ impl<'a> FaceBuilder<'a> {
                 .and(&info.normals.data)
                 .and(&info.distances.data)
                 .for_each(|&v_i, &offset, &normal, &distance| {
-                    vertices[v_i] +=
-                        offset + distance as f32 * normal + self.plane.normal * info.elevation as f32;
+                    vertices[v_i] += offset
+                        + distance as f32 * normal
+                        + self.plane.normal * info.elevation as f32;
                 });
 
             let mut disp_uvs = Array2::default((dimension, dimension));
@@ -338,8 +335,10 @@ impl<'a> FaceBuilder<'a> {
             for (row_i, mut row) in disp_uvs.rows_mut().into_iter().enumerate() {
                 let blend = row_i as f32 / last_i as f32;
 
-                let uv_left = self.vertice_uvs[top_left_i].lerp(self.vertice_uvs[btm_left_i], blend);
-                let uv_right = self.vertice_uvs[top_right_i].lerp(self.vertice_uvs[btm_right_i], blend);
+                let uv_left =
+                    self.vertice_uvs[top_left_i].lerp(self.vertice_uvs[btm_left_i], blend);
+                let uv_right =
+                    self.vertice_uvs[top_right_i].lerp(self.vertice_uvs[btm_right_i], blend);
 
                 for (col_i, vert_uv) in row.indexed_iter_mut() {
                     *vert_uv = uv_left.lerp(uv_right, col_i as f32 / last_i as f32);
@@ -497,12 +496,7 @@ impl<'a> FaceBuilder<'a> {
         let vertice_positions = self
             .vertice_indices
             .iter()
-            .map(|&i| {
-                plane.classify_point(
-                    vertices[i] + self_center - plane_center,
-                    epsilon,
-                )
-            })
+            .map(|&i| plane.classify_point(vertices[i] + self_center - plane_center, epsilon))
             .collect_vec();
 
         let mut front = self.new_split();
@@ -1237,11 +1231,7 @@ mod tests {
             );
         }
 
-        assert_relative_eq!(
-            builder.center,
-            Vec3::new(-896.0, 0.0, 32.0),
-            epsilon = 1e-3
-        );
+        assert_relative_eq!(builder.center, Vec3::new(-896.0, 0.0, 32.0), epsilon = 1e-3);
 
         builder.sort_vertices();
 
@@ -1648,10 +1638,7 @@ mod tests {
 
         let clipped_side = FaceBuilder {
             side: &dummy_side,
-            plane: NdPlane::from_point_normal(
-                Vec3::new(2.0, 2.0, 0.0),
-                Vec3::new(0.0, 0.0, 1.0),
-            ),
+            plane: NdPlane::from_point_normal(Vec3::new(2.0, 2.0, 0.0), Vec3::new(0.0, 0.0, 1.0)),
             vertice_indices: vec![0, 1, 2, 3],
             vertice_uvs: vec![Vec2::ZERO; 4],
             material_index: 0,
@@ -1700,10 +1687,7 @@ mod tests {
 
         let clipped_side = FaceBuilder {
             side: &dummy_side,
-            plane: NdPlane::from_point_normal(
-                Vec3::new(-2.0, 0.0, 2.0),
-                Vec3::new(-1.0, 0.0, 0.0),
-            ),
+            plane: NdPlane::from_point_normal(Vec3::new(-2.0, 0.0, 2.0), Vec3::new(-1.0, 0.0, 0.0)),
             vertice_indices: vec![0, 1, 4, 5],
             vertice_uvs: vec![Vec2::ZERO; 4],
             material_index: 0,
@@ -1725,10 +1709,7 @@ mod tests {
 
         let clipped_side = FaceBuilder {
             side: &dummy_side,
-            plane: NdPlane::from_point_normal(
-                Vec3::new(1.0, 0.0, 0.0),
-                Vec3::new(0.0, 0.0, 1.0),
-            ),
+            plane: NdPlane::from_point_normal(Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0)),
             vertice_indices: vec![3, 7, 6],
             vertice_uvs: vec![Vec2::ZERO; 2],
             material_index: 0,
