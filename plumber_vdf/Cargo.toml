@@ -14,7 +14,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 bytecount = "0.6.2"
-nom = "6.1.2"
+nom = "7.1.0"
 serde = "= 1.0.125"
 thiserror = "1.0.24"
 
