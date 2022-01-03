@@ -15,7 +15,7 @@ use crate::{
 pub use super::builder_utils::{GeometrySettings, InvisibleSolids, MergeSolids};
 pub use super::overlay_builder::{BuiltOverlay, BuiltOverlayFace, OverlayError};
 pub use super::prop_loader::{LoadedProp, PropError};
-pub use super::solid_builder::{BuiltBrushEntity, BuiltSolid, Face, MergedSolids, SolidError};
+pub use super::solid_builder::{BuiltBrushEntity, BuiltSolid, MergedSolids, SolidError, SolidFace};
 
 pub(crate) use super::overlay_builder::SideFacesMap;
 

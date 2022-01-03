@@ -32,7 +32,7 @@ pub struct BuiltSolid {
     pub id: i32,
     pub position: Vec3,
     pub vertices: Vec<Vec3>,
-    pub faces: Vec<Face>,
+    pub faces: Vec<SolidFace>,
     pub materials: Vec<SolidMaterial>,
 }
 
@@ -49,7 +49,7 @@ impl PartialEq for SolidMaterial {
 }
 
 #[derive(Debug)]
-pub struct Face {
+pub struct SolidFace {
     pub vertice_indices: Vec<usize>,
     pub vertice_uvs: Vec<Vec2>,
     pub material_index: usize,
@@ -567,8 +567,8 @@ impl<'a> FaceBuilder<'a> {
         (front, back)
     }
 
-    fn finish(self) -> Face {
-        Face {
+    fn finish(self) -> SolidFace {
+        SolidFace {
             vertice_indices: self.vertice_indices,
             vertice_uvs: self.vertice_uvs,
             material_index: self.material_index,
@@ -870,7 +870,7 @@ impl Solid {
 #[derive(Debug)]
 pub struct MergedSolids {
     pub vertices: Vec<Vec3>,
-    pub faces: Vec<Face>,
+    pub faces: Vec<SolidFace>,
     pub materials: Vec<SolidMaterial>,
 }
 
