@@ -9,7 +9,7 @@ use uncased::AsUncased;
 
 use super::Entity;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub enum TypedEntity<'a> {
     Light(Light<'a>),
@@ -211,7 +211,7 @@ pub trait AngledEntity: BaseEntity {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Unknown<'a> {
     entity: &'a Entity,
 }
@@ -401,7 +401,7 @@ pub trait LightEntity: PointEntity {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Light<'a> {
     entity: &'a Entity,
 }
@@ -422,7 +422,7 @@ impl<'a> BaseEntity for Light<'a> {
 impl<'a> PointEntity for Light<'a> {}
 impl<'a> LightEntity for Light<'a> {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct SpotLight<'a> {
     entity: &'a Entity,
 }
@@ -499,7 +499,7 @@ impl<'a> SpotLight<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct EnvLight<'a> {
     entity: &'a Entity,
 }
@@ -567,7 +567,7 @@ impl<'a> EnvLight<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct SkyCamera<'a> {
     entity: &'a Entity,
 }
@@ -635,7 +635,7 @@ pub struct SkyCameraFogSettings {
     pub max_density: Option<f32>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Prop<'a> {
     entity: &'a Entity,
 }
@@ -716,7 +716,7 @@ impl<'a> Prop<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Overlay<'a> {
     entity: &'a Entity,
 }
