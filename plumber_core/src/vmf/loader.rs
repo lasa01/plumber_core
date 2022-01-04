@@ -63,6 +63,7 @@ pub struct Settings {
     import_materials: bool,
     import_props: bool,
     import_entities: bool,
+    scale: f32,
 }
 
 impl Default for Settings {
@@ -72,6 +73,7 @@ impl Default for Settings {
             import_materials: true,
             import_props: true,
             import_entities: true,
+            scale: 0.01,
         }
     }
 }
@@ -105,6 +107,12 @@ impl Settings {
         self.import_entities = import_entities;
         self
     }
+
+    #[must_use]
+    pub fn scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
+    }
 }
 
 impl Vmf {
@@ -125,6 +133,7 @@ impl Vmf {
                         importer.model_loader,
                         importer.material_job_sender,
                         importer.asset_handler.clone(),
+                        settings.scale,
                     )
                     .for_each_with(
                         importer.asset_handler.clone(),
@@ -149,6 +158,7 @@ impl Vmf {
                         importer.material_loader,
                         side_faces_map.clone(),
                         *geometry_settings,
+                        settings.scale,
                     )
                     .for_each_with(
                         importer.asset_handler.clone(),
@@ -160,7 +170,7 @@ impl Vmf {
                 }
 
                 if let Some(geometry_settings) = settings.geometry.overlays() {
-                    self.load_overlays(side_faces_map, *geometry_settings)
+                    self.load_overlays(side_faces_map, *geometry_settings, settings.scale)
                         .for_each_with(importer.asset_handler, |handler, r| match r {
                             Ok(overlay) => handler.handle_overlay(overlay),
                             Err((id, error)) => handler.handle_error(Error::Overlay { id, error }),
@@ -177,6 +187,8 @@ impl Vmf {
     fn send_material_jobs(&self, importer: &mut Importer<impl Handler>, import_materials: bool) {
         // make sure solids' materials are loaded first
         // because solid loading later requires the material info to be available
+        //
+        // even if material importing is disabled the materials are needed to calculate uvs
         for solid in &self.world.solids {
             for side in &solid.sides {
                 let mut material = GamePathBuf::from("materials");
@@ -220,6 +232,7 @@ impl Vmf {
         model_loader: Arc<ModelLoader>,
         material_job_sender: crossbeam_channel::Sender<PathBuf>,
         asset_handler: impl Handler,
+        scale: f32,
     ) -> impl ParallelIterator<Item = Result<LoadedProp, (i32, PropError)>> {
         self.entities
             .par_iter()
@@ -241,10 +254,10 @@ impl Vmf {
                     material_job_sender,
                     asset_handler,
                 ),
-                |(file_system, model_loader, material_job_sender, asset_handler), prop| {
+                move |(file_system, model_loader, material_job_sender, asset_handler), prop| {
                     let (prop, model) = prop
-                        .load(model_loader, file_system)
-                        .map_err(|(prop, e)| (prop.entity().id, e))?;
+                        .load(model_loader, file_system, scale)
+                        .map_err(|e| (prop.entity().id, e))?;
 
                     if let Some(model) = model {
                         for material in &model.materials {
@@ -279,6 +292,7 @@ impl Vmf {
         material_loader: Arc<MaterialLoader>,
         side_faces_map: Arc<Mutex<SideFacesMap>>,
         geometry_settings: GeometrySettings,
+        scale: f32,
     ) -> impl ParallelIterator<Item = Result<BuiltBrushEntity, (i32, SolidError)>> {
         let world_brush_iter = rayon::iter::once(&self.world).map_with(
             (
@@ -286,12 +300,13 @@ impl Vmf {
                 side_faces_map.clone(),
                 geometry_settings,
             ),
-            |(material_loader, side_faces_map, geometry_settings), world| {
+            move |(material_loader, side_faces_map, geometry_settings), world| {
                 world
                     .build_brush(
                         |path| material_loader.wait_for_material(path),
                         side_faces_map,
                         geometry_settings,
+                        scale,
                     )
                     .map_err(|e| (world.id, e))
             },
@@ -303,12 +318,13 @@ impl Vmf {
                 .filter(|entity| !entity.solids.is_empty())
                 .map_with(
                     (material_loader, side_faces_map, geometry_settings),
-                    |(material_loader, side_faces_map, geometry_settings), entity| {
+                    move |(material_loader, side_faces_map, geometry_settings), entity| {
                         entity
                             .build_brush(
                                 |path| material_loader.wait_for_material(path),
                                 side_faces_map,
                                 geometry_settings,
+                                scale,
                             )
                             .map_err(|e| (entity.id, e))
                     },
@@ -322,6 +338,7 @@ impl Vmf {
         &self,
         side_faces_map: Arc<Mutex<SideFacesMap>>,
         geometry_settings: GeometrySettings,
+        scale: f32,
     ) -> impl ParallelIterator<Item = Result<BuiltOverlay, (i32, OverlayError)>> {
         self.entities
             .par_iter()
@@ -334,8 +351,8 @@ impl Vmf {
             })
             .map_with(
                 (side_faces_map, geometry_settings),
-                |(side_faces_map, geometry_settings), o| {
-                    o.build_mesh(side_faces_map, geometry_settings)
+                move |(side_faces_map, geometry_settings), o| {
+                    o.build_mesh(side_faces_map, geometry_settings, scale)
                         .map_err(|(overlay, e)| (overlay.entity().id, e))
                 },
             )

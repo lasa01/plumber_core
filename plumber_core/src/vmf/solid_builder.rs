@@ -31,6 +31,7 @@ pub enum SolidError {
 pub struct BuiltSolid {
     pub id: i32,
     pub position: Vec3,
+    pub scale: f32,
     pub vertices: Vec<Vec3>,
     pub faces: Vec<SolidFace>,
     pub materials: Vec<SolidMaterial>,
@@ -586,6 +587,7 @@ struct SolidBuilder<'a> {
     is_displacement: bool,
     aabb_min: Vec3,
     aabb_max: Vec3,
+    scale: f32,
 }
 
 impl<'a> Debug for SolidBuilder<'a> {
@@ -601,7 +603,7 @@ impl<'a> Debug for SolidBuilder<'a> {
 }
 
 impl<'a> SolidBuilder<'a> {
-    fn new(solid: &'a Solid) -> Self {
+    fn new(solid: &'a Solid, scale: f32) -> Self {
         let solid_center = polygon_center(
             solid
                 .sides
@@ -622,6 +624,7 @@ impl<'a> SolidBuilder<'a> {
             is_displacement: false,
             aabb_min: Vec3::new(0.0, 0.0, 0.0),
             aabb_max: Vec3::new(0.0, 0.0, 0.0),
+            scale,
         }
     }
 
@@ -843,6 +846,7 @@ impl<'a> SolidBuilder<'a> {
         BuiltSolid {
             id: self.solid.id,
             position: self.center,
+            scale: self.scale,
             vertices: self.vertices,
             faces: self.faces.into_iter().map(FaceBuilder::finish).collect(),
             materials: self.materials,
@@ -859,8 +863,9 @@ impl Solid {
         get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
+        scale: f32,
     ) -> Result<BuiltSolid, SolidError> {
-        let mut builder = SolidBuilder::new(self);
+        let mut builder = SolidBuilder::new(self, scale);
         builder.build(get_material_info, side_faces_map, settings)?;
         builder.recenter();
         Ok(builder.finish())
@@ -978,6 +983,7 @@ impl<'a> BuiltBrushEntity<'a> {
         mut get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
+        scale: f32,
     ) -> Result<Self, SolidError> {
         if settings.merge_solids.merge() {
             let mut mergable_solids = Vec::new();
@@ -986,7 +992,7 @@ impl<'a> BuiltBrushEntity<'a> {
             solids
                 .iter()
                 .filter_map(|solid| {
-                    let mut builder = SolidBuilder::new(solid);
+                    let mut builder = SolidBuilder::new(solid, scale);
                     if let Err(err) =
                         builder.build(&mut get_material_info, side_faces_map, settings)
                     {
@@ -1027,7 +1033,7 @@ impl<'a> BuiltBrushEntity<'a> {
                 solids: solids
                     .iter()
                     .filter_map(|solid| {
-                        let mut builder = SolidBuilder::new(solid);
+                        let mut builder = SolidBuilder::new(solid, scale);
                         if let Err(err) =
                             builder.build(&mut get_material_info, side_faces_map, settings)
                         {
@@ -1054,6 +1060,7 @@ impl Entity {
         get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
+        scale: f32,
     ) -> Result<BuiltBrushEntity, SolidError> {
         BuiltBrushEntity::new(
             &self.solids,
@@ -1062,6 +1069,7 @@ impl Entity {
             get_material_info,
             side_faces_map,
             settings,
+            scale,
         )
     }
 }
@@ -1075,6 +1083,7 @@ impl World {
         get_material_info: impl FnMut(&PathBuf) -> Result<MaterialInfo, MaterialLoadError>,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
+        scale: f32,
     ) -> Result<BuiltBrushEntity, SolidError> {
         BuiltBrushEntity::new(
             &self.solids,
@@ -1083,6 +1092,7 @@ impl World {
             get_material_info,
             side_faces_map,
             settings,
+            scale,
         )
     }
 }
@@ -1196,7 +1206,7 @@ mod tests {
     #[test]
     fn solid_building() {
         let solid = get_test_solid();
-        let mut builder = SolidBuilder::new(&solid);
+        let mut builder = SolidBuilder::new(&solid, 1.0);
         builder.intersect_sides(1e-3, 1e-3);
         builder.remove_invalid_faces();
         builder.recenter();
@@ -1458,7 +1468,7 @@ mod tests {
     #[allow(clippy::unreadable_literal, clippy::too_many_lines)]
     fn displacement_building() {
         let solid = get_test_displacement();
-        let mut builder = SolidBuilder::new(&solid);
+        let mut builder = SolidBuilder::new(&solid, 1.0);
         builder.intersect_sides(1e-3, 1e-3);
         builder.remove_invalid_faces();
         builder.sort_vertices();
@@ -1806,6 +1816,7 @@ mod tests {
             is_displacement: false,
             aabb_min: Vec3::new(0.0, 0.0, 0.0),
             aabb_max: Vec3::new(0.0, 0.0, 0.0),
+            scale: 1.0,
         };
 
         let mut clipped_solid = SolidBuilder {
@@ -1887,6 +1898,7 @@ mod tests {
             is_displacement: false,
             aabb_min: Vec3::new(0.0, 0.0, 0.0),
             aabb_max: Vec3::new(0.0, 0.0, 0.0),
+            scale: 1.0,
         };
 
         clipped_solid.clip_to_solid(&clipping_solid, false, 1e-3);

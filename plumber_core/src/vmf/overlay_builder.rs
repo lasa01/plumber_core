@@ -33,6 +33,7 @@ pub enum OverlayError {
 pub struct BuiltOverlay<'a> {
     pub overlay: Overlay<'a>,
     pub position: Vec3,
+    pub scale: f32,
     pub vertices: Vec<Vec3>,
     pub faces: Vec<BuiltOverlayFace>,
     pub material: GamePathBuf,
@@ -68,10 +69,11 @@ struct OverlayBuilder<'a> {
     faces: Vec<OverlayFaceBuilder>,
     vertices: Vec<Vec3>,
     uv_space_vertices: Vec<Vec3>,
+    scale: f32,
 }
 
 impl<'a> OverlayBuilder<'a> {
-    fn new(overlay: Overlay<'a>) -> Result<Self, (Overlay<'a>, OverlayError)> {
+    fn new(overlay: Overlay<'a>, scale: f32) -> Result<Self, (Overlay<'a>, OverlayError)> {
         let uv_info = match overlay.uv_info() {
             Ok(r) => r,
             Err(e) => return Err((overlay, e.into())),
@@ -95,6 +97,7 @@ impl<'a> OverlayBuilder<'a> {
             faces: Vec::new(),
             vertices: Vec::new(),
             uv_space_vertices: Vec::new(),
+            scale,
         })
     }
 
@@ -388,6 +391,7 @@ impl<'a> OverlayBuilder<'a> {
         Ok(BuiltOverlay {
             overlay: self.overlay,
             position: self.origin,
+            scale: self.scale,
             vertices: self.vertices,
             faces: self
                 .faces
@@ -407,8 +411,9 @@ impl<'a> Overlay<'a> {
         self,
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
+        scale: f32,
     ) -> Result<BuiltOverlay<'a>, (Self, OverlayError)> {
-        let mut builder = OverlayBuilder::new(self)?;
+        let mut builder = OverlayBuilder::new(self, scale)?;
         if let Err(e) = builder.create_vertices(side_faces_map, settings.epsilon) {
             return Err((builder.overlay, e));
         }
@@ -643,6 +648,7 @@ mod tests {
                     |_| Ok(MaterialInfo::new(1024, 1024, false)),
                     &side_faces_map,
                     &GeometrySettings::default(),
+                    1.0,
                 )
                 .unwrap();
         }
@@ -652,7 +658,7 @@ mod tests {
             TypedEntity::Overlay(o) => o,
             _ => unreachable!(),
         };
-        let mut builder = OverlayBuilder::new(overlay).unwrap();
+        let mut builder = OverlayBuilder::new(overlay, 1.0).unwrap();
         builder.create_vertices(&side_faces_map, 1e-3).unwrap();
 
         let expected_vertices = vec![

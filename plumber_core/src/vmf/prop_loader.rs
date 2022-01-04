@@ -6,8 +6,9 @@ use crate::{
     },
 };
 
-use super::entities::{EntityParseError, Prop};
+use super::entities::{AngledEntity, EntityParseError, PointEntity, Prop};
 
+use glam::Vec3;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -21,7 +22,11 @@ pub enum PropError {
 #[derive(Debug)]
 pub struct LoadedProp<'a> {
     pub prop: Prop<'a>,
+    pub model_path: GamePathBuf,
     pub model_info: ModelInfo,
+    pub position: Vec3,
+    pub rotation: Vec3,
+    pub scale: f32,
 }
 
 impl<'a> Prop<'a> {
@@ -32,23 +37,31 @@ impl<'a> Prop<'a> {
         self,
         model_loader: &model::loader::Loader,
         file_system: &OpenFileSystem,
-    ) -> Result<(LoadedProp<'a>, Option<LoadedModel>), (Self, PropError)> {
-        let model = match self.model() {
-            Ok(r) => r,
-            Err(e) => return Err((self, e.into())),
-        };
+        scale: f32,
+    ) -> Result<(LoadedProp<'a>, Option<LoadedModel>), PropError> {
+        let model = self.model()?;
         let model_path = GamePathBuf::from(model);
-        let (model_info, model) = match model_loader.load_model(model_path, file_system) {
+
+        let (model_info, model) = match model_loader.load_model(model_path.clone(), file_system) {
             Ok(r) => r,
             Err(error) => {
                 let model = model.to_string();
-                return Err((self, PropError::Model { model, error }));
+                return Err(PropError::Model { model, error });
             }
         };
+
+        let scale = self.scale()? * scale;
+        let position = self.origin()?;
+        let rotation = self.angles()?;
+
         Ok((
             LoadedProp {
                 prop: self,
+                model_path,
                 model_info,
+                position,
+                rotation,
+                scale,
             },
             model,
         ))
