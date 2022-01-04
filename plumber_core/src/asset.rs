@@ -7,7 +7,7 @@ use crate::{
         Error as ModelError,
     },
     vmf::{
-        entities::TypedEntity,
+        entities::{EntityParseError, TypedEntity},
         loader::{
             BuiltBrushEntity, BuiltOverlay, LoadedProp, OverlayError, PropError, Settings,
             SolidError,
@@ -40,6 +40,12 @@ pub enum Error {
     Overlay { id: i32, error: OverlayError },
     #[error("prop `{id}`: {error}")]
     Prop { id: i32, error: PropError },
+    #[error("entity {class_name} `{id}`: {error}")]
+    Entity {
+        id: i32,
+        class_name: String,
+        error: EntityParseError,
+    },
 }
 
 pub trait Handler: Clone + Send + Sync + 'static {
