@@ -718,7 +718,18 @@ impl<'a> HeaderRef<'a> {
         HeaderFlags::from_bits_truncate(self.header_1.flags)
     }
 
-    fn bones(&self) -> Result<BonesRef<'a>> {
+    pub fn iter_bones(&self) -> Result<impl Iterator<Item = BoneRef<'a>>> {
+        let (offset, bones) = self.bones()?;
+        let bytes = self.bytes;
+
+        Ok(bones.iter().enumerate().map(move |(i, bone)| BoneRef {
+            bone,
+            offset: offset + i * size_of::<Bone>(),
+            bytes,
+        }))
+    }
+
+    fn bones(&self) -> Result<(usize, &'a [Bone])> {
         let offset: usize = self
             .header_1
             .bone_offset
@@ -732,28 +743,11 @@ impl<'a> HeaderRef<'a> {
         let bones = parse_slice(self.bytes, offset, count)
             .ok_or_else(|| corrupted("bones out of bounds or misaligned"))?;
 
-        Ok(BonesRef {
-            bones,
-            offset,
-            bytes: self.bytes,
-        })
+        Ok((offset, bones))
     }
 
-    pub fn iter_bones(&self) -> Result<impl Iterator<Item = BoneRef<'a>>> {
-        let bones = self.bones()?;
-        Ok(bones
-            .bones
-            .iter()
-            .enumerate()
-            .map(move |(i, bone)| BoneRef {
-                bone,
-                offset: bones.offset + i * size_of::<Bone>(),
-                bytes: bones.bytes,
-            }))
-    }
-
-    fn textures(&self) -> Result<TexturesRef<'a>> {
-        let offset: usize = self
+    pub fn iter_textures(&self) -> Result<impl Iterator<Item = TextureRef<'a>>> {
+        let offset = self
             .header_1
             .texture_offset
             .try_into()
@@ -767,23 +761,15 @@ impl<'a> HeaderRef<'a> {
         let textures = parse_slice(self.bytes, offset, count)
             .ok_or_else(|| corrupted("textures out of bounds or misaligned"))?;
 
-        Ok(TexturesRef {
-            textures,
-            offset,
-            bytes: self.bytes,
-        })
-    }
+        let bytes = self.bytes;
 
-    pub fn iter_textures(&self) -> Result<impl Iterator<Item = TextureRef<'a>>> {
-        let textures = self.textures()?;
         Ok(textures
-            .textures
             .iter()
             .enumerate()
             .map(move |(i, texture)| TextureRef {
                 texture,
-                offset: textures.offset + i * size_of::<Texture>(),
-                bytes: textures.bytes,
+                offset: offset + i * size_of::<Texture>(),
+                bytes,
             }))
     }
 
@@ -827,7 +813,9 @@ impl<'a> HeaderRef<'a> {
             .try_collect()
     }
 
-    fn body_parts(&self) -> Result<BodyPartsRef<'a>> {
+    pub fn iter_body_parts(
+        &self,
+    ) -> Result<impl Iterator<Item = BodyPartRef<'a>> + ExactSizeIterator> {
         let offset = self
             .header_1
             .body_part_offset
@@ -842,29 +830,19 @@ impl<'a> HeaderRef<'a> {
         let body_parts = parse_slice(self.bytes, offset, count)
             .ok_or_else(|| corrupted("body parts out of bounds or misaligned"))?;
 
-        Ok(BodyPartsRef {
-            body_parts,
-            offset,
-            bytes: self.bytes,
-        })
-    }
+        let bytes = self.bytes;
 
-    pub fn iter_body_parts(
-        &self,
-    ) -> Result<impl Iterator<Item = BodyPartRef<'a>> + ExactSizeIterator> {
-        let body_parts = self.body_parts()?;
         Ok(body_parts
-            .body_parts
             .iter()
             .enumerate()
             .map(move |(i, body_part)| BodyPartRef {
                 body_part,
-                offset: body_parts.offset + i * size_of::<BodyPart>(),
-                bytes: body_parts.bytes,
+                offset: offset + i * size_of::<BodyPart>(),
+                bytes,
             }))
     }
 
-    fn animation_descs(&self) -> Result<AnimationDescsRef<'a>> {
+    pub fn iter_animation_descs(&self) -> Result<impl Iterator<Item = AnimationDescRef<'a>>> {
         let offset: usize = self
             .header_1
             .local_anim_offset
@@ -878,27 +856,17 @@ impl<'a> HeaderRef<'a> {
         let animation_descs = parse_slice(self.bytes, offset, count)
             .ok_or_else(|| corrupted("local animations out of bounds or misaligned"))?;
 
-        let bones = self.bones()?;
+        let bytes = self.bytes;
 
-        Ok(AnimationDescsRef {
-            animation_descs,
-            offset,
-            bones: bones.bones,
-            bytes: self.bytes,
-        })
-    }
-
-    pub fn iter_animation_descs(&self) -> Result<impl Iterator<Item = AnimationDescRef<'a>>> {
-        let animation_descs = self.animation_descs()?;
+        let (_, bones) = self.bones()?;
         Ok(animation_descs
-            .animation_descs
             .iter()
             .enumerate()
             .map(move |(i, animation_desc)| AnimationDescRef {
                 animation_desc,
-                offset: animation_descs.offset + i * size_of::<AnimationDesc>(),
-                bones: animation_descs.bones,
-                bytes: animation_descs.bytes,
+                offset: offset + i * size_of::<AnimationDesc>(),
+                bones,
+                bytes,
             }))
     }
 }
@@ -925,13 +893,6 @@ bitflags! {
         const DO_NOT_CAST_SHADOWS = 1 << 17;
         const CAST_TEXTURE_SHADOWS = 1 << 18;
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct BonesRef<'a> {
-    bones: &'a [Bone],
-    offset: usize,
-    bytes: &'a [u8],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -982,13 +943,6 @@ impl<'a> Deref for BoneRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct TexturesRef<'a> {
-    textures: &'a [Texture],
-    offset: usize,
-    bytes: &'a [u8],
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct TextureRef<'a> {
     texture: &'a Texture,
     offset: usize,
@@ -1011,13 +965,6 @@ impl<'a> TextureRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct BodyPartsRef<'a> {
-    body_parts: &'a [BodyPart],
-    offset: usize,
-    bytes: &'a [u8],
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct BodyPartRef<'a> {
     body_part: &'a BodyPart,
     offset: usize,
@@ -1025,7 +972,7 @@ pub struct BodyPartRef<'a> {
 }
 
 impl<'a> BodyPartRef<'a> {
-    fn models(&self) -> Result<ModelsRef<'a>> {
+    pub fn iter_models(&self) -> Result<impl Iterator<Item = ModelRef<'a>> + ExactSizeIterator> {
         let offset = (self.offset as isize + self.body_part.model_offset as isize) as usize;
         let count = self
             .body_part
@@ -1036,24 +983,13 @@ impl<'a> BodyPartRef<'a> {
         let models = parse_slice(self.bytes, offset, count)
             .ok_or_else(|| corrupted("body part models out of bounds or misaligned"))?;
 
-        Ok(ModelsRef {
-            models,
-            offset,
-            bytes: self.bytes,
-        })
-    }
+        let bytes = self.bytes;
 
-    pub fn iter_models(&self) -> Result<impl Iterator<Item = ModelRef<'a>> + ExactSizeIterator> {
-        let models = self.models()?;
-        Ok(models
-            .models
-            .iter()
-            .enumerate()
-            .map(move |(i, model)| ModelRef {
-                model,
-                offset: models.offset + i * size_of::<Model>(),
-                bytes: models.bytes,
-            }))
+        Ok(models.iter().enumerate().map(move |(i, model)| ModelRef {
+            model,
+            offset: offset + i * size_of::<Model>(),
+            bytes,
+        }))
     }
 
     pub fn name(&self) -> Result<&'a str> {
@@ -1072,13 +1008,6 @@ impl<'a> BodyPartRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ModelsRef<'a> {
-    models: &'a [Model],
-    offset: usize,
-    bytes: &'a [u8],
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct ModelRef<'a> {
     model: &'a Model,
     offset: usize,
@@ -1086,7 +1015,7 @@ pub struct ModelRef<'a> {
 }
 
 impl<'a> ModelRef<'a> {
-    fn meshes(&self) -> Result<MeshesRef<'a>> {
+    pub fn iter_meshes(&self) -> Result<impl Iterator<Item = &Mesh> + ExactSizeIterator> {
         let offset = (self.offset as isize + self.model.mesh_offset as isize) as usize;
         let count = self
             .model
@@ -1097,16 +1026,7 @@ impl<'a> ModelRef<'a> {
         let meshes = parse_slice(self.bytes, offset, count)
             .ok_or_else(|| corrupted("model meshes out of bounds or misaligned"))?;
 
-        Ok(MeshesRef {
-            meshes,
-            offset,
-            bytes: self.bytes,
-        })
-    }
-
-    pub fn iter_meshes(&self) -> Result<impl Iterator<Item = &Mesh> + ExactSizeIterator> {
-        let meshes = self.meshes()?;
-        Ok(meshes.meshes.iter())
+        Ok(meshes.iter())
     }
 
     pub fn name(&self) -> Result<&'a str> {
@@ -1123,20 +1043,6 @@ impl<'a> Deref for ModelRef<'a> {
     fn deref(&self) -> &Self::Target {
         self.model
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct MeshesRef<'a> {
-    meshes: &'a [Mesh],
-    offset: usize,
-    bytes: &'a [u8],
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct MeshRef<'a> {
-    mesh: &'a Mesh,
-    offset: usize,
-    bytes: &'a [u8],
 }
 
 bitflags! {
@@ -1159,14 +1065,6 @@ bitflags! {
         const NOFORCELOOP = 0x8000;
         const EVENT_CLIENT = 0x10000;
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct AnimationDescsRef<'a> {
-    animation_descs: &'a [AnimationDesc],
-    offset: usize,
-    bones: &'a [Bone],
-    bytes: &'a [u8],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1195,7 +1093,7 @@ impl<'a> AnimationDescRef<'a> {
         AnimationDescFlags::from_bits_truncate(self.animation_desc.flags)
     }
 
-    fn movements(&self) -> Result<MovementsRef<'a>> {
+    pub fn iter_movements(&self) -> Result<impl Iterator<Item = MovementRef<'a>>> {
         let offset = (self.offset as isize + self.animation_desc.movement_offset as isize) as usize;
         let count = self
             .animation_desc
@@ -1206,23 +1104,15 @@ impl<'a> AnimationDescRef<'a> {
         let movements = parse_slice(self.bytes, offset, count)
             .ok_or_else(|| corrupted("animation movements out of bounds or misaligned"))?;
 
-        Ok(MovementsRef {
-            movements,
-            offset,
-            bytes: self.bytes,
-        })
-    }
+        let bytes = self.bytes;
 
-    pub fn iter_movements(&self) -> Result<impl Iterator<Item = MovementRef<'a>>> {
-        let movements = self.movements()?;
         Ok(movements
-            .movements
             .iter()
             .enumerate()
             .map(move |(i, movement)| MovementRef {
-                movement,
-                offset: movements.offset + i * size_of::<Movement>(),
-                bytes: movements.bytes,
+                _movement: movement,
+                _offset: offset + i * size_of::<Movement>(),
+                _bytes: bytes,
             }))
     }
 
@@ -1241,7 +1131,9 @@ impl<'a> AnimationDescRef<'a> {
         }
     }
 
-    fn animation_sections(&self) -> Result<Option<AnimationSectionsRef<'a>>> {
+    fn iter_animation_sections(
+        &self,
+    ) -> Result<Option<impl Iterator<Item = AnimationSectionRef<'a>>>> {
         if self.animation_desc.section_offset == 0 || self.animation_desc.section_frame_count < 0 {
             return Ok(None);
         }
@@ -1261,25 +1153,6 @@ impl<'a> AnimationDescRef<'a> {
         let anim_offset = (self.offset as isize + self.animation_desc.anim_offset as isize
             - first_section_anim_offset) as usize;
 
-        Ok(Some(AnimationSectionsRef {
-            animation_sections,
-            offset,
-            anim_offset,
-            bones: self.bones,
-            bytes: self.bytes,
-        }))
-    }
-
-    fn iter_animation_sections(
-        &self,
-    ) -> Result<Option<impl Iterator<Item = AnimationSectionRef<'a>>>> {
-        let sections = match self.animation_sections() {
-            Ok(Some(sections)) => sections,
-            Ok(None) => return Ok(None),
-            Err(err) => return Err(err),
-        };
-        let sections_len = sections.animation_sections.len();
-
         let section_frame_count: usize = self
             .animation_desc
             .section_frame_count
@@ -1292,27 +1165,27 @@ impl<'a> AnimationDescRef<'a> {
             .try_into()
             .map_err(|_| corrupted("animation frame count is negative"))?;
 
+        let bytes = self.bytes;
+        let bones = self.bones;
+
         Ok(Some(
-            sections
-                .animation_sections
+            animation_sections
                 .iter()
                 .enumerate()
                 .map(move |(i, animation_section)| AnimationSectionRef {
-                    anim_offset: (sections.anim_offset as isize
-                        + animation_section.anim_offset as isize)
+                    anim_offset: (anim_offset as isize + animation_section.anim_offset as isize)
                         as usize,
                     anim_block: animation_section.anim_block,
-                    bones: sections.bones,
+                    bones,
                     // check for last section (there are apparently 2 last sections)
-                    frame_count: if i < sections_len - 2 {
+                    frame_count: if i < count - 2 {
                         section_frame_count
                     } else {
-                        frame_count - (sections_len - 2) * section_frame_count
+                        frame_count - (count - 2) * section_frame_count
                     },
                     // I have no idea but this is what Crowbar does
-                    last_section: i >= sections_len - 2
-                        || frame_count == (i + 1) * section_frame_count,
-                    bytes: sections.bytes,
+                    last_section: i >= count - 2 || frame_count == (i + 1) * section_frame_count,
+                    bytes,
                 })
                 .filter(|section| section.anim_block == 0),
         ))
@@ -1343,26 +1216,10 @@ impl<'a> AnimationDescRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct MovementsRef<'a> {
-    movements: &'a [Movement],
-    offset: usize,
-    bytes: &'a [u8],
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct MovementRef<'a> {
-    movement: &'a Movement,
-    offset: usize,
-    bytes: &'a [u8],
-}
-
-#[derive(Debug, Clone, Copy)]
-struct AnimationSectionsRef<'a> {
-    animation_sections: &'a [AnimationSection],
-    offset: usize,
-    anim_offset: usize,
-    bones: &'a [Bone],
-    bytes: &'a [u8],
+    _movement: &'a Movement,
+    _offset: usize,
+    _bytes: &'a [u8],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2239,14 +2096,14 @@ mod tests {
 
             for model in body_part.iter_models().unwrap() {
                 dbg!(model.name().unwrap());
-                model.meshes().unwrap();
+                for _ in model.iter_meshes().unwrap() {}
             }
         }
         for animation in header.iter_animation_descs().unwrap() {
             dbg!(animation.name().unwrap());
             dbg!(animation.flags());
 
-            animation.movements().unwrap();
+            for _ in animation.iter_movements().unwrap() {}
 
             if let Some(sections) = animation.iter_animation_sections().unwrap() {
                 for section in sections {

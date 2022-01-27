@@ -66,7 +66,7 @@ struct Mesh {
     strip_group_offset: I32<NativeEndian>,
     flags: u8,
 }
-pub trait StripGroup: FromBytes + Unaligned {
+pub trait StripGroup: FromBytes + Unaligned + Sized {
     type Strip: Strip;
 
     fn vertex_offset(&self) -> i32;
@@ -75,6 +75,32 @@ pub trait StripGroup: FromBytes + Unaligned {
     fn index_count(&self) -> i32;
     fn strip_offset(&self) -> i32;
     fn strip_count(&self) -> i32;
+
+    fn parse(bytes: &[u8], offset: usize, count: usize) -> Result<&[Self]> {
+        let strip_groups: &[Self] = parse_slice(bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vtx,
+            error: "mesh strip groups out of bounds",
+        })?;
+
+        // validate strip groups to check if the current format is correct
+        for strip_group in strip_groups {
+            if strip_group.index_count() % 3 != 0
+                || strip_group.index_count() < 0
+                || strip_group.vertex_count() < 0
+                || strip_group.strip_count() < 0
+                || (offset as isize + strip_group.index_offset() as isize) as usize >= bytes.len()
+                || (offset as isize + strip_group.vertex_offset() as isize) as usize >= bytes.len()
+                || (offset as isize + strip_group.vertex_offset() as isize) as usize >= bytes.len()
+            {
+                return Err(Error::Corrupted {
+                    ty: FileType::Vtx,
+                    error: "mesh strip groups are invalid",
+                });
+            }
+        }
+
+        Ok(strip_groups)
+    }
 }
 
 pub trait Strip: FromBytes + Unaligned {
@@ -304,7 +330,9 @@ impl<'a> HeaderRef<'a> {
         self.header.checksum
     }
 
-    pub fn body_parts(&self) -> Result<BodyPartsRef> {
+    pub fn iter_body_parts(
+        &self,
+    ) -> Result<impl Iterator<Item = BodyPartRef<'a>> + ExactSizeIterator> {
         let offset = self
             .header
             .body_part_offset
@@ -327,32 +355,17 @@ impl<'a> HeaderRef<'a> {
             error: "body parts out of bounds or misaligned",
         })?;
 
-        Ok(BodyPartsRef {
-            body_parts,
-            offset,
-            bytes: self.bytes,
-        })
-    }
+        let bytes = self.bytes;
 
-    pub fn iter_body_parts(&self) -> Result<impl Iterator<Item = BodyPartRef> + ExactSizeIterator> {
-        let body_parts = self.body_parts()?;
         Ok(body_parts
-            .body_parts
             .iter()
             .enumerate()
             .map(move |(i, body_part)| BodyPartRef {
                 body_part,
-                offset: body_parts.offset + i * size_of::<BodyPart>(),
-                bytes: body_parts.bytes,
+                offset: offset + i * size_of::<BodyPart>(),
+                bytes,
             }))
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct BodyPartsRef<'a> {
-    body_parts: &'a [BodyPart],
-    offset: usize,
-    bytes: &'a [u8],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -363,7 +376,7 @@ pub struct BodyPartRef<'a> {
 }
 
 impl<'a> BodyPartRef<'a> {
-    pub fn models(&self) -> Result<ModelsRef> {
+    pub fn iter_models(&self) -> Result<impl Iterator<Item = ModelRef<'a>> + ExactSizeIterator> {
         let offset = (self.offset as isize + self.body_part.model_offset as isize) as usize;
         let count = self
             .body_part
@@ -379,32 +392,14 @@ impl<'a> BodyPartRef<'a> {
             error: "body part models out of bounds or misaligned",
         })?;
 
-        Ok(ModelsRef {
-            models,
-            offset,
-            bytes: self.bytes,
-        })
-    }
+        let bytes = self.bytes;
 
-    pub fn iter_models(&self) -> Result<impl Iterator<Item = ModelRef> + ExactSizeIterator> {
-        let models = self.models()?;
-        Ok(models
-            .models
-            .iter()
-            .enumerate()
-            .map(move |(i, model)| ModelRef {
-                model,
-                offset: models.offset + i * size_of::<Model>(),
-                bytes: models.bytes,
-            }))
+        Ok(models.iter().enumerate().map(move |(i, model)| ModelRef {
+            model,
+            offset: offset + i * size_of::<Model>(),
+            bytes,
+        }))
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct ModelsRef<'a> {
-    models: &'a [Model],
-    offset: usize,
-    bytes: &'a [u8],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -415,7 +410,7 @@ pub struct ModelRef<'a> {
 }
 
 impl<'a> ModelRef<'a> {
-    pub fn lods(&self) -> Result<LodsRef> {
+    pub fn lods(&self) -> Result<LodsRef<'a>> {
         let offset = (self.offset as isize + self.model.lod_offset as isize) as usize;
         let count = self
             .model
@@ -447,7 +442,7 @@ pub struct LodsRef<'a> {
 }
 
 impl<'a> LodsRef<'a> {
-    pub fn get(&self, index: usize) -> Option<LodRef> {
+    pub fn get(&self, index: usize) -> Option<LodRef<'a>> {
         self.lods.get(index).map(|lod| LodRef {
             lod,
             offset: self.offset + index * size_of::<ModelLod>(),
@@ -464,7 +459,7 @@ pub struct LodRef<'a> {
 }
 
 impl<'a> LodRef<'a> {
-    fn meshes(&self) -> Result<MeshesRef> {
+    fn iter_meshes(&self) -> Result<impl Iterator<Item = MeshRef<'a>> + ExactSizeIterator> {
         let offset = (self.offset as isize + self.lod.mesh_offset as isize) as usize;
         let count = self
             .lod
@@ -480,24 +475,13 @@ impl<'a> LodRef<'a> {
             error: "lod meshes out of bounds",
         })?;
 
-        Ok(MeshesRef {
-            meshes,
-            offset,
-            bytes: self.bytes,
-        })
-    }
+        let bytes = self.bytes;
 
-    fn iter_meshes(&self) -> Result<impl Iterator<Item = MeshRef> + ExactSizeIterator> {
-        let meshes = self.meshes()?;
-        Ok(meshes
-            .meshes
-            .iter()
-            .enumerate()
-            .map(move |(i, mesh)| MeshRef {
-                mesh,
-                offset: meshes.offset + i * size_of::<Mesh>(),
-                bytes: meshes.bytes,
-            }))
+        Ok(meshes.iter().enumerate().map(move |(i, mesh)| MeshRef {
+            mesh,
+            offset: offset + i * size_of::<Mesh>(),
+            bytes,
+        }))
     }
 
     pub fn merged_meshes(&self, mdl_model: mdl::ModelRef) -> Result<(Vec<usize>, Vec<Face>)> {
@@ -550,13 +534,6 @@ impl<'a> LodRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MeshesRef<'a> {
-    meshes: &'a [Mesh],
-    offset: usize,
-    bytes: &'a [u8],
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct MeshRef<'a> {
     mesh: &'a Mesh,
     offset: usize,
@@ -564,7 +541,9 @@ pub struct MeshRef<'a> {
 }
 
 impl<'a> MeshRef<'a> {
-    fn strip_groups<S: StripGroup>(&self) -> Result<StripGroupsRef<S>> {
+    fn iter_strip_groups<S: StripGroup + Clone + 'a>(
+        &self,
+    ) -> Result<impl Iterator<Item = StripGroupRef<'a, S>> + ExactSizeIterator + Clone> {
         let offset = (self.offset as isize + self.mesh.strip_group_offset.get() as isize) as usize;
         let count = self
             .mesh
@@ -576,21 +555,17 @@ impl<'a> MeshRef<'a> {
                 error: "mesh strip group count is negative",
             })?;
 
-        StripGroupsRef::new(self.bytes, offset, count)
-    }
+        let strip_groups = S::parse(self.bytes, offset, count)?;
 
-    fn iter_strip_groups<'s, S: StripGroup + Clone + 's>(
-        &'s self,
-    ) -> Result<impl Iterator<Item = StripGroupRef<'s, S>> + ExactSizeIterator + Clone> {
-        let strip_groups_ref = self.strip_groups()?;
-        let strip_groups = strip_groups_ref.strip_groups;
+        let bytes = self.bytes;
+
         Ok(strip_groups
             .iter()
             .enumerate()
             .map(move |(i, strip_group)| StripGroupRef {
                 strip_group,
-                offset: strip_groups_ref.offset + i * size_of::<S>(),
-                bytes: strip_groups_ref.bytes,
+                offset: offset + i * size_of::<S>(),
+                bytes,
             }))
     }
 
@@ -626,48 +601,6 @@ impl<'a> MeshRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct StripGroupsRef<'a, S> {
-    strip_groups: &'a [S],
-    offset: usize,
-    bytes: &'a [u8],
-}
-
-impl<'a, S> StripGroupsRef<'a, S>
-where
-    S: StripGroup,
-{
-    fn new(bytes: &'a [u8], offset: usize, count: usize) -> Result<Self> {
-        let strip_groups: &[S] = parse_slice(bytes, offset, count).ok_or(Error::Corrupted {
-            ty: FileType::Vtx,
-            error: "mesh strip groups out of bounds",
-        })?;
-
-        // validate strip groups to check if the current format is correct
-        for strip_group in strip_groups {
-            if strip_group.index_count() % 3 != 0
-                || strip_group.index_count() < 0
-                || strip_group.vertex_count() < 0
-                || strip_group.strip_count() < 0
-                || (offset as isize + strip_group.index_offset() as isize) as usize >= bytes.len()
-                || (offset as isize + strip_group.vertex_offset() as isize) as usize >= bytes.len()
-                || (offset as isize + strip_group.vertex_offset() as isize) as usize >= bytes.len()
-            {
-                return Err(Error::Corrupted {
-                    ty: FileType::Vtx,
-                    error: "mesh strip groups are invalid",
-                });
-            }
-        }
-
-        Ok(StripGroupsRef {
-            strip_groups,
-            offset,
-            bytes,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct StripGroupRef<'a, S> {
     strip_group: &'a S,
     offset: usize,
@@ -678,7 +611,7 @@ impl<'a, S> StripGroupRef<'a, S>
 where
     S: StripGroup,
 {
-    pub fn vertices(&self) -> Result<&[Vertex]> {
+    pub fn vertices(&self) -> Result<&'a [Vertex]> {
         let offset = (self.offset as isize + self.strip_group.vertex_offset() as isize) as usize;
         let count = self
             .strip_group
@@ -695,7 +628,7 @@ where
         })
     }
 
-    pub fn indices(&self) -> Result<&[U16<NativeEndian>]> {
+    pub fn indices(&self) -> Result<&'a [U16<NativeEndian>]> {
         let offset = (self.offset as isize + self.strip_group.index_offset() as isize) as usize;
         let count = self
             .strip_group
@@ -712,7 +645,7 @@ where
         })
     }
 
-    pub fn strips(&self) -> Result<&[<S as StripGroup>::Strip]> {
+    pub fn strips(&self) -> Result<&'a [<S as StripGroup>::Strip]> {
         let offset = (self.offset as isize + self.strip_group.strip_offset() as isize) as usize;
         let count = self
             .strip_group
