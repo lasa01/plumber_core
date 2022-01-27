@@ -601,7 +601,7 @@ impl OpenSearchPath {
 }
 
 #[cfg(not(unix))]
-fn open_fs_file(path: &StdPathBuf, file_path: &Path) -> Result<fs::File, io::Error> {
+fn open_fs_file(path: &StdPath, file_path: &GamePath) -> Result<fs::File, io::Error> {
     fs::File::open(path.join(file_path.as_str()))
 }
 
