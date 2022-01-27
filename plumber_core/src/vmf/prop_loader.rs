@@ -11,7 +11,7 @@ use super::entities::{AngledEntity, EntityParseError, PointEntity, Prop};
 use glam::Vec3;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
 pub enum PropError {
     #[error("error parsing prop: {0}")]
     Parse(#[from] EntityParseError),

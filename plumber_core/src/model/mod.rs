@@ -27,7 +27,7 @@ use thiserror::Error;
 
 use crate::fs::{GameFile, GamePathBuf, OpenFileSystem, Path, PathBuf};
 
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, Hash, PartialEq, Eq)]
 pub enum Error {
     #[error("io error reading `{path}`: {error}")]
     Io { path: String, error: String },
@@ -43,7 +43,7 @@ pub enum Error {
     Unsupported { ty: FileType, feature: &'static str },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum FileType {
     Mdl,
     Vvd,

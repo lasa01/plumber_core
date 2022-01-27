@@ -43,7 +43,7 @@ const NODRAW_PARAMS: &[&str] = &[
     "$no_draw",
 ];
 
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
 pub enum MaterialLoadError {
     #[error("io error reading `{path}`: {error}")]
     Io { path: String, error: String },
@@ -66,7 +66,7 @@ impl MaterialLoadError {
     }
 }
 
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
 pub enum TextureLoadError {
     #[error("io error reading `{path}`: {error}")]
     Io { path: String, error: String },

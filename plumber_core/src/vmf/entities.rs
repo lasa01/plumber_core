@@ -44,7 +44,7 @@ impl Entity {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
 pub enum EntityParseError {
     #[error("parameter `{0}` is missing")]
     MissingParameter(&'static str),

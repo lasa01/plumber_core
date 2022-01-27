@@ -21,7 +21,7 @@ use itertools::{izip, Itertools};
 use ndarray::{Array2, Array3, Zip};
 use thiserror::Error;
 
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
 pub enum SolidError {
     #[error("displacement side `{side_id}` is not valid: got {vertices} vertices, expected 4")]
     InvalidDisplacement { side_id: i32, vertices: usize },

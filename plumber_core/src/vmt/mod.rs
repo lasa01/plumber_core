@@ -199,7 +199,7 @@ pub struct Shader {
 
 impl Shader {}
 
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, Hash, PartialEq, Eq)]
 pub enum ShaderResolveError {
     #[error("io error reading `{path}`: {error}")]
     Io { path: String, error: String },

@@ -25,7 +25,7 @@ use log::error;
 use rayon::ThreadPoolBuilder;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
 pub enum Error {
     #[error("material `{path}`: {error}")]
     Material {

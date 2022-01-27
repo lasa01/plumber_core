@@ -17,7 +17,7 @@ use thiserror::Error;
 
 pub(crate) type SideFacesMap = BTreeMap<i32, Vec<Vec<Vec3>>>;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
 pub enum OverlayError {
     #[error("error parsing overlay: {0}")]
     Parse(#[from] EntityParseError),
