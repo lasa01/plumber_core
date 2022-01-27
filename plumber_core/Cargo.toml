@@ -24,7 +24,7 @@ serde = { version = "= 1.0.125", features = ["derive"] }
 serde_derive = "= 1.0.125"
 thiserror = "1.0.24"
 uncased = { version = "0.9.6", features = ["with-serde-alloc"] }
-vtflib = { version = "0.2.0", features = ["static"] }
+vtflib = { version = "0.2.1", features = ["static"] }
 image = { version = "0.23.14", default-features = false }
 nom = "7.1.0"
 num_cpus = "1.13.0"
