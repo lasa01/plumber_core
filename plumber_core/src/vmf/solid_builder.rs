@@ -844,7 +844,7 @@ impl<'a> SolidBuilder<'a> {
         BuiltSolid {
             id: self.solid.id,
             position: self.center * scale,
-            scale: scale,
+            scale,
             vertices: self.vertices,
             faces: self.faces.into_iter().map(FaceBuilder::finish).collect(),
             materials: self.materials,
