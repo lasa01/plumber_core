@@ -182,7 +182,10 @@ impl<'a> Verified<'a> {
     ///
     /// Returns `Err` if reading the meshes fails.
     pub fn meshes(&self) -> Result<Vec<Mesh>> {
-        let vertices = self.vvd_header.vertices()?;
+        let vertices = self.vvd_header.lod_vertices(0)?.ok_or(Error::Corrupted {
+            ty: FileType::Vvd,
+            error: "lod 0 doesn't exist",
+        })?;
 
         let vtx_body_parts = self.vtx_header.iter_body_parts()?;
         let mdl_body_parts = self.mdl_header.iter_body_parts()?;
@@ -245,7 +248,7 @@ impl<'a> Verified<'a> {
                 let vertices: Vec<_> = vertice_indices
                     .into_iter()
                     .map(|i| {
-                        model_vertices.get(i).ok_or(Error::Corrupted {
+                        model_vertices.get(i).copied().ok_or(Error::Corrupted {
                             ty: FileType::Vtx,
                             error: "vertice index out of bounds",
                         })
@@ -353,7 +356,7 @@ fn find_material<'a>(
 pub struct Mesh<'a> {
     pub body_part_name: &'a str,
     pub name: &'a str,
-    pub vertices: Vec<&'a Vertex>,
+    pub vertices: Vec<Vertex>,
     pub faces: Vec<Face>,
 }
 

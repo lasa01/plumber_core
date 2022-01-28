@@ -25,7 +25,7 @@ struct Header {
     tangent_data_offset: i32,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, Copy, FromBytes)]
 #[repr(C)]
 pub struct BoneWeight {
     pub weights: [f32; 3],
@@ -33,7 +33,7 @@ pub struct BoneWeight {
     pub bone_count: u8,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, Copy, FromBytes)]
 #[repr(C)]
 pub struct Vertex {
     pub bone_weight: BoneWeight,
@@ -44,7 +44,7 @@ pub struct Vertex {
 
 #[derive(Debug, Clone, FromBytes)]
 #[repr(C)]
-pub struct Fixup {
+struct Fixup {
     lod_index: i32,
     vertex_index: i32,
     vertex_count: i32,
@@ -130,7 +130,79 @@ impl<'a> HeaderRef<'a> {
         self.header.checksum
     }
 
-    pub fn vertices(&self) -> Result<&[Vertex]> {
+    pub fn lod_vertices(&self, lod: usize) -> Result<Option<Vec<Vertex>>> {
+        let vertices = self.vertices()?;
+        let fixups = self.fixups()?;
+
+        if fixups.is_empty() {
+            if lod == 0 {
+                return Ok(Some(vertices.to_owned()));
+            }
+            return Ok(None);
+        }
+
+        let lod_count = self
+            .header
+            .lod_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "lod count is negative",
+            })?;
+
+        if lod_count > self.header.lod_vertex_counts.len() {
+            return Err(Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "lod count is invalid",
+            });
+        }
+
+        if lod >= lod_count {
+            return Ok(None);
+        }
+
+        let vertices_count =
+            self.header.lod_vertex_counts[lod]
+                .try_into()
+                .map_err(|_| Error::Corrupted {
+                    ty: FileType::Vvd,
+                    error: "lod vertices count is negative",
+                })?;
+
+        let mut lod_vertices = Vec::with_capacity(vertices_count);
+
+        for fixup in fixups.iter().filter(|f| f.lod_index as usize >= lod) {
+            let vertex_index = fixup
+                .vertex_index
+                .try_into()
+                .map_err(|_| Error::Corrupted {
+                    ty: FileType::Vvd,
+                    error: "fixup vertex index is negative",
+                })?;
+
+            let vertex_count: usize =
+                fixup
+                    .vertex_count
+                    .try_into()
+                    .map_err(|_| Error::Corrupted {
+                        ty: FileType::Vvd,
+                        error: "fixup vertex count is negative",
+                    })?;
+
+            let fixup_vertices = vertices
+                .get(vertex_index..vertex_index + vertex_count)
+                .ok_or(Error::Corrupted {
+                    ty: FileType::Vvd,
+                    error: "fixup vertices out of bounds",
+                })?;
+
+            lod_vertices.extend_from_slice(fixup_vertices);
+        }
+
+        Ok(Some(lod_vertices))
+    }
+
+    fn vertices(&self) -> Result<&'a [Vertex]> {
         let offset = self
             .header
             .vertex_data_offset
@@ -139,6 +211,7 @@ impl<'a> HeaderRef<'a> {
                 ty: FileType::Vvd,
                 error: "vertex offset is negative",
             })?;
+
         let count = self.header.lod_vertex_counts[0]
             .try_into()
             .map_err(|_| Error::Corrupted {
@@ -149,6 +222,31 @@ impl<'a> HeaderRef<'a> {
         parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
             ty: FileType::Vvd,
             error: "vertices out of bounds or misaligned",
+        })
+    }
+
+    fn fixups(&self) -> Result<&'a [Fixup]> {
+        let offset = self
+            .header
+            .fixup_table_offset
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "fixup offset is negative",
+            })?;
+
+        let count = self
+            .header
+            .fixup_count
+            .try_into()
+            .map_err(|_| Error::Corrupted {
+                ty: FileType::Vvd,
+                error: "fixup count is negative",
+            })?;
+
+        parse_slice(self.bytes, offset, count).ok_or(Error::Corrupted {
+            ty: FileType::Vvd,
+            error: "fixups out of bounds or misaligned",
         })
     }
 }

@@ -34,7 +34,7 @@ impl LoadedMesh {
         Self {
             body_part_name: mesh.body_part_name.to_owned(),
             name: mesh.name.to_owned(),
-            vertices: mesh.vertices.into_iter().map(Clone::clone).collect(),
+            vertices: mesh.vertices,
             faces: mesh.faces,
         }
     }
