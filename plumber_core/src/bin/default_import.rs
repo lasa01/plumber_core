@@ -65,7 +65,7 @@ fn main() {
     let vmf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("vmf")
-        .join("de_dust2_d.vmf");
+        .join("build_scene_test.vmf");
     let vmf_bytes = read(vmf_path).unwrap();
 
     let root_path = Path::new(env!("CARGO_MANIFEST_DIR"))

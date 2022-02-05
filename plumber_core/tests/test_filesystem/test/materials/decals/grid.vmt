@@ -1,6 +1,6 @@
 LightmappedGeneric
 {
-	"$basetexture"	"decals\bombsite_a"
+	"$basetexture"	"decals\grid"
 	"$translucent" "1"
 	"$decal" "1"
 	"$decalscale" "1.000"

@@ -16,3 +16,6 @@ mod parsers;
 pub mod steam;
 pub mod vmf;
 pub mod vmt;
+
+#[cfg(test)]
+mod test_utils;

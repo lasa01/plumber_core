@@ -1094,17 +1094,14 @@ mod tests {
             .unwrap();
 
         assert!(file_system
-            .open_file(&PathBuf::Game(
-                "materials/ar_dizzy/Dizzy_FACADE_cOlOr.VmT".into()
-            ))
+            .open_file(&PathBuf::Game("materials/de_test/gRiD.VmT".into()))
             .is_ok());
         assert!(file_system
-            .open_file(&PathBuf::Game("MOdelS/props/De_Mirage/bench_a.mdl".into()))
+            .open_file(&PathBuf::Game("MOdelS/props/De_Test/table.mdl".into()))
             .is_ok());
 
-        let does_not_exist = file_system.open_file(&PathBuf::Game(
-            "MOdelS/props/De_Mirage/bench_abc.mdl".into(),
-        ));
+        let does_not_exist =
+            file_system.open_file(&PathBuf::Game("MOdelS/props/De_Test/table_abc.mdl".into()));
 
         assert!(does_not_exist.unwrap_err().kind() == io::ErrorKind::NotFound);
     }

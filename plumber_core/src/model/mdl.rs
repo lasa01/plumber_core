@@ -1998,6 +1998,7 @@ mod tests {
     use crate::{
         fs::{DirEntryType, GamePath, OpenFileSystem, ReadDir},
         steam::Libraries,
+        test_utils::read_game_file,
     };
 
     use super::*;
@@ -2055,21 +2056,30 @@ mod tests {
             == Some(true)
     }
 
+    /// Fails if CSGO is not installed on Steam
     #[test]
+    #[ignore]
     fn read_animated() {
-        let bytes =
-            maligned::aligned::<A4, _>(include_bytes!("../../tests/model/inferno_ceiling_fan.mdl"));
+        let data = read_game_file(
+            730,
+            "models/props/de_inferno/hr_i/inferno_ceiling_fan/inferno_ceiling_fan.mdl",
+        );
+
+        let bytes = maligned::aligned::<A4, _>(data);
         let mdl = Mdl {
-            bytes: bytes.to_vec(),
+            bytes: bytes.into_inner(),
         };
 
         read_mdl(&mdl);
     }
 
+    // Fails if L4D2 is not installed on Steam
     #[test]
+    #[ignore]
     fn read_frame_animated() {
-        let bytes =
-            maligned::aligned::<A4, _>(include_bytes!("../../tests/model/v_huntingrifle.mdl"));
+        let data = read_game_file(550, "models/v_models/v_huntingrifle.mdl");
+
+        let bytes = maligned::aligned::<A4, _>(data);
         let mdl = Mdl {
             bytes: bytes.to_vec(),
         };

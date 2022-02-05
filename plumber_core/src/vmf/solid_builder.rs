@@ -1112,7 +1112,7 @@ mod tests {
             {
                 "id" "7"
                 "plane" "(-960 64 64) (-832 64 64) (-832 -64 64)"
-                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "material" "DE_TEST/GRID"
                 "uaxis" "[1 0 0 0] 0.25"
                 "vaxis" "[0 -1 0 0] 0.25"
                 "rotation" "0"
@@ -1123,7 +1123,7 @@ mod tests {
             {
                 "id" "8"
                 "plane" "(-960 -64 0) (-832 -64 0) (-832 64 0)"
-                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "material" "DE_TEST/GRID"
                 "uaxis" "[1 0 0 0] 0.25"
                 "vaxis" "[0 -1 0 0] 0.25"
                 "rotation" "0"
@@ -1134,7 +1134,7 @@ mod tests {
             {
                 "id" "9"
                 "plane" "(-960 64 64) (-960 -64 64) (-960 -64 0)"
-                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "material" "DE_TEST/GRID"
                 "uaxis" "[0 1 0 0] 0.25"
                 "vaxis" "[0 0 -1 0] 0.25"
                 "rotation" "0"
@@ -1145,7 +1145,7 @@ mod tests {
             {
                 "id" "10"
                 "plane" "(-832 64 0) (-832 -64 0) (-832 -64 64)"
-                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "material" "DE_TEST/GRID"
                 "uaxis" "[0 1 0 0] 0.25"
                 "vaxis" "[0 0 -1 0] 0.25"
                 "rotation" "0"
@@ -1156,7 +1156,7 @@ mod tests {
             {
                 "id" "11"
                 "plane" "(-832 64 64) (-960 64 64) (-960 64 0)"
-                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "material" "DE_TEST/GRID"
                 "uaxis" "[1 0 0 0] 0.25"
                 "vaxis" "[0 0 -1 0] 0.25"
                 "rotation" "0"
@@ -1167,7 +1167,7 @@ mod tests {
             {
                 "id" "12"
                 "plane" "(-832 -64 0) (-960 -64 0) (-960 -64 64)"
-                "material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+                "material" "DE_TEST/GRID"
                 "uaxis" "[1 0 0 0] 0.25"
                 "vaxis" "[0 0 -1 0] 0.25"
                 "rotation" "0"
@@ -1309,7 +1309,7 @@ mod tests {
 		{
 			"id" "9622"
 			"plane" "(-331.905 -512 342.744) (-331.905 512 342.744) (512 512 -237.255)"
-			"material" "AR_DIZZY/DIZZY_WOODEN_PLANKS_02"
+			"material" "DE_TEST/GRID"
 			"uaxis" "[0.824159 0.0174523 -0.566426 -177.341] 0.25"
 			"vaxis" "[0.0144681 -1 -0.00975883 -3.11321] 0.25"
 			"rotation" "1"
@@ -1403,7 +1403,7 @@ mod tests {
 		{
 			"id" "9623"
 			"plane" "(-404.406 512 237.255) (-404.406 -512 237.255) (439.499 -512 -342.744)"
-			"material" "AR_DIZZY/DIZZY_WOODEN_PLANKS_02"
+			"material" "DE_TEST/GRID"
 			"uaxis" "[0.824158 0 -0.566427 -177.341] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -1414,7 +1414,7 @@ mod tests {
 		{
 			"id" "9624"
 			"plane" "(-404.41 -512 237.256) (-404.41 512 237.256) (-331.908 512 342.747)"
-			"material" "AR_DIZZY/DIZZY_WOODEN_PLANKS_02"
+			"material" "DE_TEST/GRID"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[-0.566427 0 -0.824158 121.883] 0.25"
 			"rotation" "0"
@@ -1425,7 +1425,7 @@ mod tests {
 		{
 			"id" "9625"
 			"plane" "(439.499 512 -342.744) (439.499 -512 -342.744) (511.997 -512 -237.257)"
-			"material" "AR_DIZZY/DIZZY_WOODEN_PLANKS_02"
+			"material" "DE_TEST/GRID"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[-0.566427 0 -0.824158 121.883] 0.25"
 			"rotation" "0"
@@ -1436,7 +1436,7 @@ mod tests {
 		{
 			"id" "9626"
 			"plane" "(-404.404 512 237.252) (439.497 512 -342.744) (511.997 512 -237.259)"
-			"material" "AR_DIZZY/DIZZY_WOODEN_PLANKS_02"
+			"material" "DE_TEST/GRID"
 			"uaxis" "[0.824158 0 -0.566427 -177.341] 0.25"
 			"vaxis" "[-0.566427 0 -0.824158 121.883] 0.25"
 			"rotation" "0"
@@ -1447,7 +1447,7 @@ mod tests {
 		{
 			"id" "9627"
 			"plane" "(439.497 -512 -342.744) (-404.408 -512 237.256) (-331.907 -512 342.745)"
-			"material" "AR_DIZZY/DIZZY_WOODEN_PLANKS_02"
+			"material" "DE_TEST/GRID"
 			"uaxis" "[0.824158 0 -0.566427 -177.341] 0.25"
 			"vaxis" "[-0.566427 0 -0.824158 121.883] 0.25"
 			"rotation" "0"

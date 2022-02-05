@@ -454,7 +454,7 @@ mod tests {
 	    	{
 	    		"id" "7"
 	    		"plane" "(-960 64 64) (-832 64 64) (-832 -64 64)"
-	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[1 0 0 0] 0.25"
 	    		"vaxis" "[0 -1 0 0] 0.25"
 	    		"rotation" "0"
@@ -465,7 +465,7 @@ mod tests {
 	    	{
 	    		"id" "8"
 	    		"plane" "(-960 -64 0) (-832 -64 0) (-832 64 0)"
-	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[1 0 0 0] 0.25"
 	    		"vaxis" "[0 -1 0 0] 0.25"
 	    		"rotation" "0"
@@ -476,7 +476,7 @@ mod tests {
 	    	{
 	    		"id" "9"
 	    		"plane" "(-960 64 64) (-960 -64 64) (-960 -64 0)"
-	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[0 1 0 0] 0.25"
 	    		"vaxis" "[0 0 -1 0] 0.25"
 	    		"rotation" "0"
@@ -487,7 +487,7 @@ mod tests {
 	    	{
 	    		"id" "10"
 	    		"plane" "(-832 64 0) (-832 -64 0) (-832 -64 64)"
-	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[0 1 0 0] 0.25"
 	    		"vaxis" "[0 0 -1 0] 0.25"
 	    		"rotation" "0"
@@ -498,7 +498,7 @@ mod tests {
 	    	{
 	    		"id" "11"
 	    		"plane" "(-832 64 64) (-960 64 64) (-960 64 0)"
-	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[1 0 0 0] 0.25"
 	    		"vaxis" "[0 0 -1 0] 0.25"
 	    		"rotation" "0"
@@ -509,7 +509,7 @@ mod tests {
 	    	{
 	    		"id" "12"
 	    		"plane" "(-832 -64 0) (-960 -64 0) (-960 -64 64)"
-	    		"material" "AR_DIZZY/DIZZY_FACADE_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[1 0 0 0] 0.25"
 	    		"vaxis" "[0 0 -1 0] 0.25"
 	    		"rotation" "0"
@@ -530,7 +530,7 @@ mod tests {
 	    	{
 	    		"id" "1"
 	    		"plane" "(-1088 -64 64) (-1088 64 64) (-960 64 64)"
-	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[0 1 0 0] 0.25"
 	    		"vaxis" "[1 0 0 0] 0.25"
 	    		"rotation" "90"
@@ -541,7 +541,7 @@ mod tests {
 	    	{
 	    		"id" "2"
 	    		"plane" "(-1088 64 0) (-1088 -64 0) (-960 -64 0)"
-	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[1 0 0 0] 0.25"
 	    		"vaxis" "[0 -1 0 0] 1"
 	    		"rotation" "0"
@@ -552,7 +552,7 @@ mod tests {
 	    	{
 	    		"id" "3"
 	    		"plane" "(-1088 -64 0) (-1088 64 0) (-1088 64 64)"
-	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[0 1 0 0] 0.25"
 	    		"vaxis" "[0 0 -1 0] 0.25"
 	    		"rotation" "0"
@@ -563,7 +563,7 @@ mod tests {
 	    	{
 	    		"id" "4"
 	    		"plane" "(-960 64 0) (-960 -64 0) (-960 -64 64)"
-	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[0 1 0 0] 0.25"
 	    		"vaxis" "[0 0 -1 0] 0.25"
 	    		"rotation" "0"
@@ -574,7 +574,7 @@ mod tests {
 	    	{
 	    		"id" "5"
 	    		"plane" "(-1088 64 0) (-960 64 0) (-960 64 64)"
-	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[1 0 0 0] 0.25"
 	    		"vaxis" "[0 0 -1 0] 0.25"
 	    		"rotation" "0"
@@ -585,7 +585,7 @@ mod tests {
 	    	{
 	    		"id" "6"
 	    		"plane" "(-960 -64 0) (-1088 -64 0) (-1088 -64 64)"
-	    		"material" "DE_DUST/HR_DUST/HR_DUST_BUILDING_ORNAMENT_COLOR"
+	    		"material" "DE_TEST/GRID"
 	    		"uaxis" "[1 0 0 64] 0.25"
 	    		"vaxis" "[0 0 -1 0] 0.25"
 	    		"rotation" "0"
@@ -615,7 +615,7 @@ mod tests {
         	"Endu" "1"
         	"Endv" "0"
         	"fademindist" "-1"
-        	"material" "decals/bombsite_a"
+        	"material" "decals/grid"
         	"sides" "7 12"
         	"StartU" "0"
         	"StartV" "1"
