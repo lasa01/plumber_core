@@ -22,6 +22,8 @@ MDL (model) mesh reading  | Ready
 MDL skeleton reading      | Ready
 MDL animation reading     | In progress
 MDL skins                 | Not started
+MDL secondary UV map      | Not started
+MDL flex animation        | Not started
 MDL other features        | Currently not planned
 
 
