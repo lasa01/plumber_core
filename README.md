@@ -6,25 +6,25 @@ Mainly designed for a Blender importer, but can be also used for other purposes.
 
 ## Current progress
 
-Feature                   | Status
-------------------------- | ----------
-Installed games detection | Ready
-Game asset opening        | Ready
-VMF reading               | Ready
-VMF brushes to geometry   | Ready
-VMF overlays to geometry  | Ready
-VMF decals to geometry    | Not started
-VMF entity handling       | Ready
-VMF skybox reading        | Not started
-VMT (material) reading    | Ready
-VTF (texture) reading     | Ready
-MDL (model) mesh reading  | Ready
-MDL skeleton reading      | Ready
-MDL animation reading     | In progress
-MDL skins                 | Not started
-MDL secondary UV map      | Not started
-MDL flex animation        | Not started
-MDL other features        | Currently not planned
+Feature                   | Status                 | Source
+------------------------- | ---------------------- | ------
+Installed games detection | Ready                  | [plumber_core/src/steam.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/steam.rs)
+Game asset opening        | Ready                  | [plumber_core/src/fs.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/fs.rs)
+VMF reading               | Ready                  | [plumber_core/src/vmf/mod.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/mod.rs)
+VMF brushes to geometry   | Ready                  | [plumber_core/src/vmf/solid_builder.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/solid_builder.rs)
+VMF overlays to geometry  | Ready                  | [plumber_core/src/vmf/overlay_builder.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/overlay_builder.rs)
+VMF decals to geometry    | Not started            |
+VMF entity handling       | Ready                  | [plumber_core/src/vmf/entities.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/entities.rs)
+VMF skybox reading        | Not started            |
+VMT (material) reading    | Ready                  | [plumber_core/src/vmt/mod.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmt/mod.rs)
+VTF (texture) reading     | Ready                  | [plumber_core/src/vmt/loader.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmt/loader.rs)
+MDL (model) mesh reading  | Ready                  | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
+MDL skeleton reading      | Ready                  | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
+MDL animation reading     | In progress            | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
+MDL skins                 | Not started            |
+MDL secondary UV map      | Not started            |
+MDL flex animation        | Not started            |
+MDL other features        | Currently not planned  |
 
 
 ## Code structure
@@ -38,6 +38,19 @@ The library is currently split into three main crates.
 These could also be used independently of other crates, if needed.
 
 `plumber_core` contains most of the logic and depends on the VDF and VPK crates.
+
+
+## Notes
+
+This uses my case-insensitive fork of Serde.
+Requires the following in Cargo.toml to use:
+```toml
+[patch.crates-io]
+serde = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
+serde_derive = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }
+```
+
+Currently statically links into VTFLib, which is LGPL-licensed.
 
 
 ## Credits
