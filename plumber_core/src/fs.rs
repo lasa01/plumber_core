@@ -102,6 +102,7 @@ pub enum PathBuf {
 }
 
 impl PathBuf {
+    #[must_use]
     pub fn with_extension(&self, extension: impl AsRef<str>) -> PathBuf {
         match self {
             PathBuf::Game(p) => PathBuf::Game(p.with_extension(extension)),
