@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::f32::consts::FRAC_PI_2;
 use std::fmt;
 use std::ops::Deref;
 use std::{io, mem::size_of, str};
@@ -1119,11 +1118,13 @@ impl<'a> AnimationDescRef<'a> {
     pub fn data(&self) -> Result<Option<BTreeMap<usize, BoneAnimationData>>> {
         let frame_animation = self.flags().contains(AnimationDescFlags::FRAMEANIM);
 
-        if let Some(_sections) = self.iter_animation_sections()? {
-            Err(Error::Unsupported {
-                ty: FileType::Mdl,
-                feature: "animation sections",
-            })
+        if let Some(sections) = self.iter_animation_sections()? {
+            merge_animation_sections(
+                sections,
+                frame_animation,
+                self.animation_desc.frame_count as usize,
+            )
+            .map(Some)
         } else if let Some(section) = self.animation_section()? {
             section.data(frame_animation).map(Some)
         } else {
@@ -1234,12 +1235,18 @@ struct AnimationSectionRef<'a> {
 
 impl<'a> AnimationSectionRef<'a> {
     fn data(&self, frame_animation: bool) -> Result<BTreeMap<usize, BoneAnimationData>> {
-        let mut data: BTreeMap<usize, BoneAnimationData> = if frame_animation {
+        let data: BTreeMap<usize, BoneAnimationData> = if frame_animation {
             Ok(self
                 .frame_animation()?
                 .animation_data()?
                 .into_iter()
                 .enumerate()
+                .filter(|(_, d)| {
+                    !matches!(
+                        (&d.position, &d.rotation),
+                        (AnimationPositionData::None, AnimationRotationData::None)
+                    )
+                })
                 .collect())
         } else {
             self.iter_bone_animations()
@@ -1251,12 +1258,6 @@ impl<'a> AnimationSectionRef<'a> {
                 })
                 .try_collect()
         }?;
-
-        for (&bone_i, bone_data) in &mut data {
-            if self.bones[bone_i].parent_bone_index < 0 {
-                bone_data.apply_root_correction();
-            }
-        }
 
         Ok(data)
     }
@@ -1286,6 +1287,96 @@ impl<'a> AnimationSectionRef<'a> {
             finished: false,
             bytes: self.bytes,
         }
+    }
+}
+
+fn merge_animation_sections<'a>(
+    sections: impl Iterator<Item = AnimationSectionRef<'a>>,
+    frame_animation: bool,
+    total_frames: usize,
+) -> Result<BTreeMap<usize, BoneAnimationData>> {
+    let mut data = BTreeMap::new();
+    let mut first_section = true;
+    let mut accumulated_frames = 0;
+
+    for section in sections {
+        if accumulated_frames == total_frames {
+            break;
+        }
+
+        let section_data = section.data(frame_animation)?;
+        let frames = section.frame_count.min(total_frames - accumulated_frames);
+
+        if first_section {
+            data = section_data;
+            first_section = false;
+            accumulated_frames += frames;
+            continue;
+        }
+
+        for (bone_index, bone_data) in section_data {
+            if let Some(BoneAnimationData { rotation, position }) = data.get_mut(&bone_index) {
+                use AnimationPositionData as P;
+                use AnimationRotationData as R;
+
+                match (rotation, bone_data.rotation) {
+                    (R::None, R::None) => {}
+                    (R::Constant(prev), R::Constant(next)) => {
+                        if *prev != next {
+                            return Err(unsupported_sections());
+                        }
+                    }
+                    (R::Animated(prev), R::Animated(next)) => {
+                        prev.extend_from_slice(next.get(0..frames).unwrap_or(&next));
+                    }
+                    (R::Animated(prev), R::Constant(next)) => {
+                        prev.reserve(frames);
+
+                        for _ in 0..frames {
+                            prev.push(next);
+                        }
+                    }
+                    (_, _) => {
+                        return Err(unsupported_sections());
+                    }
+                }
+
+                match (position, bone_data.position) {
+                    (P::None, P::None) => {}
+                    (P::Constant(prev), P::Constant(next)) => {
+                        if *prev != next {
+                            return Err(unsupported_sections());
+                        }
+                    }
+                    (P::Animated(prev), P::Animated(next)) => {
+                        prev.extend_from_slice(next.get(0..frames).unwrap_or(&next));
+                    }
+                    (P::Animated(prev), P::Constant(next)) => {
+                        prev.reserve(frames);
+
+                        for _ in 0..frames {
+                            prev.push(next);
+                        }
+                    }
+                    (_, _) => {
+                        return Err(unsupported_sections());
+                    }
+                }
+            } else {
+                return Err(unsupported_sections());
+            }
+        }
+
+        accumulated_frames += frames;
+    }
+
+    Ok(data)
+}
+
+fn unsupported_sections() -> Error {
+    Error::Unsupported {
+        ty: FileType::Mdl,
+        feature: "animation sections inconsistent format",
     }
 }
 
@@ -1448,18 +1539,12 @@ pub fn vec3_from_u16s(u16s: [u16; 3]) -> Vec3 {
     )
 }
 
-fn apply_root_position_correction(vec: &mut Vec3) {
-    let old_position = *vec;
-    vec.x = old_position.y;
-    vec.y = -old_position.x;
-}
-
-fn apply_root_rotation_correction(quat: &mut Quat) {
-    *quat *= Quat::from_rotation_z(-FRAC_PI_2);
-}
+#[cfg(test)]
+use serde::Deserialize;
 
 /// Rotation animation data of a bone.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(Deserialize))]
 pub enum AnimationRotationData {
     /// The rotation of the bone stays constant during the animation.
     Constant(Quat),
@@ -1477,6 +1562,7 @@ impl Default for AnimationRotationData {
 
 /// Position animation data of a bone.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(Deserialize))]
 pub enum AnimationPositionData {
     /// The position of the bone stays constant during the animation.
     Constant(Vec3),
@@ -1493,34 +1579,11 @@ impl Default for AnimationPositionData {
 }
 
 /// Rotation and position animation data of a bone.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(test, derive(Deserialize))]
 pub struct BoneAnimationData {
     pub rotation: AnimationRotationData,
     pub position: AnimationPositionData,
-}
-
-impl BoneAnimationData {
-    fn apply_root_correction(&mut self) {
-        match &mut self.rotation {
-            AnimationRotationData::Constant(rotation) => apply_root_rotation_correction(rotation),
-            AnimationRotationData::Animated(rotations) => {
-                for rotation in rotations {
-                    apply_root_rotation_correction(rotation);
-                }
-            }
-            AnimationRotationData::None => (),
-        }
-
-        match &mut self.position {
-            AnimationPositionData::Constant(position) => apply_root_position_correction(position),
-            AnimationPositionData::Animated(positions) => {
-                for position in positions {
-                    apply_root_position_correction(position);
-                }
-            }
-            AnimationPositionData::None => (),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1855,10 +1918,7 @@ impl<'a> AnimationRef<'a> {
                 frame.z += self.bone.rotation[2];
             }
 
-            let quat_frames = frames
-                .into_iter()
-                .map(|e| Quat::from_euler(EulerRot::XYZ, e.x, e.y, e.z))
-                .collect();
+            let quat_frames = frames.into_iter().map(euler_to_quat).collect();
 
             data.rotation = AnimationRotationData::Animated(quat_frames);
         }
@@ -1949,6 +2009,10 @@ impl<'a> AnimationRef<'a> {
     }
 }
 
+pub fn euler_to_quat(e: Vec3) -> Quat {
+    Quat::from_euler(EulerRot::ZYX, e.z, e.y, e.x)
+}
+
 fn read_animation_value(bytes: &mut &[u8]) -> Result<AnimationValue> {
     let value_bytes = bytes
         .get(..2)
@@ -1992,16 +2056,342 @@ fn extract_animation_value(frame: usize, values: &[AnimationValue], scale: f32) 
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
-    use std::{collections::BTreeMap, result};
+    use std::{collections::BTreeMap, f32::consts::FRAC_PI_2, path::PathBuf, result};
+
+    use approx::{assert_relative_eq, relative_eq};
+    use serde::Deserialize;
 
     use crate::{
         fs::{DirEntryType, GamePath, OpenFileSystem, ReadDir},
         steam::Libraries,
-        test_utils::read_game_file,
+        test_utils::{read_game_file, FileSpec},
     };
 
     use super::*;
+
+    fn quat_to_euler(q: Quat) -> Vec3 {
+        let (z, y, x) = q.to_euler(EulerRot::ZYX);
+        Vec3::new(x, y, z)
+    }
+
+    /// Tests that euler to quat conversion is identical to Blender
+    #[test]
+    fn euler_to_quat_conversion_blender_compatible() {
+        assert_relative_eq!(
+            euler_to_quat(Vec3::new(1.442_919_9, -0.457_030_3, 0.202_343_17)),
+            Quat::from_xyzw(0.657_201, -0.104_246, 0.222_718, 0.712_472),
+            epsilon = 0.01,
+        );
+
+        assert_relative_eq!(
+            euler_to_quat(Vec3::new(1.570_796_1, 0.0, -1.570_776_7)),
+            Quat::from_xyzw(0.500_005, -0.499_995, -0.499_995, 0.500_005),
+            epsilon = 0.01,
+        );
+    }
+
+    /// Tests that source quat to euler conversion is identical to Crowbar
+    #[test]
+    fn quat_to_euler_conversion_crowbar_compatible() {
+        assert_relative_eq!(
+            quat_to_euler(Quat::from_xyzw(0.0, 0.999_998_57, 0.0, 0.001_691_454_9)),
+            Vec3::new(3.141_592_7, 0.003_382_911_4, 3.141_592_7),
+        );
+
+        assert_relative_eq!(
+            quat_to_euler(Quat::from_xyzw(0.0, 0.0, 0.707_105_3, 0.707_108_26)),
+            Vec3::new(0.0, 0.0, 1.570_792_1)
+        );
+    }
+
+    #[test]
+    fn quat_euler_conversion_consistency() {
+        let original = Quat::from_xyzw(0.657_201, -0.104_246, 0.222_718, 0.712_472);
+        let converted = euler_to_quat(quat_to_euler(original));
+
+        assert_relative_eq!(original, converted);
+    }
+
+    /// Crowbar applies -90 z rotation to things by default, this undoes it for testing against crowbar
+    fn uncrowbarify_quat() -> Quat {
+        Quat::from_rotation_z(FRAC_PI_2)
+    }
+
+    fn assert_quats_equal(other: Quat, mut crowbar: Quat, i: usize, uncrowbarify: bool) {
+        if uncrowbarify {
+            crowbar = uncrowbarify_quat() * crowbar;
+        }
+
+        assert!(
+            relative_eq!(other, crowbar, epsilon = 0.001),
+            "rotation at frame {}: got {}, expected {}",
+            i,
+            other,
+            crowbar
+        );
+    }
+
+    fn assert_vecs_equal(other: Vec3, mut crowbar: Vec3, i: usize, uncrowbarify: bool) {
+        if uncrowbarify {
+            crowbar = uncrowbarify_quat() * crowbar;
+        }
+
+        assert!(
+            relative_eq!(other, crowbar, epsilon = 0.001,),
+            "position at frame {}: got {}, expected {}",
+            i,
+            other,
+            crowbar
+        );
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    pub struct MdlSpec {
+        pub version: i32,
+        pub name: String,
+        pub flags: i32,
+        pub bones: Vec<BoneSpec>,
+        pub texture_paths: Vec<String>,
+        pub textures: Vec<String>,
+        pub body_parts: Vec<BodyPartSpec>,
+        pub animations: Vec<AnimationSpec>,
+    }
+
+    impl FileSpec for MdlSpec {
+        type Type = Mdl;
+
+        fn extension() -> &'static str {
+            ".mdl"
+        }
+
+        fn read(file: std::fs::File) -> Self::Type {
+            Mdl::read(GameFile::Fs(file)).unwrap()
+        }
+
+        fn verify(&self, data: Mdl) {
+            assert_eq!(data.version().unwrap(), self.version);
+            eprintln!("  Version ok");
+
+            let header = data.header().unwrap();
+
+            assert_eq!(header.name().unwrap(), self.name);
+            eprintln!("  Name ok");
+            assert_eq!(header.flags().bits, self.flags);
+            eprintln!("  Flags ok");
+
+            for (i, bone) in header.iter_bones().unwrap().enumerate() {
+                eprintln!("  Verifying bone {}", i);
+                self.bones[i].verify(bone);
+            }
+
+            assert_eq!(header.texture_paths().unwrap(), self.texture_paths);
+            eprintln!("  Texture paths ok");
+
+            for (i, body_part) in header.iter_body_parts().unwrap().enumerate() {
+                eprintln!("  Verifying body part {}", i);
+                self.body_parts[i].verify(body_part);
+            }
+
+            for (i, animation) in header.iter_animation_descs().unwrap().enumerate() {
+                eprintln!("  Verifying animation {}", i);
+                self.animations[i].verify(animation);
+            }
+
+            eprintln!("  Mdl ok");
+        }
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    pub struct BoneSpec {
+        pub name: String,
+        pub surface_prop: String,
+        pub parent_bone_index: i32,
+        pub position: [f32; 3],
+        pub position_scale: [f32; 3],
+        pub rotation: [f32; 3],
+        pub rotation_scale: [f32; 3],
+    }
+
+    impl BoneSpec {
+        fn verify(&self, bone: BoneRef) {
+            assert_eq!(bone.name().unwrap(), self.name);
+            assert_eq!(bone.surface_prop().unwrap().unwrap(), self.surface_prop);
+            assert_eq!(bone.parent_bone_index, self.parent_bone_index);
+            assert_relative_eq!(bone.position.as_ref(), self.position.as_ref());
+            assert_relative_eq!(bone.position_scale.as_ref(), self.position_scale.as_ref());
+            assert_relative_eq!(bone.rotation.as_ref(), self.rotation.as_ref());
+            assert_relative_eq!(bone.rotation_scale.as_ref(), self.rotation_scale.as_ref());
+            eprintln!("    Bone ok");
+        }
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    pub struct BodyPartSpec {
+        pub name: String,
+        pub models: Vec<ModelSpec>,
+    }
+
+    impl BodyPartSpec {
+        fn verify(&self, body_part: BodyPartRef) {
+            assert_eq!(body_part.name().unwrap(), self.name);
+
+            for (i, model) in body_part.iter_models().unwrap().enumerate() {
+                eprintln!("    Verifying model {}", i);
+                self.models[i].verify(model);
+            }
+            eprintln!("    Body part ok");
+        }
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    pub struct ModelSpec {
+        pub name: String,
+    }
+
+    impl ModelSpec {
+        fn verify(&self, model: ModelRef) {
+            assert_eq!(model.name().unwrap(), self.name);
+            eprintln!("       Model ok");
+        }
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    pub struct AnimationSpec {
+        pub name: String,
+        pub flags: i32,
+        pub sections: Vec<SectionSpec>,
+        pub data_final: BTreeMap<u8, BoneAnimationDataSpec>,
+    }
+
+    impl AnimationSpec {
+        fn verify(&self, animation: AnimationDescRef) {
+            assert_eq!(animation.name().unwrap(), self.name);
+            assert_eq!(animation.flags().bits, self.flags);
+
+            for (i, section) in animation
+                .iter_animation_sections()
+                .unwrap()
+                .unwrap()
+                .enumerate()
+            {
+                match self.sections.get(i) {
+                    None => continue,
+                    Some(spec) => {
+                        eprintln!("    Verifying section {}", i);
+                        spec.verify(section);
+                    }
+                };
+            }
+
+            let data = animation.data().unwrap().unwrap();
+
+            assert_eq!(data.len(), self.data_final.len());
+
+            for (&bone, spec) in &self.data_final {
+                let bone = bone as usize;
+                eprintln!("    Verifying final data for bone {}", bone);
+                spec.verify(
+                    data.get(&bone).unwrap(),
+                    animation.bones[bone].parent_bone_index < 0,
+                );
+            }
+
+            eprintln!("    Animation ok");
+        }
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    pub struct SectionSpec {
+        pub data_post_calc: BTreeMap<u8, BoneAnimationDataSpec>,
+    }
+
+    impl SectionSpec {
+        fn verify(&self, section: AnimationSectionRef) {
+            for bone_anim in section.iter_bone_animations() {
+                let bone_anim = bone_anim.unwrap();
+                let bone = bone_anim.animation.bone_index;
+
+                eprintln!("      Verifying post-calc data for bone {}", bone);
+                let spec = self.data_post_calc.get(&bone).unwrap();
+                let data = bone_anim.animation_data().unwrap();
+                spec.verify(&data, false);
+            }
+
+            eprintln!("      Section ok");
+        }
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    pub struct BoneAnimationDataSpec {
+        position: Vec<Vec3>,
+        rotation_euler: Vec<Vec3>,
+    }
+
+    impl BoneAnimationDataSpec {
+        fn verify(&self, data: &BoneAnimationData, uncrowbarify: bool) {
+            match &data.position {
+                AnimationPositionData::Constant(v) => {
+                    assert_eq!(
+                        self.position.len(),
+                        1,
+                        "got constant position (1 value), expected {} values",
+                        self.position.len()
+                    );
+                    assert_vecs_equal(*v, self.position[0], 0, uncrowbarify);
+                }
+                AnimationPositionData::Animated(v) => {
+                    assert_eq!(
+                        v.len(),
+                        self.position.len(),
+                        "got {} frames of position, expected {}",
+                        v.len(),
+                        self.position.len()
+                    );
+                    for (i, (a, b)) in v.iter().zip(&self.position).enumerate() {
+                        assert_vecs_equal(*a, *b, i, uncrowbarify);
+                    }
+                }
+                AnimationPositionData::None => assert_eq!(
+                    self.position.len(),
+                    0,
+                    "got no position, expected {} values",
+                    self.position.len()
+                ),
+            }
+
+            match &data.rotation {
+                AnimationRotationData::Constant(v) => {
+                    assert_eq!(
+                        self.rotation_euler.len(),
+                        1,
+                        "got constant rotation (1 value), expected {} values",
+                        self.rotation_euler.len()
+                    );
+                    assert_quats_equal(*v, euler_to_quat(self.rotation_euler[0]), 0, uncrowbarify);
+                }
+                AnimationRotationData::Animated(v) => {
+                    assert_eq!(
+                        v.len(),
+                        self.rotation_euler.len(),
+                        "got {} frames of rotation, expected {}",
+                        v.len(),
+                        self.rotation_euler.len()
+                    );
+                    for (i, (a, b)) in v.iter().zip(&self.rotation_euler).enumerate() {
+                        assert_quats_equal(*a, euler_to_quat(*b), i, uncrowbarify);
+                    }
+                }
+                AnimationRotationData::None => assert_eq!(
+                    self.rotation_euler.len(),
+                    0,
+                    "got no rotation, expected {} values",
+                    self.rotation_euler.len()
+                ),
+            }
+        }
+    }
 
     /// Fails if steam is not installed
     #[test]
@@ -2065,12 +2455,7 @@ mod tests {
             "models/props/de_inferno/hr_i/inferno_ceiling_fan/inferno_ceiling_fan.mdl",
         );
 
-        let bytes = maligned::aligned::<A4, _>(data);
-        let mdl = Mdl {
-            bytes: bytes.into_inner(),
-        };
-
-        read_mdl(&mdl);
+        read_mdl_bytes(&data);
     }
 
     // Fails if L4D2 is not installed on Steam
@@ -2078,12 +2463,18 @@ mod tests {
     #[ignore]
     fn read_frame_animated() {
         let data = read_game_file(550, "models/v_models/v_huntingrifle.mdl");
+        read_mdl_bytes(&data);
+    }
 
-        let bytes = maligned::aligned::<A4, _>(data);
-        let mdl = Mdl {
+    fn get_mdl_from_bytes(bytes: &[u8]) -> Mdl {
+        let bytes = maligned::aligned::<A4, _>(bytes);
+        Mdl {
             bytes: bytes.to_vec(),
-        };
+        }
+    }
 
+    fn read_mdl_bytes(bytes: &[u8]) {
+        let mdl = get_mdl_from_bytes(bytes);
         read_mdl(&mdl);
     }
 
@@ -2128,12 +2519,21 @@ mod tests {
     fn read_animation_section(animation: AnimationDescRef, section: AnimationSectionRef) {
         if animation.flags().contains(AnimationDescFlags::FRAMEANIM) {
             let frame_animation = section.frame_animation().unwrap();
-            dbg!(frame_animation.animation_data().unwrap());
+            frame_animation.animation_data().unwrap();
         } else {
             for bone_anim in section.iter_bone_animations() {
                 let bone_anim = bone_anim.unwrap();
-                dbg!(bone_anim.animation_data().unwrap());
+                bone_anim.animation_data().unwrap();
             }
         }
+    }
+
+    #[test]
+    fn verify_against_mdl_specs() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("mdl");
+
+        MdlSpec::verify_from_path(&path);
     }
 }

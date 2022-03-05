@@ -43,3 +43,8 @@ winreg = { version = "0.8" }
 
 [target.'cfg(not(windows))'.dependencies]
 home = { version = "0.5.3" }
+
+[dev-dependencies]
+glam = { version = "0.20.2", features = ["serde"] }
+serde_json = "1.0.79"
+walkdir = "2.3.2"
