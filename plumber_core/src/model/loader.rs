@@ -3,7 +3,7 @@ use std::{
     sync::{Condvar, Mutex},
 };
 
-use log::error;
+use log::{error, warn};
 
 use super::{
     Animation, AnimationDescFlags, Bone, BoneAnimationData, Face, Mesh, Model, Result, Vertex,
@@ -170,7 +170,15 @@ impl Loader {
             .map(LoadedMesh::new)
             .collect();
 
-        let materials = verified.materials(file_system)?;
+        let mut materials = Vec::new();
+        for result in verified.materials(file_system)? {
+            match result {
+                Ok(material) => materials.push(material),
+                Err(err) => {
+                    warn!("model `{}`: material: {}", model_path, err);
+                }
+            }
+        }
 
         let bones = verified.bones()?.into_iter().map(LoadedBone::new).collect();
 

@@ -773,7 +773,7 @@ impl<'a> HeaderRef<'a> {
             }))
     }
 
-    pub fn texture_paths(&self) -> Result<Vec<&str>> {
+    pub fn texture_paths(&self) -> Result<Vec<&'a str>> {
         let offset = self
             .header_1
             .texture_dir_offset

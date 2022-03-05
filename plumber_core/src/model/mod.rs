@@ -270,13 +270,19 @@ impl<'a> Verified<'a> {
     /// # Errors
     ///
     /// Returns `Err` if a material path reading fails or a material isn't found.
-    pub fn materials(&self, file_system: &OpenFileSystem) -> Result<Vec<GamePathBuf>> {
+    pub fn materials<'f>(
+        &self,
+        file_system: &'f OpenFileSystem,
+    ) -> Result<impl Iterator<Item = Result<GamePathBuf>> + 'f>
+    where
+        'a: 'f,
+    {
         let texture_paths = self.mdl_header.texture_paths()?;
 
-        self.mdl_header
+        Ok(self
+            .mdl_header
             .iter_textures()?
-            .map(|texture| find_material(texture, &texture_paths, file_system))
-            .try_collect()
+            .map(move |texture| find_material(texture, &texture_paths, file_system)))
     }
 
     /// # Errors
@@ -432,7 +438,9 @@ mod tests {
         let verified = model.verify()?;
         eprintln!("reading `{}`", verified.name()?);
         verified.meshes()?;
-        verified.materials(file_system)?;
+        for result in verified.materials(file_system)? {
+            result.unwrap();
+        }
         verified.bones()?;
         verified.animations()?.try_for_each(|r| r.map(|_| ()))?;
         Ok(())
