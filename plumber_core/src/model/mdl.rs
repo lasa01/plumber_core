@@ -2125,7 +2125,8 @@ mod tests {
         }
 
         assert!(
-            relative_eq!(other, crowbar, epsilon = 0.001),
+            relative_eq!(other, crowbar, epsilon = 0.001)
+                || relative_eq!(other, -crowbar, epsilon = 0.001),
             "rotation at frame {}: got {}, expected {}",
             i,
             other,
