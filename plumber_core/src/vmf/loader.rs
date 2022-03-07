@@ -214,7 +214,7 @@ impl Vmf {
                         Ok(material) => {
                             let mut path = GamePathBuf::from("materials");
                             path.push(&material);
-                            importer.import_vmt(PathBuf::Game(material));
+                            importer.import_vmt(PathBuf::Game(path));
                         }
                         Err(error) => importer.asset_handler.handle_error(Error::Overlay {
                             id: entity.id,
