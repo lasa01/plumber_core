@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread};
+use std::sync::Arc;
 
 use crate::{
     fs::{OpenFileSystem, PathBuf},
@@ -114,8 +114,7 @@ where
     H: Handler,
 {
     pub(crate) file_system: Arc<OpenFileSystem>,
-    pub(crate) material_loader: Arc<MaterialLoader>,
-    pub(crate) material_job_sender: crossbeam_channel::Sender<PathBuf>,
+    pub(crate) material_loader: MaterialLoader,
     pub(crate) model_loader: Arc<ModelLoader>,
     pub(crate) pool: rayon::ThreadPool,
     pub(crate) asset_handler: H,
@@ -127,28 +126,23 @@ where
 {
     pub fn new(file_system: OpenFileSystem, asset_handler: H) -> Self {
         let file_system = Arc::new(file_system);
-        let material_loader = Arc::new(MaterialLoader::new());
-        let (material_job_sender, material_job_receiver) = crossbeam_channel::unbounded();
+        let material_loader = MaterialLoader::new();
 
         {
-            let material_loader = material_loader.clone();
             let file_system = file_system.clone();
             let mut asset_handler = asset_handler.clone();
             let mut asset_handler_2 = asset_handler.clone();
-            thread::spawn(move || {
-                for result in
-                    material_loader.load_materials(material_job_receiver, &file_system, |vmt| {
-                        asset_handler.build_material(vmt)
-                    })
-                {
-                    match result {
-                        Ok(mat) => asset_handler_2.handle_material(mat),
-                        Err((path, error)) => {
-                            asset_handler_2.handle_error(Error::Material { path, error });
-                        }
+
+            material_loader.start_worker_thread(
+                file_system,
+                move |vmt| asset_handler.build_material(vmt),
+                move |result| match result {
+                    Ok(mat) => asset_handler_2.handle_material(mat),
+                    Err((path, error)) => {
+                        asset_handler_2.handle_error(Error::Material { path, error });
                     }
-                }
-            });
+                },
+            );
         }
 
         let pool = build_thread_pool();
@@ -156,7 +150,6 @@ where
         Self {
             file_system,
             material_loader,
-            material_job_sender,
             model_loader: Arc::new(ModelLoader::new()),
             pool,
             asset_handler,
@@ -164,37 +157,30 @@ where
     }
 
     /// Errors are handled in [Handler].
-    pub fn import_vmt(&self, path: PathBuf) {
-        self.material_job_sender
-            .send(path)
-            .expect("material job channel shouldn't be disconnected");
+    pub fn import_vmt(&self, path: &PathBuf) {
+        self.material_loader.load_material(path);
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the material loading fails or has failed in the past
     pub fn import_vmt_blocking(&self, path: &PathBuf) -> Result<MaterialInfo, MaterialLoadError> {
-        self.material_job_sender
-            .send(path.clone())
-            .expect("material job channel shouldn't be disconnected");
-        self.material_loader.wait_for_material(path)
+        self.material_loader.load_material_blocking(path)
     }
 
     /// Errors are handled in [Handler].
     pub fn import_mdl(&self, path: PathBuf) {
         let model_loader = self.model_loader.clone();
+        let material_loader = self.material_loader.clone();
         let mut asset_handler = self.asset_handler.clone();
         let file_system = self.file_system.clone();
-        let material_job_sender = self.material_job_sender.clone();
 
         self.pool.spawn(move || {
             match model_loader.load_model(path.clone(), &file_system) {
                 Ok((_info, model)) => {
                     if let Some(model) = model {
                         for material in &model.materials {
-                            material_job_sender
-                                .send(PathBuf::Game(material.clone()))
-                                .expect("material job channel shouldn't be disconnected");
+                            material_loader.load_material(&PathBuf::Game(material.clone()));
                         }
 
                         asset_handler.handle_model(model);
@@ -224,9 +210,8 @@ where
                     Ok((info, model)) => {
                         if let Some(model) = model {
                             for material in &model.materials {
-                                self.material_job_sender
-                                    .send(PathBuf::Game(material.clone()))
-                                    .expect("material job channel shouldn't be disconnected");
+                                self.material_loader
+                                    .load_material(&PathBuf::Game(material.clone()));
                             }
 
                             self.asset_handler.handle_model(model);
@@ -237,7 +222,7 @@ where
                 };
 
                 drop(self.asset_handler);
-                drop(self.material_job_sender);
+                drop(self.material_loader);
                 // Dropping these disconnects the channels that keep the import process alive,
                 // signaling that the import is finished (and preventing deadlocks)
             });

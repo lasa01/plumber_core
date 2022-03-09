@@ -118,12 +118,12 @@ impl Settings {
 impl Vmf {
     pub(crate) fn load(
         &self,
-        mut importer: Importer<impl Handler>,
+        importer: Importer<impl Handler>,
         settings: &Settings,
         f: impl FnOnce(),
     ) {
         let side_faces_map = Arc::new(Mutex::new(BTreeMap::new()));
-        self.send_material_jobs(&mut importer, settings.import_materials);
+        self.send_material_jobs(&importer.material_loader, settings.import_materials);
 
         importer.pool.in_place_scope(|s| {
             s.spawn(|_| {
@@ -131,7 +131,7 @@ impl Vmf {
                     self.load_props(
                         importer.file_system,
                         importer.model_loader,
-                        importer.material_job_sender,
+                        importer.material_loader.clone(),
                         importer.asset_handler.clone(),
                         settings.scale,
                     )
@@ -184,7 +184,7 @@ impl Vmf {
         });
     }
 
-    fn send_material_jobs(&self, importer: &mut Importer<impl Handler>, import_materials: bool) {
+    fn send_material_jobs(&self, material_loader: &MaterialLoader, import_materials: bool) {
         // make sure solids' materials are loaded first
         // because solid loading later requires the material info to be available
         //
@@ -193,7 +193,7 @@ impl Vmf {
             for side in &solid.sides {
                 let mut material = GamePathBuf::from("materials");
                 material.push(&side.material);
-                importer.import_vmt(PathBuf::Game(material));
+                material_loader.load_material(&PathBuf::Game(material));
             }
         }
         for entity in &self.entities {
@@ -201,7 +201,7 @@ impl Vmf {
                 for side in &solid.sides {
                     let mut material = GamePathBuf::from("materials");
                     material.push(&side.material);
-                    importer.import_vmt(PathBuf::Game(material));
+                    material_loader.load_material(&PathBuf::Game(material));
                 }
             }
         }
@@ -210,16 +210,10 @@ impl Vmf {
             // send overlay materials too so the material thread doesn't have to wait for other progress
             for entity in &self.entities {
                 if let TypedEntity::Overlay(overlay) = entity.typed() {
-                    match overlay.material() {
-                        Ok(material) => {
-                            let mut path = GamePathBuf::from("materials");
-                            path.push(&material);
-                            importer.import_vmt(PathBuf::Game(path));
-                        }
-                        Err(error) => importer.asset_handler.handle_error(Error::Overlay {
-                            id: entity.id,
-                            error: error.into(),
-                        }),
+                    if let Ok(material) = overlay.material() {
+                        let mut path = GamePathBuf::from("materials");
+                        path.push(&material);
+                        material_loader.load_material(&PathBuf::Game(path));
                     }
                 }
             }
@@ -230,7 +224,7 @@ impl Vmf {
         &self,
         file_system: Arc<OpenFileSystem>,
         model_loader: Arc<ModelLoader>,
-        material_job_sender: crossbeam_channel::Sender<PathBuf>,
+        material_loader: MaterialLoader,
         asset_handler: impl Handler,
         scale: f32,
     ) -> impl ParallelIterator<Item = Result<LoadedProp, (i32, PropError)>> {
@@ -248,22 +242,15 @@ impl Vmf {
                 }
             })
             .map_with(
-                (
-                    file_system,
-                    model_loader,
-                    material_job_sender,
-                    asset_handler,
-                ),
-                move |(file_system, model_loader, material_job_sender, asset_handler), prop| {
+                (file_system, model_loader, material_loader, asset_handler),
+                move |(file_system, model_loader, material_loader, asset_handler), prop| {
                     let (prop, model) = prop
                         .load(model_loader, file_system, scale)
                         .map_err(|e| (prop.entity().id, e))?;
 
                     if let Some(model) = model {
                         for material in &model.materials {
-                            material_job_sender
-                                .send(PathBuf::Game(material.clone()))
-                                .expect("material job channel shouldn't be disconnected");
+                            material_loader.load_material(&PathBuf::Game(material.clone()));
                         }
                         asset_handler.handle_model(model);
                     }
@@ -289,7 +276,7 @@ impl Vmf {
 
     fn load_brushes(
         &self,
-        material_loader: Arc<MaterialLoader>,
+        material_loader: MaterialLoader,
         side_faces_map: Arc<Mutex<SideFacesMap>>,
         geometry_settings: GeometrySettings,
         scale: f32,
@@ -303,7 +290,7 @@ impl Vmf {
             move |(material_loader, side_faces_map, geometry_settings), world| {
                 world
                     .build_brush(
-                        |path| material_loader.wait_for_material(path),
+                        |path| material_loader.load_material_blocking(path),
                         side_faces_map,
                         geometry_settings,
                         scale,
@@ -321,7 +308,7 @@ impl Vmf {
                     move |(material_loader, side_faces_map, geometry_settings), entity| {
                         entity
                             .build_brush(
-                                |path| material_loader.wait_for_material(path),
+                                |path| material_loader.load_material_blocking(path),
                                 side_faces_map,
                                 geometry_settings,
                                 scale,

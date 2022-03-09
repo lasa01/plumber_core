@@ -2,7 +2,8 @@ use std::{
     collections::HashMap,
     fmt::{self, Debug, Formatter},
     io,
-    sync::{Condvar, Mutex},
+    sync::{Arc, Condvar, Mutex},
+    thread,
     time::Duration,
 };
 
@@ -116,24 +117,36 @@ impl<D: Send + Sync + 'static> Debug for LoadedMaterial<D> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
+enum MaterialStatus {
+    Loading,
+    Done(Result<MaterialInfo, MaterialLoadError>),
+}
+
+#[derive(Debug, Clone)]
 pub struct Loader {
-    material_cache: Mutex<HashMap<PathBuf, Result<MaterialInfo, MaterialLoadError>>>,
-    material_condvar: Condvar,
-    texture_cache: Mutex<HashMap<GamePathBuf, Result<TextureInfo, TextureLoadError>>>,
+    material_job_sender: crossbeam_channel::Sender<PathBuf>,
+    worker_state: Arc<WorkerState>,
 }
 
 impl Loader {
     #[must_use]
     pub fn new() -> Self {
+        let (material_job_sender, material_job_receiver) = crossbeam_channel::unbounded();
+        let worker_state = Arc::new(WorkerState::new(material_job_receiver));
+
         Self {
-            material_cache: Mutex::new(HashMap::new()),
-            material_condvar: Condvar::new(),
-            texture_cache: Mutex::new(HashMap::new()),
+            material_job_sender,
+            worker_state,
         }
     }
 
-    /// Block the thread until another thread has loaded a given material, and return the info.
+    pub fn load_material(&self, material_path: &PathBuf) {
+        self.worker_state
+            .send_material_job(material_path, &self.material_job_sender);
+    }
+
+    /// Block the thread until the worker thread has loaded a given material, and return the info.
     ///
     /// # Errors
     ///
@@ -142,7 +155,76 @@ impl Loader {
     /// # Panics
     ///
     /// Panics after 30 seconds if any materials haven't been loaded to prevent deadlocks.
-    pub fn wait_for_material(
+    pub fn load_material_blocking(
+        &self,
+        material_path: &PathBuf,
+    ) -> Result<MaterialInfo, MaterialLoadError> {
+        self.worker_state
+            .send_material_job(material_path, &self.material_job_sender);
+        self.worker_state.wait_for_material(material_path)
+    }
+
+    pub fn start_worker_thread<D>(
+        &self,
+        file_system: Arc<OpenFileSystem>,
+        build: impl FnMut(LoadedVmt) -> Result<D, MaterialLoadError> + Send + 'static,
+        mut handle: impl FnMut(Result<LoadedMaterial<D>, (PathBuf, MaterialLoadError)>) + Send + 'static,
+    ) where
+        D: Send + Sync + 'static,
+    {
+        let worker_state = self.worker_state.clone();
+
+        thread::spawn(move || {
+            for result in worker_state.load_materials(&file_system, build) {
+                handle(result);
+            }
+        });
+    }
+}
+
+impl Default for Loader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug)]
+struct WorkerState {
+    material_job_receiver: crossbeam_channel::Receiver<PathBuf>,
+    material_cache: Mutex<HashMap<PathBuf, MaterialStatus>>,
+    material_condvar: Condvar,
+    texture_cache: Mutex<HashMap<GamePathBuf, Result<TextureInfo, TextureLoadError>>>,
+}
+
+impl WorkerState {
+    #[must_use]
+    fn new(material_job_receiver: crossbeam_channel::Receiver<PathBuf>) -> Self {
+        Self {
+            material_job_receiver,
+            material_cache: Mutex::new(HashMap::new()),
+            material_condvar: Condvar::new(),
+            texture_cache: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn send_material_job(&self, path: &PathBuf, sender: &crossbeam_channel::Sender<PathBuf>) {
+        let mut guard = self
+            .material_cache
+            .lock()
+            .expect("the mutex shouldn't be poisoned");
+
+        if guard.get(path).is_some() {
+            // material is already being loaded / has been loaded
+            return;
+        }
+
+        guard.insert(path.clone(), MaterialStatus::Loading);
+        sender
+            .send(path.clone())
+            .expect("material job channel shouldn't be disconnected");
+    }
+
+    fn wait_for_material(
         &self,
         material_path: &PathBuf,
     ) -> Result<MaterialInfo, MaterialLoadError> {
@@ -152,7 +234,7 @@ impl Loader {
             .expect("the mutex shouldn't be poisoned");
         loop {
             match guard.get(material_path) {
-                None => {
+                None | Some(MaterialStatus::Loading) => {
                     let (g, res) = self
                         .material_condvar
                         .wait_timeout(guard, Duration::from_secs(30))
@@ -162,19 +244,13 @@ impl Loader {
                     }
                     guard = g;
                 }
-                Some(result) => return result.clone(),
+                Some(MaterialStatus::Done(result)) => return result.clone(),
             }
         }
     }
 
-    /// Load materials from an iterator.
-    ///
-    /// # Panics
-    ///
-    /// Panics if vtflib is already initialized.
-    pub fn load_materials<'a, D>(
+    fn load_materials<'a, D>(
         &'a self,
-        material_paths: impl IntoIterator<Item = PathBuf> + 'a,
         file_system: &'a OpenFileSystem,
         mut build: impl FnMut(LoadedVmt) -> Result<D, MaterialLoadError> + 'a,
     ) -> impl Iterator<Item = Result<LoadedMaterial<D>, (PathBuf, MaterialLoadError)>> + 'a
@@ -182,7 +258,7 @@ impl Loader {
         D: Send + Sync + 'static,
     {
         let mut vtf_lib = VtfLib::initialize().expect("vtflib is already initialized");
-        let material_paths = material_paths.into_iter();
+        let material_paths = self.material_job_receiver.iter();
 
         material_paths.filter_map(move |material_path| {
             match self.load_material(material_path, file_system, &mut vtf_lib, &mut build) {
@@ -204,7 +280,7 @@ impl Loader {
     where
         D: Send + Sync + 'static,
     {
-        if let Some(info_result) = self
+        if let Some(MaterialStatus::Done(info_result)) = self
             .material_cache
             .lock()
             .expect("the mutex shouldn't be poisoned")
@@ -227,7 +303,7 @@ impl Loader {
         self.material_cache
             .lock()
             .expect("the mutex shouldn't be poisoned")
-            .insert(material_path, info_result);
+            .insert(material_path, MaterialStatus::Done(info_result));
         self.material_condvar.notify_all();
 
         result.map(|b| (b.info.clone(), Some(b)))
@@ -248,7 +324,7 @@ impl Loader {
         let mut loaded_vmt = LoadedVmt {
             shader,
             textures: Vec::new(),
-            loader: self,
+            worker_state: self,
             vtf_lib,
             file_system,
             material_path,
@@ -353,7 +429,7 @@ impl Default for MaterialInfo {
 
 #[derive(Debug)]
 pub struct LoadedVmt<'a> {
-    loader: &'a Loader,
+    worker_state: &'a WorkerState,
     vtf_lib: &'a mut (VtfLib, VtfGuard),
     file_system: &'a OpenFileSystem,
     material_path: &'a PathBuf,
@@ -370,7 +446,7 @@ impl<'a> LoadedVmt<'a> {
         texture_path: GamePathBuf,
     ) -> Result<TextureInfo, TextureLoadError> {
         let (info, texture) =
-            self.loader
+            self.worker_state
                 .load_texture(texture_path, self.file_system, self.vtf_lib)?;
         if let Some(texture) = texture {
             self.textures.push(texture);
