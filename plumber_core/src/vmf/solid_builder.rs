@@ -892,6 +892,10 @@ impl MergedSolids {
 
             // clip solids
             for (i, clip_solid) in clipped_solids.iter_mut().enumerate() {
+                if clip_solid.is_displacement {
+                    continue;
+                }
+
                 let mut clip_on_plane = false;
 
                 for (j, solid) in solids.iter().enumerate() {
@@ -915,10 +919,17 @@ impl MergedSolids {
 
         let mut faces = Vec::with_capacity(merge_solids.iter().map(|s| s.faces.len()).sum());
 
-        for clipped_solid in merge_solids {
-            let center = clipped_solid.center;
+        let mut displacements = Vec::new();
 
-            let vertice_i_map = clipped_solid
+        for solid in merge_solids {
+            if solid.is_displacement {
+                displacements.push(solid);
+                continue;
+            }
+
+            let center = solid.center;
+
+            let vertice_i_map = solid
                 .vertices
                 .into_iter()
                 .map(|vertice| {
@@ -934,7 +945,7 @@ impl MergedSolids {
                 })
                 .collect_vec();
 
-            let material_i_map = clipped_solid
+            let material_i_map = solid
                 .materials
                 .into_iter()
                 .map(|mat| {
@@ -946,12 +957,43 @@ impl MergedSolids {
                 })
                 .collect_vec();
 
-            for mut face in clipped_solid.faces {
+            for mut face in solid.faces {
                 // fix indices
                 face.material_index = material_i_map[face.material_index];
 
                 for vertice_index in &mut face.vertice_indices {
                     *vertice_index = vertice_i_map[*vertice_index];
+                }
+
+                faces.push(face.finish());
+            }
+        }
+
+        // merge displacement last without checking for existing vertices
+        for solid in displacements {
+            let center = solid.center;
+            let vertice_i_offset = vertices.len();
+
+            vertices.extend(solid.vertices.into_iter().map(|v| v + center));
+
+            let material_i_map = solid
+                .materials
+                .into_iter()
+                .map(|mat| {
+                    materials.iter().position(|m| m == &mat).unwrap_or_else(|| {
+                        // add the material if it doesn't exist already
+                        materials.push(mat);
+                        materials.len() - 1
+                    })
+                })
+                .collect_vec();
+
+            for mut face in solid.faces {
+                // fix indices
+                face.material_index = material_i_map[face.material_index];
+
+                for vertice_index in &mut face.vertice_indices {
+                    *vertice_index += vertice_i_offset;
                 }
 
                 faces.push(face.finish());
@@ -987,33 +1029,17 @@ impl<'a> BuiltBrushEntity<'a> {
     ) -> Result<Self, SolidError> {
         if settings.merge_solids.merge() {
             let mut mergable_solids = Vec::new();
-            let mut displacements = Vec::new();
 
-            solids
-                .iter()
-                .filter_map(|solid| {
-                    let mut builder = SolidBuilder::new(solid);
-                    if let Err(err) =
-                        builder.build(&mut get_material_info, side_faces_map, settings)
-                    {
-                        return Some(Err(err));
-                    }
-                    if settings.invisible_solids.import() || !builder.is_nodraw() {
-                        Some(Ok(builder))
-                    } else {
-                        None
-                    }
-                })
-                .try_for_each(|r| {
-                    r.map(|mut b| {
-                        if b.is_displacement {
-                            b.recenter();
-                            displacements.push(b.finish(scale));
-                        } else {
-                            mergable_solids.push(b);
-                        }
-                    })
-                })?;
+            for solid in solids {
+                let mut builder = SolidBuilder::new(solid);
+                builder.build(&mut get_material_info, side_faces_map, settings)?;
+
+                if !settings.invisible_solids.import() && builder.is_nodraw() {
+                    continue;
+                }
+
+                mergable_solids.push(builder);
+            }
 
             Ok(BuiltBrushEntity {
                 id,
@@ -1024,7 +1050,7 @@ impl<'a> BuiltBrushEntity<'a> {
                     settings.merge_solids.optimize(),
                     scale,
                 )),
-                solids: displacements,
+                solids: Vec::new(),
             })
         } else {
             Ok(BuiltBrushEntity {
