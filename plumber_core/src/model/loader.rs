@@ -16,7 +16,7 @@ pub struct LoadedModel {
     pub name: GamePathBuf,
     pub info: ModelInfo,
     pub meshes: Vec<LoadedMesh>,
-    pub materials: Vec<GamePathBuf>,
+    pub materials: Vec<Option<GamePathBuf>>,
     pub bones: Vec<LoadedBone>,
     pub animations: Vec<LoadedAnimation>,
 }
@@ -173,9 +173,10 @@ impl Loader {
         let mut materials = Vec::new();
         for result in verified.materials(file_system)? {
             match result {
-                Ok(material) => materials.push(material),
+                Ok(material) => materials.push(Some(material)),
                 Err(err) => {
                     warn!("model `{}`: material: {}", model_path, err);
+                    materials.push(None);
                 }
             }
         }

@@ -179,7 +179,7 @@ where
             match model_loader.load_model(path.clone(), &file_system) {
                 Ok((_info, model)) => {
                     if let Some(model) = model {
-                        for material in &model.materials {
+                        for material in model.materials.iter().flatten() {
                             material_loader.load_material(&PathBuf::Game(material.clone()));
                         }
 
@@ -209,7 +209,7 @@ where
                 match self.model_loader.load_model(path, &self.file_system) {
                     Ok((info, model)) => {
                         if let Some(model) = model {
-                            for material in &model.materials {
+                            for material in model.materials.iter().flatten() {
                                 self.material_loader
                                     .load_material(&PathBuf::Game(material.clone()));
                             }

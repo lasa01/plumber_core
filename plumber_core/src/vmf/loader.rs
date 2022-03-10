@@ -249,7 +249,7 @@ impl Vmf {
                         .map_err(|e| (prop.entity().id, e))?;
 
                     if let Some(model) = model {
-                        for material in &model.materials {
+                        for material in model.materials.iter().flatten() {
                             material_loader.load_material(&PathBuf::Game(material.clone()));
                         }
                         asset_handler.handle_model(model);
