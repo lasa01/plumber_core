@@ -147,6 +147,23 @@ impl Loader {
     }
 
     /// Block the thread until the worker thread has loaded a given material, and return the info.
+    /// Blocks forever if the material isn't separately loaded using `load_material()`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the material loading fails or a load was already attempted and it failed.
+    ///
+    /// # Panics
+    ///
+    /// Panics after 30 seconds if any materials haven't been loaded to prevent deadlocks.
+    pub fn block_on_material(
+        &self,
+        material_path: &PathBuf,
+    ) -> Result<MaterialInfo, MaterialLoadError> {
+        self.worker_state.wait_for_material(material_path)
+    }
+
+    /// Block the thread until the worker thread has loaded a given material, and return the info.
     ///
     /// # Errors
     ///

@@ -161,11 +161,22 @@ where
         self.material_loader.load_material(path);
     }
 
+    /// The passed function `f` is ran on the thread that called this function,
+    /// while another thread loads the material.
+    ///
     /// # Errors
     ///
     /// Returns `Err` if the material loading fails or has failed in the past
-    pub fn import_vmt_blocking(&self, path: &PathBuf) -> Result<MaterialInfo, MaterialLoadError> {
-        self.material_loader.load_material_blocking(path)
+    pub fn import_vmt_blocking(
+        &self,
+        path: &PathBuf,
+        f: impl FnOnce(),
+    ) -> Result<MaterialInfo, MaterialLoadError> {
+        self.material_loader.load_material(path);
+
+        f();
+
+        self.material_loader.block_on_material(path)
     }
 
     /// Errors are handled in [Handler].

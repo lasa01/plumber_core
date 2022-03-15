@@ -290,7 +290,7 @@ impl Vmf {
             move |(material_loader, side_faces_map, geometry_settings), world| {
                 world
                     .build_brush(
-                        |path| material_loader.load_material_blocking(path),
+                        |path| material_loader.block_on_material(path),
                         side_faces_map,
                         geometry_settings,
                         scale,
@@ -308,7 +308,7 @@ impl Vmf {
                     move |(material_loader, side_faces_map, geometry_settings), entity| {
                         entity
                             .build_brush(
-                                |path| material_loader.load_material_blocking(path),
+                                |path| material_loader.block_on_material(path),
                                 side_faces_map,
                                 geometry_settings,
                                 scale,
