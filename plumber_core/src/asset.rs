@@ -168,15 +168,16 @@ where
     ///
     /// Returns `Err` if the material loading fails or has failed in the past
     pub fn import_vmt_blocking(
-        &self,
+        self,
         path: &PathBuf,
         f: impl FnOnce(),
     ) -> Result<MaterialInfo, MaterialLoadError> {
         self.material_loader.load_material(path);
 
-        f();
+        // Make sure no deadlocks
+        drop(self.asset_handler);
 
-        self.material_loader.block_on_material(path)
+        self.material_loader.parallel_block_on_material(path, f)
     }
 
     /// Errors are handled in [Handler].
