@@ -13,6 +13,8 @@ pub struct DumpAnimation {
     anim_name: Option<String>,
     #[clap(short, long)]
     bones: bool,
+    #[clap(short, long)]
+    names_only: bool,
 }
 
 pub fn dump_animation(opts: DumpAnimation, file_system: &FileSystem) {
@@ -28,7 +30,13 @@ pub fn dump_animation(opts: DumpAnimation, file_system: &FileSystem) {
     }
 
     for res in verified.animations().unwrap() {
-        let animation = res.unwrap();
+        let animation = match res {
+            Ok(a) => a,
+            Err(err) => {
+                eprintln!("Error reading animation: {}", err);
+                continue;
+            }
+        };
 
         if let Some(filter) = &opts.anim_name {
             if animation.name != filter {
@@ -36,6 +44,10 @@ pub fn dump_animation(opts: DumpAnimation, file_system: &FileSystem) {
             }
         }
 
-        eprintln!("{:#?}", animation);
+        if opts.names_only {
+            eprintln!("{}", animation.name);
+        } else {
+            eprintln!("{:#?}", animation);
+        }
     }
 }
