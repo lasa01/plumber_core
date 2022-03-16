@@ -181,7 +181,7 @@ where
     }
 
     /// Errors are handled in [Handler].
-    pub fn import_mdl(&self, path: PathBuf) {
+    pub fn import_mdl(&self, path: PathBuf, import_materials: bool) {
         let model_loader = self.model_loader.clone();
         let material_loader = self.material_loader.clone();
         let mut asset_handler = self.asset_handler.clone();
@@ -191,8 +191,10 @@ where
             match model_loader.load_model(path.clone(), &file_system) {
                 Ok((_info, model)) => {
                     if let Some(model) = model {
-                        for material in model.materials.iter().flatten() {
-                            material_loader.load_material(&PathBuf::Game(material.clone()));
+                        if import_materials {
+                            for material in model.materials.iter().flatten() {
+                                material_loader.load_material(&PathBuf::Game(material.clone()));
+                            }
                         }
 
                         asset_handler.handle_model(model);
@@ -212,6 +214,7 @@ where
     pub fn import_mdl_blocking(
         mut self,
         path: PathBuf,
+        import_materials: bool,
         f: impl FnOnce(),
     ) -> Result<ModelInfo, ModelError> {
         let mut result = None;
@@ -221,9 +224,11 @@ where
                 match self.model_loader.load_model(path, &self.file_system) {
                     Ok((info, model)) => {
                         if let Some(model) = model {
-                            for material in model.materials.iter().flatten() {
-                                self.material_loader
-                                    .load_material(&PathBuf::Game(material.clone()));
+                            if import_materials {
+                                for material in model.materials.iter().flatten() {
+                                    self.material_loader
+                                        .load_material(&PathBuf::Game(material.clone()));
+                                }
                             }
 
                             self.asset_handler.handle_model(model);
