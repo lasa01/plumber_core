@@ -7,6 +7,7 @@ use std::{
 
 use plumber_vdf as vdf;
 
+use itertools::Itertools;
 use serde::{
     de::{IgnoredAny, MapAccess, Visitor},
     Deserialize,
@@ -283,7 +284,23 @@ impl Libraries {
         )?
         .library_folders
         .0;
-        libraries.paths.push(steam_path.to_path_buf());
+
+        let normalized_paths: Vec<_> = libraries
+            .paths
+            .iter()
+            .map(|p| {
+                p.canonicalize()
+                    .map_err(|err| LibraryDiscoveryError::from_io(err, p))
+            })
+            .try_collect()?;
+
+        let normalized_steam_path = steam_path
+            .canonicalize()
+            .map_err(|err| LibraryDiscoveryError::from_io(err, steam_path))?;
+
+        if !normalized_paths.contains(&normalized_steam_path) {
+            libraries.paths.push(steam_path.to_path_buf());
+        }
 
         Ok(libraries)
     }
