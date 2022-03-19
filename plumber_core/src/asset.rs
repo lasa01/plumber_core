@@ -124,7 +124,7 @@ impl<H> Importer<H>
 where
     H: Handler,
 {
-    pub fn new(file_system: OpenFileSystem, asset_handler: H) -> Self {
+    pub fn new(file_system: OpenFileSystem, asset_handler: H, threads_suggestion: usize) -> Self {
         let file_system = Arc::new(file_system);
         let material_loader = MaterialLoader::new();
 
@@ -145,7 +145,9 @@ where
             );
         }
 
-        let pool = build_thread_pool();
+        // 1 thread is used by material loader
+        let pool_threads = threads_suggestion.saturating_sub(1).max(1);
+        let pool = build_thread_pool(pool_threads);
 
         Self {
             file_system,
@@ -273,10 +275,7 @@ where
     }
 }
 
-fn build_thread_pool() -> rayon::ThreadPool {
-    // this is 2 less than number of cpus since one thread is for material loading and one for asset callback
-    // rest of the cpus are used for parallel asset loading
-    let num_threads = num_cpus::get().saturating_sub(2).max(1);
+fn build_thread_pool(num_threads: usize) -> rayon::ThreadPool {
     ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .build()
@@ -302,7 +301,7 @@ mod tests {
         let parsed = Vmf::from_bytes(vmf).unwrap();
         let file_system = FileSystem::from_paths(root_path, game_info_path).unwrap();
 
-        let importer = Importer::new(file_system.open().unwrap(), DebugHandler);
+        let importer = Importer::new(file_system.open().unwrap(), DebugHandler, 2);
 
         parsed.load(importer, &VmfSettings::default(), || ());
     }

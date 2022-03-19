@@ -82,6 +82,7 @@ fn main() {
         AssetHandler {
             file: Arc::new(Mutex::new(output_file)),
         },
+        2,
     );
 
     importer
