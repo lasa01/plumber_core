@@ -165,7 +165,7 @@ pub trait BaseEntity {
     fn parse_vector3_parameter(
         &self,
         parameter: &'static str,
-    ) -> Result<Option<Vec3>, EntityParseError> {
+    ) -> Result<Option<[f32; 3]>, EntityParseError> {
         if let Some(value) = self.entity().properties.get(parameter.as_uncased()) {
             let (x, y, z) = value
                 .split_ascii_whitespace()
@@ -182,7 +182,7 @@ pub trait BaseEntity {
                     reason: "contains less than 3 values",
                 })?;
 
-            Ok(Some(Vec3::new(x?, y?, z?)))
+            Ok(Some([x?, y?, z?]))
         } else {
             Ok(None)
         }
@@ -195,17 +195,17 @@ pub trait PointEntity: BaseEntity {
     /// Returns `Err` if the parameter `origin` is missing or can't be parsed.
     fn origin(&self) -> Result<Vec3, EntityParseError> {
         self.parse_vector3_parameter("origin")
-            .map(Option::unwrap_or_default)
+            .map(|r| r.unwrap_or_default().into())
     }
 }
 
 pub trait AngledEntity: BaseEntity {
-    /// Returns the entity rotation in pitch, yaw, roll order (YZX).
+    /// Returns the entity rotation in pitch, yaw, roll order (YZX), in degrees.
     ///
     /// # Errors
     ///
     /// Returns `Err` if the parameter `angles` can't be parsed.
-    fn angles(&self) -> Result<Vec3, EntityParseError> {
+    fn angles(&self) -> Result<[f32; 3], EntityParseError> {
         self.parse_vector3_parameter("angles")
             .map(Option::unwrap_or_default)
     }
@@ -482,7 +482,7 @@ impl<'a> SpotLight<'a> {
             .and_then(|o| o.ok_or(EntityParseError::MissingParameter("_distance")))
     }
 
-    /// Returns the entity rotation in pitch, yaw, roll order (YZX).
+    /// Returns the entity rotation in pitch, yaw, roll order (YZX), in degrees.
     ///
     /// Spotlights have an extra parameter that overrides the pitch value in angles.
     /// You should use this method to take that into account.
@@ -490,10 +490,10 @@ impl<'a> SpotLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `angles` or `pitch` doesn't exist or can't be parsed.
-    pub fn angles(&self) -> Result<Vec3, EntityParseError> {
+    pub fn angles(&self) -> Result<[f32; 3], EntityParseError> {
         let mut original = AngledEntity::angles(self)?;
         if let Some(pitch) = self.parse_float_parameter("pitch")? {
-            original.x = -pitch;
+            original[0] = -pitch;
         }
         Ok(original)
     }
@@ -550,7 +550,7 @@ impl<'a> EnvLight<'a> {
             .map(Option::unwrap_or_default)
     }
 
-    /// Returns the entity rotation in pitch, yaw, roll order (YZX).
+    /// Returns the entity rotation in pitch, yaw, roll order (YZX), in degrees.
     ///
     /// Spotlights have an extra parameter that overrides the pitch value in angles.
     /// You should use this method to take that into account.
@@ -558,10 +558,10 @@ impl<'a> EnvLight<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `angles` or `pitch` doesn't exist or can't be parsed.
-    pub fn angles(&self) -> Result<Vec3, EntityParseError> {
+    pub fn angles(&self) -> Result<[f32; 3], EntityParseError> {
         let mut original = AngledEntity::angles(self)?;
         if let Some(pitch) = self.parse_float_parameter("pitch")? {
-            original.x = -pitch;
+            original[0] = -pitch;
         }
         Ok(original)
     }
@@ -607,7 +607,7 @@ impl<'a> SkyCamera<'a> {
         let blend = self.parse_float_parameter("fogblend")?.unwrap_or(0.0);
         let color = self.parse_color_parameter("fogcolor")?.unwrap_or_default();
         let color_2 = self.parse_color_parameter("fogcolor2")?.unwrap_or_default();
-        let direction = self.parse_vector3_parameter("fogdir")?;
+        let direction = self.parse_vector3_parameter("fogdir")?.map(Vec3::from);
         let start = self.parse_float_parameter("fogstart")?;
         let end = self.parse_float_parameter("fogend")?;
         let max_density = self.parse_float_parameter("fogmaxdensity")?;
@@ -794,29 +794,37 @@ impl<'a> Overlay<'a> {
 
         let basis_origin = self
             .parse_vector3_parameter("BasisOrigin")?
-            .ok_or(EntityParseError::MissingParameter("BasisOrigin"))?;
+            .ok_or(EntityParseError::MissingParameter("BasisOrigin"))?
+            .into();
         let basis_u = self
             .parse_vector3_parameter("BasisU")?
-            .ok_or(EntityParseError::MissingParameter("BasisU"))?;
+            .ok_or(EntityParseError::MissingParameter("BasisU"))?
+            .into();
         let basis_v = self
             .parse_vector3_parameter("BasisV")?
-            .ok_or(EntityParseError::MissingParameter("BasisV"))?;
+            .ok_or(EntityParseError::MissingParameter("BasisV"))?
+            .into();
         let basis_normal = self
             .parse_vector3_parameter("BasisNormal")?
-            .ok_or(EntityParseError::MissingParameter("BasisNormal"))?;
+            .ok_or(EntityParseError::MissingParameter("BasisNormal"))?
+            .into();
 
         let uv_0 = self
             .parse_vector3_parameter("uv0")?
-            .ok_or(EntityParseError::MissingParameter("uv0"))?;
+            .ok_or(EntityParseError::MissingParameter("uv0"))?
+            .into();
         let uv_1 = self
             .parse_vector3_parameter("uv1")?
-            .ok_or(EntityParseError::MissingParameter("uv1"))?;
+            .ok_or(EntityParseError::MissingParameter("uv1"))?
+            .into();
         let uv_2 = self
             .parse_vector3_parameter("uv2")?
-            .ok_or(EntityParseError::MissingParameter("uv2"))?;
+            .ok_or(EntityParseError::MissingParameter("uv2"))?
+            .into();
         let uv_3 = self
             .parse_vector3_parameter("uv3")?
-            .ok_or(EntityParseError::MissingParameter("uv3"))?;
+            .ok_or(EntityParseError::MissingParameter("uv3"))?
+            .into();
 
         Ok(OverlayUvInfo {
             start_u,

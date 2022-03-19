@@ -25,7 +25,8 @@ pub struct LoadedProp<'a> {
     pub model_path: GamePathBuf,
     pub model_info: ModelInfo,
     pub position: Vec3,
-    pub rotation: Vec3,
+    /// Rotation in in pitch, yaw, roll order (YZX), in degrees.
+    pub rotation: [f32; 3],
     pub scale: f32,
 }
 

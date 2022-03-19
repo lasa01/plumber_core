@@ -84,34 +84,24 @@ impl Settings {
         Self::default()
     }
 
-    #[must_use]
-    pub fn geometry(mut self, geometry: GeometrySetting) -> Self {
+    pub fn geometry(&mut self, geometry: GeometrySetting) {
         self.geometry = geometry;
-        self
     }
 
-    #[must_use]
-    pub fn import_materials(mut self, import_materials: bool) -> Self {
+    pub fn import_materials(&mut self, import_materials: bool) {
         self.import_materials = import_materials;
-        self
     }
 
-    #[must_use]
-    pub fn import_props(mut self, import_props: bool) -> Self {
+    pub fn import_props(&mut self, import_props: bool) {
         self.import_props = import_props;
-        self
     }
 
-    #[must_use]
-    pub fn import_entities(mut self, import_entities: bool) -> Self {
+    pub fn import_entities(&mut self, import_entities: bool) {
         self.import_entities = import_entities;
-        self
     }
 
-    #[must_use]
-    pub fn scale(mut self, scale: f32) -> Self {
+    pub fn scale(&mut self, scale: f32) {
         self.scale = scale;
-        self
     }
 }
 
