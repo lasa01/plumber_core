@@ -3,14 +3,14 @@ use std::sync::Arc;
 use crate::{
     fs::{OpenFileSystem, PathBuf},
     model::{
-        loader::{LoadedModel, Loader as ModelLoader, ModelInfo},
+        loader::{LoadedModel, Loader as ModelLoader, ModelInfo, Settings as MdlSettings},
         Error as ModelError,
     },
     vmf::{
         entities::{EntityParseError, TypedEntity},
         loader::{
-            BuiltBrushEntity, BuiltOverlay, LoadedProp, OverlayError, PropError, Settings,
-            SolidError,
+            BuiltBrushEntity, BuiltOverlay, LoadedProp, OverlayError, PropError,
+            Settings as VmfSettings, SolidError,
         },
         Vmf,
     },
@@ -181,14 +181,14 @@ where
     }
 
     /// Errors are handled in [Handler].
-    pub fn import_mdl(&self, path: PathBuf, import_materials: bool) {
+    pub fn import_mdl(&self, path: PathBuf, settings: MdlSettings, import_materials: bool) {
         let model_loader = self.model_loader.clone();
         let material_loader = self.material_loader.clone();
         let mut asset_handler = self.asset_handler.clone();
         let file_system = self.file_system.clone();
 
         self.pool.spawn(move || {
-            match model_loader.load_model(path.clone(), &file_system) {
+            match model_loader.load_model(path.clone(), &file_system, settings) {
                 Ok((_info, model)) => {
                     if let Some(model) = model {
                         if import_materials {
@@ -214,6 +214,7 @@ where
     pub fn import_mdl_blocking(
         mut self,
         path: PathBuf,
+        settings: MdlSettings,
         import_materials: bool,
         f: impl FnOnce(),
     ) -> Result<ModelInfo, ModelError> {
@@ -221,7 +222,10 @@ where
 
         self.pool.in_place_scope(|scope| {
             scope.spawn(|_| {
-                match self.model_loader.load_model(path, &self.file_system) {
+                match self
+                    .model_loader
+                    .load_model(path, &self.file_system, settings)
+                {
                     Ok((info, model)) => {
                         if let Some(model) = model {
                             if import_materials {
@@ -260,7 +264,7 @@ where
     pub fn import_vmf_blocking(
         self,
         bytes: &[u8],
-        settings: &Settings,
+        settings: &VmfSettings,
         f: impl FnOnce(),
     ) -> Result<(), vdf::Error> {
         let vmf = Vmf::from_bytes(bytes)?;
@@ -300,6 +304,6 @@ mod tests {
 
         let importer = Importer::new(file_system.open().unwrap(), DebugHandler);
 
-        parsed.load(importer, &Settings::default(), || ());
+        parsed.load(importer, &VmfSettings::default(), || ());
     }
 }

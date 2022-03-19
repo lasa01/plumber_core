@@ -2,7 +2,7 @@ use crate::{
     fs::{GamePathBuf, OpenFileSystem},
     model::{
         self,
-        loader::{LoadedModel, ModelInfo},
+        loader::{LoadedModel, ModelInfo, Settings},
     },
 };
 
@@ -43,13 +43,14 @@ impl<'a> Prop<'a> {
         let model = self.model()?;
         let model_path = GamePathBuf::from(model);
 
-        let (model_info, model) = match model_loader.load_model(model_path.clone(), file_system) {
-            Ok(r) => r,
-            Err(error) => {
-                let model = model.to_string();
-                return Err(PropError::Model { model, error });
-            }
-        };
+        let (model_info, model) =
+            match model_loader.load_model(model_path.clone(), file_system, Settings::default()) {
+                Ok(r) => r,
+                Err(error) => {
+                    let model = model.to_string();
+                    return Err(PropError::Model { model, error });
+                }
+            };
 
         let scale = self.scale()? * scale;
         let position = self.origin()? * scale;

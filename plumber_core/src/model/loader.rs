@@ -11,6 +11,25 @@ use super::{
 
 use crate::fs::{GamePathBuf, OpenFileSystem, PathBuf};
 
+#[derive(Debug, Clone, Copy)]
+pub struct Settings {
+    import_animations: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            import_animations: true,
+        }
+    }
+}
+
+impl Settings {
+    pub fn import_animations(&mut self, import_animations: bool) {
+        self.import_animations = import_animations;
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LoadedModel {
     pub name: GamePathBuf,
@@ -114,6 +133,7 @@ impl Loader {
         &self,
         model_path: impl Into<PathBuf>,
         file_system: &OpenFileSystem,
+        settings: Settings,
     ) -> Result<(ModelInfo, Option<LoadedModel>)> {
         let model_path = model_path.into();
         let mut guard = self
@@ -144,7 +164,7 @@ impl Loader {
         // release lock before importing model
         drop(guard);
 
-        let result = Self::load_model_inner(model_path.clone(), file_system);
+        let result = Self::load_model_inner(model_path.clone(), file_system, settings);
 
         let info_result = match &result {
             Ok(LoadedModel { info, .. }) => Ok(info.clone()),
@@ -160,7 +180,11 @@ impl Loader {
         result.map(|m| (m.info.clone(), Some(m)))
     }
 
-    fn load_model_inner(model_path: PathBuf, file_system: &OpenFileSystem) -> Result<LoadedModel> {
+    fn load_model_inner(
+        model_path: PathBuf,
+        file_system: &OpenFileSystem,
+        settings: Settings,
+    ) -> Result<LoadedModel> {
         let model = Model::read(&model_path, file_system)?;
         let verified = model.verify()?;
 
@@ -183,16 +207,20 @@ impl Loader {
 
         let bones = verified.bones()?.into_iter().map(LoadedBone::new).collect();
 
-        let animations = verified
-            .animations()?
-            .filter_map(|res| match res {
-                Ok(animation) => Some(LoadedAnimation::new(animation)),
-                Err(err) => {
-                    error!("model `{}`: animation loading failed: {}", model_path, err);
-                    None
-                }
-            })
-            .collect();
+        let animations = if settings.import_animations {
+            verified
+                .animations()?
+                .filter_map(|res| match res {
+                    Ok(animation) => Some(LoadedAnimation::new(animation)),
+                    Err(err) => {
+                        error!("model `{}`: animation loading failed: {}", model_path, err);
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let info = ModelInfo {
             static_prop: verified.is_static_prop(),
