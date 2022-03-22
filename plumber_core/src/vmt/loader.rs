@@ -7,12 +7,16 @@ use std::{
     time::Duration,
 };
 
-use image::RgbaImage;
+use half::f16;
+use image::{Rgba32FImage, RgbaImage};
+use itertools::Itertools;
 use thiserror::Error;
 use uncased::AsUncased;
 use vtflib::{BoundVtfFile, VtfFile, VtfGuard, VtfLib};
+use zerocopy::LayoutVerified;
 
 use crate::{
+    asset::{self, Handler},
     fs::{GamePath, GamePathBuf, OpenFileSystem, PathBuf},
     vmt::Vmt,
 };
@@ -43,6 +47,7 @@ const NODRAW_PARAMS: &[&str] = &[
     "%compileclip",
     "$no_draw",
 ];
+const CUBEMAP_SUFFIXES: [&str; 6] = ["lf", "rt", "up", "dn", "ft", "bk"];
 
 #[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
 pub enum MaterialLoadError {
@@ -123,9 +128,30 @@ enum MaterialStatus {
     Done(Result<MaterialInfo, MaterialLoadError>),
 }
 
+#[derive(Debug)]
+enum MaterialJob {
+    Normal(PathBuf),
+    SkyBox(PathBuf),
+}
+
+#[derive(Clone)]
+pub enum SkyBox {
+    Sdr([RgbaImage; 6]),
+    Hdr([Rgba32FImage; 6]),
+}
+
+impl Debug for SkyBox {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::Sdr(_) => f.debug_struct("Sdr").finish_non_exhaustive(),
+            Self::Hdr(_) => f.debug_struct("Hdr").finish_non_exhaustive(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Loader {
-    material_job_sender: crossbeam_channel::Sender<PathBuf>,
+    material_job_sender: crossbeam_channel::Sender<MaterialJob>,
     worker_state: Arc<WorkerState>,
 }
 
@@ -205,20 +231,17 @@ impl Loader {
         self.worker_state.wait_for_material(material_path)
     }
 
-    pub fn start_worker_thread<D>(
-        &self,
-        file_system: Arc<OpenFileSystem>,
-        build: impl FnMut(LoadedVmt) -> Result<D, MaterialLoadError> + Send + 'static,
-        mut handle: impl FnMut(Result<LoadedMaterial<D>, (PathBuf, MaterialLoadError)>) + Send + 'static,
-    ) where
-        D: Send + Sync + 'static,
-    {
+    pub fn load_skybox(&self, sky_path: PathBuf) {
+        self.material_job_sender
+            .send(MaterialJob::SkyBox(sky_path))
+            .expect("material job channel shouldn't be disconnected");
+    }
+
+    pub fn start_worker_thread(&self, file_system: Arc<OpenFileSystem>, handler: impl Handler) {
         let worker_state = self.worker_state.clone();
 
         thread::spawn(move || {
-            for result in worker_state.load_materials(&file_system, build) {
-                handle(result);
-            }
+            worker_state.work(&file_system, handler);
         });
     }
 }
@@ -231,7 +254,7 @@ impl Default for Loader {
 
 #[derive(Debug)]
 struct WorkerState {
-    material_job_receiver: crossbeam_channel::Receiver<PathBuf>,
+    material_job_receiver: crossbeam_channel::Receiver<MaterialJob>,
     material_cache: Mutex<HashMap<PathBuf, MaterialStatus>>,
     material_condvar: Condvar,
     texture_cache: Mutex<HashMap<GamePathBuf, Result<TextureInfo, TextureLoadError>>>,
@@ -239,7 +262,7 @@ struct WorkerState {
 
 impl WorkerState {
     #[must_use]
-    fn new(material_job_receiver: crossbeam_channel::Receiver<PathBuf>) -> Self {
+    fn new(material_job_receiver: crossbeam_channel::Receiver<MaterialJob>) -> Self {
         Self {
             material_job_receiver,
             material_cache: Mutex::new(HashMap::new()),
@@ -248,7 +271,7 @@ impl WorkerState {
         }
     }
 
-    fn send_material_job(&self, path: &PathBuf, sender: &crossbeam_channel::Sender<PathBuf>) {
+    fn send_material_job(&self, path: &PathBuf, sender: &crossbeam_channel::Sender<MaterialJob>) {
         let mut guard = self
             .material_cache
             .lock()
@@ -261,7 +284,7 @@ impl WorkerState {
 
         guard.insert(path.clone(), MaterialStatus::Loading);
         sender
-            .send(path.clone())
+            .send(MaterialJob::Normal(path.clone()))
             .expect("material job channel shouldn't be disconnected");
     }
 
@@ -290,24 +313,35 @@ impl WorkerState {
         }
     }
 
-    fn load_materials<'a, D>(
-        &'a self,
-        file_system: &'a OpenFileSystem,
-        mut build: impl FnMut(LoadedVmt) -> Result<D, MaterialLoadError> + 'a,
-    ) -> impl Iterator<Item = Result<LoadedMaterial<D>, (PathBuf, MaterialLoadError)>> + 'a
-    where
-        D: Send + Sync + 'static,
-    {
+    fn work<'a>(&'a self, file_system: &'a OpenFileSystem, mut handler: impl Handler) {
         let mut vtf_lib = VtfLib::initialize().expect("vtflib is already initialized");
-        let material_paths = self.material_job_receiver.iter();
 
-        material_paths.filter_map(move |material_path| {
-            match self.load_material(material_path, file_system, &mut vtf_lib, &mut build) {
-                Ok((_, Some(loaded))) => Some(Ok(loaded)),
-                Ok((_, None)) => None,
-                Err(err) => Some(Err(err)),
+        for job in &self.material_job_receiver {
+            match job {
+                MaterialJob::Normal(material_path) => {
+                    match self.load_material(material_path, file_system, &mut vtf_lib, |vmt| {
+                        handler.build_material(vmt)
+                    }) {
+                        Ok((_, Some(loaded))) => handler.handle_material(loaded),
+                        Ok((_, None)) => continue,
+                        Err((path, error)) => {
+                            handler.handle_error(asset::Error::Material { path, error });
+                        }
+                    }
+                }
+                MaterialJob::SkyBox(sky_path) => {
+                    match Self::load_skybox(&sky_path, file_system, &mut vtf_lib) {
+                        Ok(loaded) => handler.handle_skybox(loaded),
+                        Err(error) => {
+                            handler.handle_error(asset::Error::Material {
+                                path: sky_path,
+                                error,
+                            });
+                        }
+                    }
+                }
             }
-        })
+        }
     }
 
     #[allow(clippy::type_complexity)]
@@ -390,6 +424,111 @@ impl WorkerState {
         Ok(loaded_material)
     }
 
+    fn load_skybox(
+        sky_path: &PathBuf,
+        file_system: &OpenFileSystem,
+        vtf_lib: &mut (VtfLib, VtfGuard),
+    ) -> Result<SkyBox, MaterialLoadError> {
+        let skybox_shaders: Vec<_> = CUBEMAP_SUFFIXES
+            .iter()
+            .map(|suffix| {
+                let mut file_name = sky_path
+                    .file_name()
+                    .ok_or(MaterialLoadError::Custom("invalid sky filename"))?
+                    .to_owned();
+                file_name.push_str(suffix);
+
+                let mut path = sky_path.clone();
+                path.set_file_name(&file_name);
+                get_shader(&path, file_system)
+            })
+            .try_collect()?;
+
+        let parameters = &skybox_shaders[0].parameters;
+        let hdr = parameters.contains_key("$hdrbasetexture".as_uncased())
+            || parameters.contains_key("$hdrcompressedtexture".as_uncased());
+
+        let texture_paths: Vec<_> = skybox_shaders
+            .iter()
+            .map(|shader| {
+                let current_hdr;
+                let texture_path;
+
+                if let Some(value) = shader
+                    .parameters
+                    .get("$hdrbasetexture".as_uncased())
+                    .or_else(|| shader.parameters.get("$hdrcompressedtexture".as_uncased()))
+                {
+                    current_hdr = true;
+                    texture_path = value;
+                } else if let Some(value) = shader.parameters.get("$basetexture".as_uncased()) {
+                    current_hdr = false;
+                    texture_path = value;
+                } else {
+                    return Err(MaterialLoadError::Custom(
+                        "skybox material has no texture specified",
+                    ));
+                }
+
+                if current_hdr != hdr {
+                    return Err(MaterialLoadError::Custom(
+                        "skybox sides have inconsistent hdr/sdr format",
+                    ));
+                }
+
+                Ok(GamePathBuf::from(texture_path.clone()))
+            })
+            .try_collect()?;
+
+        if hdr {
+            let textures: Vec<_> = texture_paths
+                .into_iter()
+                .map(|path| {
+                    let (_, vtf) = open_texture(vtf_lib, &path, file_system)?;
+                    let (data, format, width, height) = vtf_data(&vtf)?;
+
+                    let f32_data = match format {
+                        vtflib::ImageFormat::Rgba32323232F => LayoutVerified::new_slice(data)
+                            .expect("vtflib should return properly aligned images")
+                            .into_slice()
+                            .to_vec(),
+                        vtflib::ImageFormat::Rgba16161616F => f16s_to_f32s(data),
+                        vtflib::ImageFormat::Bgra8888 => decompress_hdr(data),
+                        _ => {
+                            let data =
+                                VtfFile::convert_image_to_rgba8888(data, width, height, format)?;
+                            data.into_iter().map(|b| f32::from(b) / 255.0).collect()
+                        }
+                    };
+
+                    Ok(Rgba32FImage::from_raw(width, height, f32_data)
+                        .expect("vtflib should return valid images"))
+                })
+                .collect::<Result<_, TextureLoadError>>()?;
+
+            Ok(SkyBox::Hdr(
+                textures.try_into().expect("vec should have correct length"),
+            ))
+        } else {
+            let textures: Vec<_> = texture_paths
+                .into_iter()
+                .map(|path| {
+                    let (_, vtf) = open_texture(vtf_lib, &path, file_system)?;
+                    let (data, format, width, height) = vtf_data(&vtf)?;
+
+                    let data = VtfFile::convert_image_to_rgba8888(data, width, height, format)?;
+
+                    Ok(RgbaImage::from_raw(width, height, data)
+                        .expect("vtflib should return valid images"))
+                })
+                .collect::<Result<_, TextureLoadError>>()?;
+
+            Ok(SkyBox::Sdr(
+                textures.try_into().expect("vec should have correct length"),
+            ))
+        }
+    }
+
     fn load_texture(
         &self,
         texture_path: GamePathBuf,
@@ -411,6 +550,31 @@ impl WorkerState {
             .insert(texture_path, loaded_result.clone().map(|l| l.info));
         loaded_result.map(|l| (l.info.clone(), Some(l)))
     }
+}
+
+fn f16s_to_f32s(data: &[u8]) -> Vec<f32> {
+    let floats: &[f16] = LayoutVerified::new_slice(data)
+        .expect("vtflib should return properly aligned images")
+        .into_slice();
+    floats.iter().copied().map(f32::from).collect()
+}
+
+fn decompress_hdr(data: &[u8]) -> Vec<f32> {
+    data.iter()
+        .copied()
+        .tuples()
+        .flat_map(|(b, g, r, a)| {
+            let a = f32::from(a);
+
+            let r = f32::from(r) * a * 16.0 / 262_144.0;
+            let g = f32::from(g) * a * 16.0 / 262_144.0;
+            let b = f32::from(b) * a * 16.0 / 262_144.0;
+
+            let a = 1.0;
+
+            [r, g, b, a]
+        })
+        .collect()
 }
 
 fn get_shader(
@@ -561,23 +725,12 @@ impl LoadedTexture {
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<Self, TextureLoadError> {
-        let (vtf_lib, guard) = vtf_lib;
-        let texture_path = GamePath::try_from_str("materials")
-            .unwrap()
-            .join(texture_path);
-        let vtf_bytes = file_system
-            .read(&texture_path.with_extension("vtf"))
-            .map_err(|err| TextureLoadError::from_io(&err, &texture_path))?;
-        let mut vtf = vtf_lib.new_vtf_file().bind(guard);
-        vtf.load(&vtf_bytes)?;
+        let (texture_path, vtf) = open_texture(vtf_lib, texture_path, file_system)?;
         Self::load_vtf(texture_path, &vtf)
     }
 
     fn load_vtf(name: GamePathBuf, vtf: &BoundVtfFile) -> Result<Self, TextureLoadError> {
-        let source = vtf.data(0, 0, 0, 0).ok_or(vtflib::Error::ImageNotLoaded)?;
-        let format = vtf.format().ok_or(vtflib::Error::InvalidFormat)?;
-        let width = vtf.width();
-        let height = vtf.height();
+        let (source, format, width, height) = vtf_data(vtf)?;
         let data = VtfFile::convert_image_to_rgba8888(source, width, height, format)?;
         Ok(Self {
             name,
@@ -596,4 +749,32 @@ impl LoadedTexture {
     pub fn data(&self) -> &RgbaImage {
         &self.data
     }
+}
+
+fn open_texture<'a>(
+    vtf_lib: &'a mut (VtfLib, VtfGuard),
+    texture_path: &GamePath,
+    file_system: &OpenFileSystem,
+) -> Result<(GamePathBuf, BoundVtfFile<'a, 'a>), TextureLoadError> {
+    let (vtf_lib, guard) = vtf_lib;
+    let texture_path = GamePath::try_from_str("materials")
+        .unwrap()
+        .join(texture_path);
+    let vtf_bytes = file_system
+        .read(&texture_path.with_extension("vtf"))
+        .map_err(|err| TextureLoadError::from_io(&err, &texture_path))?;
+    let mut vtf = vtf_lib.new_vtf_file().bind(guard);
+    vtf.load(&vtf_bytes)?;
+    Ok((texture_path, vtf))
+}
+
+fn vtf_data<'a>(
+    vtf: &'a BoundVtfFile,
+) -> Result<(&'a [u8], vtflib::ImageFormat, u32, u32), TextureLoadError> {
+    let data = vtf.data(0, 0, 0, 0).ok_or(vtflib::Error::ImageNotLoaded)?;
+    let format = vtf.format().ok_or(vtflib::Error::InvalidFormat)?;
+    let width = vtf.width();
+    let height = vtf.height();
+
+    Ok((data, format, width, height))
 }

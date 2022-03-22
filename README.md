@@ -15,7 +15,7 @@ VMF brushes to geometry   | Ready                  | [plumber_core/src/vmf/solid
 VMF overlays to geometry  | Ready                  | [plumber_core/src/vmf/overlay_builder.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/overlay_builder.rs)
 VMF decals to geometry    | Not started            |
 VMF entity handling       | Ready                  | [plumber_core/src/vmf/entities.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/entities.rs)
-VMF skybox reading        | Not started            |
+VMF skybox reading        | Ready                  |
 VMT (material) reading    | Ready                  | [plumber_core/src/vmt/mod.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmt/mod.rs)
 VTF (texture) reading     | Ready                  | [plumber_core/src/vmt/loader.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmt/loader.rs)
 MDL (model) mesh reading  | Ready                  | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)

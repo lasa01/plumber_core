@@ -17,6 +17,6 @@ byteorder = { version = "1.4.3" }
 crc = { version = "1.8.1" }
 md5 = { version = "0.7.0" }
 thiserror = "1.0.24"
-zerocopy = { version = "0.5.0"}
+zerocopy = { version = "0.6.1"}
 encoding = { version = "0.2.33"}
 serde = { version = "= 1.0.125", optional = true }

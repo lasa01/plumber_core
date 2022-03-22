@@ -109,6 +109,32 @@ impl PathBuf {
             PathBuf::Os(p) => PathBuf::Os(p.with_extension(extension.as_ref())),
         }
     }
+
+    #[must_use]
+    pub fn join(&self, other: impl AsRef<GamePath>) -> PathBuf {
+        let other = other.as_ref();
+        match self {
+            PathBuf::Game(p) => PathBuf::Game(p.join(other)),
+            PathBuf::Os(p) => PathBuf::Os(p.join(other.as_str())),
+        }
+    }
+
+    #[must_use]
+    pub fn file_name(&self) -> Option<&str> {
+        match self {
+            PathBuf::Game(p) => p.file_name(),
+            PathBuf::Os(p) => p.file_name().and_then(OsStr::to_str),
+        }
+    }
+
+    pub fn set_file_name(&mut self, file_name: impl AsRef<str>) {
+        let file_name = file_name.as_ref();
+
+        match self {
+            PathBuf::Game(p) => p.set_file_name(file_name),
+            PathBuf::Os(p) => p.set_file_name(file_name),
+        }
+    }
 }
 
 impl From<GamePathBuf> for PathBuf {

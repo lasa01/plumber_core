@@ -57,12 +57,14 @@ impl GeometrySetting {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy)]
 pub struct Settings {
     geometry: GeometrySetting,
     import_materials: bool,
     import_props: bool,
     import_entities: bool,
+    import_skybox: bool,
     scale: f32,
 }
 
@@ -73,6 +75,7 @@ impl Default for Settings {
             import_materials: true,
             import_props: true,
             import_entities: true,
+            import_skybox: true,
             scale: 0.01,
         }
     }
@@ -100,6 +103,10 @@ impl Settings {
         self.import_entities = import_entities;
     }
 
+    pub fn import_skybox(&mut self, import_skybox: bool) {
+        self.import_skybox = import_skybox;
+    }
+
     pub fn scale(&mut self, scale: f32) {
         self.scale = scale;
     }
@@ -114,6 +121,10 @@ impl Vmf {
     ) {
         let side_faces_map = Arc::new(Mutex::new(BTreeMap::new()));
         self.send_material_jobs(&importer.material_loader, settings.import_materials);
+
+        if settings.import_skybox {
+            self.send_skybox_job(&importer.material_loader);
+        }
 
         importer.pool.in_place_scope(|s| {
             s.spawn(|_| {
@@ -333,5 +344,12 @@ impl Vmf {
                         .map_err(|(overlay, e)| (overlay.entity().id, e))
                 },
             )
+    }
+
+    fn send_skybox_job(&self, material_loader: &MaterialLoader) {
+        let mut sky_path = GamePathBuf::from("materials/skybox");
+        sky_path.push(&self.world.sky_name);
+
+        material_loader.load_skybox(PathBuf::Game(sky_path));
     }
 }

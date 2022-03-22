@@ -3,7 +3,8 @@ use std::{
     io::Write,
     path::Path,
     sync::{Arc, Mutex},
-    time::Instant,
+    thread,
+    time::{Duration, Instant},
 };
 
 use plumber_core::{
@@ -36,6 +37,10 @@ impl Handler for AssetHandler {
         material: plumber_core::vmt::loader::LoadedMaterial<Self::MaterialData>,
     ) {
         writeln!(self.file.lock().unwrap(), "{:?}", &material).unwrap();
+    }
+
+    fn handle_skybox(&mut self, skybox: plumber_core::vmt::loader::SkyBox) {
+        writeln!(self.file.lock().unwrap(), "{:?}", &skybox).unwrap();
     }
 
     fn handle_model(&mut self, model: plumber_core::model::loader::LoadedModel) {
@@ -89,6 +94,6 @@ fn main() {
         .import_vmf_blocking(&vmf_bytes, &Settings::default(), || ())
         .unwrap();
 
-    let elapsed = start.elapsed();
-    eprintln!("Elapsed: {} s", elapsed.as_secs());
+    // make sure the process doesn't exist before the import is complete
+    thread::sleep(Duration::from_secs(3));
 }

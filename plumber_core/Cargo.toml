@@ -25,17 +25,18 @@ serde_derive = "= 1.0.125"
 thiserror = "1.0.24"
 uncased = { version = "0.9.6", features = ["with-serde-alloc"] }
 vtflib = { version = "0.2.1", features = ["static"] }
-image = { version = "0.23.14", default-features = false }
+image = { version = "0.24.1", default-features = false }
 nom = "7.1.0"
 rayon = "1.5.1"
 crossbeam-channel = "0.5.1"
 crossbeam-utils = "0.8.5"
-zerocopy = { version = "0.5.0" }
+zerocopy = { version = "0.6.1" }
 byteorder = { version = "1.4.3" }
 maligned = { version = "0.2.1" }
 bitflags = { version = "1.2.1" }
 glam = { version = "0.20.2", features = ["approx"] }
 log = "0.4.14"
+half = { version = "1.8.2", features = ["zerocopy"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = { version = "0.8" }

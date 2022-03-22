@@ -16,6 +16,7 @@ use crate::{
     },
     vmt::loader::{
         LoadedMaterial, LoadedVmt, Loader as MaterialLoader, MaterialInfo, MaterialLoadError,
+        SkyBox,
     },
 };
 
@@ -62,6 +63,8 @@ pub trait Handler: Clone + Send + Sync + 'static {
 
     fn handle_material(&mut self, material: LoadedMaterial<Self::MaterialData>);
 
+    fn handle_skybox(&mut self, skybox: SkyBox);
+
     fn handle_model(&mut self, model: LoadedModel);
     fn handle_entity(&mut self, entity: TypedEntity);
     fn handle_brush(&mut self, brush: BuiltBrushEntity);
@@ -85,6 +88,10 @@ impl Handler for DebugHandler {
 
     fn handle_material(&mut self, material: LoadedMaterial<Self::MaterialData>) {
         eprintln!("handle_material(): {:?}", material);
+    }
+
+    fn handle_skybox(&mut self, skybox: SkyBox) {
+        eprintln!("handle_skybox(): {:?}", skybox);
     }
 
     fn handle_model(&mut self, model: LoadedModel) {
@@ -130,19 +137,9 @@ where
 
         {
             let file_system = file_system.clone();
-            let mut asset_handler = asset_handler.clone();
-            let mut asset_handler_2 = asset_handler.clone();
+            let asset_handler = asset_handler.clone();
 
-            material_loader.start_worker_thread(
-                file_system,
-                move |vmt| asset_handler.build_material(vmt),
-                move |result| match result {
-                    Ok(mat) => asset_handler_2.handle_material(mat),
-                    Err((path, error)) => {
-                        asset_handler_2.handle_error(Error::Material { path, error });
-                    }
-                },
-            );
+            material_loader.start_worker_thread(file_system, asset_handler);
         }
 
         // 1 thread is used by material loader
