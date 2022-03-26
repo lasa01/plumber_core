@@ -20,7 +20,9 @@ VMT (material) reading    | Ready                  | [plumber_core/src/vmt/mod.r
 VTF (texture) reading     | Ready                  | [plumber_core/src/vmt/loader.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmt/loader.rs)
 MDL (model) mesh reading  | Ready                  | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
 MDL skeleton reading      | Ready                  | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
-MDL animation reading     | In progress            | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
+MDL animation reading     | Ready                  | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
+MDL external ANI animation| Not started            |
+MDL animation movements   | Not started            |
 MDL skins                 | Not started            |
 MDL secondary UV map      | Not started            |
 MDL flex animation        | Not started            |
