@@ -1319,44 +1319,62 @@ fn merge_animation_sections<'a>(
                 use AnimationPositionData as P;
                 use AnimationRotationData as R;
 
-                match (rotation, bone_data.rotation) {
+                match (&mut *rotation, bone_data.rotation) {
                     (R::None, R::None) => {}
                     (R::Constant(prev), R::Constant(next)) => {
                         if *prev != next {
-                            return Err(unsupported_sections());
+                            *rotation = R::Animated(merge_constant_constant(
+                                *prev,
+                                accumulated_frames,
+                                next,
+                                frames,
+                            ));
                         }
+                    }
+                    (R::Constant(prev), R::Animated(next)) => {
+                        *rotation = R::Animated(merge_constant_animated(
+                            *prev,
+                            accumulated_frames,
+                            &next,
+                            frames,
+                        ));
                     }
                     (R::Animated(prev), R::Animated(next)) => {
                         prev.extend_from_slice(next.get(0..frames).unwrap_or(&next));
                     }
                     (R::Animated(prev), R::Constant(next)) => {
-                        prev.reserve(frames);
-
-                        for _ in 0..frames {
-                            prev.push(next);
-                        }
+                        merge_animated_constant(prev, next, frames);
                     }
                     (_, _) => {
                         return Err(unsupported_sections());
                     }
                 }
 
-                match (position, bone_data.position) {
+                match (&mut *position, bone_data.position) {
                     (P::None, P::None) => {}
                     (P::Constant(prev), P::Constant(next)) => {
                         if *prev != next {
-                            return Err(unsupported_sections());
+                            *position = P::Animated(merge_constant_constant(
+                                *prev,
+                                accumulated_frames,
+                                next,
+                                frames,
+                            ));
                         }
+                    }
+                    (P::Constant(prev), P::Animated(next)) => {
+                        *position = P::Animated(merge_constant_animated(
+                            *prev,
+                            accumulated_frames,
+                            &next,
+                            frames,
+                        ));
                     }
                     (P::Animated(prev), P::Animated(next)) => {
                         prev.extend_from_slice(next.get(0..frames).unwrap_or(&next));
                     }
                     (P::Animated(prev), P::Constant(next)) => {
-                        prev.reserve(frames);
-
-                        for _ in 0..frames {
-                            prev.push(next);
-                        }
+                        merge_animated_constant(prev, next, frames);
                     }
                     (_, _) => {
                         return Err(unsupported_sections());
@@ -1377,6 +1395,40 @@ fn unsupported_sections() -> Error {
     Error::Unsupported {
         ty: FileType::Mdl,
         feature: "animation sections inconsistent format",
+    }
+}
+
+fn merge_constant_constant<T: Copy>(prev: T, prev_n: usize, next: T, next_n: usize) -> Vec<T> {
+    let mut data = Vec::with_capacity(prev_n + next_n);
+
+    for _ in 0..prev_n {
+        data.push(prev);
+    }
+
+    for _ in 0..next_n {
+        data.push(next);
+    }
+
+    data
+}
+
+fn merge_constant_animated<T: Copy>(prev: T, prev_n: usize, next: &[T], next_n: usize) -> Vec<T> {
+    let mut data = Vec::with_capacity(prev_n + next_n);
+
+    for _ in 0..prev_n {
+        data.push(prev);
+    }
+
+    data.extend_from_slice(next.get(0..next_n).unwrap_or(next));
+
+    data
+}
+
+fn merge_animated_constant<T: Copy>(prev: &mut Vec<T>, next: T, next_n: usize) {
+    prev.reserve(next_n);
+
+    for _ in 0..next_n {
+        prev.push(next);
     }
 }
 
