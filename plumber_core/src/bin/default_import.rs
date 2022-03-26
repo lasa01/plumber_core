@@ -4,7 +4,7 @@ use std::{
     path::Path,
     sync::{Arc, Mutex},
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use plumber_core::{
@@ -65,8 +65,6 @@ impl Handler for AssetHandler {
 }
 
 fn main() {
-    let start = Instant::now();
-
     let vmf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("vmf")
