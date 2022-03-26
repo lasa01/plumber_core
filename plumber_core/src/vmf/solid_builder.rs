@@ -879,7 +879,12 @@ pub struct MergedSolids {
 }
 
 impl MergedSolids {
-    fn merge(mut solids: Vec<SolidBuilder>, epsilon: f32, optimize: bool, scale: f32) -> Self {
+    fn merge(
+        mut solids: Vec<SolidBuilder>,
+        epsilon: f32,
+        optimize: bool,
+        scale: f32,
+    ) -> Option<Self> {
         let merge_solids: Vec<SolidBuilder>;
 
         if optimize {
@@ -911,6 +916,10 @@ impl MergedSolids {
             merge_solids = clipped_solids;
         } else {
             merge_solids = solids;
+        }
+
+        if merge_solids.is_empty() {
+            return None;
         }
 
         // merge solids
@@ -1000,12 +1009,12 @@ impl MergedSolids {
             }
         }
 
-        Self {
+        Some(Self {
             vertices,
             faces,
             materials,
             scale,
-        }
+        })
     }
 }
 
@@ -1044,12 +1053,12 @@ impl<'a> BuiltBrushEntity<'a> {
             Ok(BuiltBrushEntity {
                 id,
                 class_name,
-                merged_solids: Some(MergedSolids::merge(
+                merged_solids: MergedSolids::merge(
                     mergable_solids,
                     settings.epsilon,
                     settings.merge_solids.optimize(),
                     scale,
-                )),
+                ),
                 solids: Vec::new(),
             })
         } else {
