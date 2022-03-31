@@ -134,13 +134,19 @@ enum MaterialJob {
     SkyBox(PathBuf),
 }
 
+#[derive(Clone, Debug)]
+pub struct SkyBox {
+    pub name: GamePathBuf,
+    pub data: SkyBoxData,
+}
+
 #[derive(Clone)]
-pub enum SkyBox {
+pub enum SkyBoxData {
     Sdr([RgbaImage; 6]),
     Hdr([Rgba32FImage; 6]),
 }
 
-impl Debug for SkyBox {
+impl Debug for SkyBoxData {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             Self::Sdr(_) => f.debug_struct("Sdr").finish_non_exhaustive(),
@@ -480,7 +486,7 @@ impl WorkerState {
             })
             .try_collect()?;
 
-        if hdr {
+        let data = if hdr {
             let textures: Vec<_> = texture_paths
                 .into_iter()
                 .map(|path| {
@@ -506,9 +512,7 @@ impl WorkerState {
                 })
                 .collect::<Result<_, TextureLoadError>>()?;
 
-            Ok(SkyBox::Hdr(
-                textures.try_into().expect("vec should have correct length"),
-            ))
+            SkyBoxData::Hdr(textures.try_into().expect("vec should have correct length"))
         } else {
             let textures: Vec<_> = texture_paths
                 .into_iter()
@@ -523,10 +527,21 @@ impl WorkerState {
                 })
                 .collect::<Result<_, TextureLoadError>>()?;
 
-            Ok(SkyBox::Sdr(
-                textures.try_into().expect("vec should have correct length"),
-            ))
-        }
+            SkyBoxData::Sdr(textures.try_into().expect("vec should have correct length"))
+        };
+
+        Ok(SkyBox {
+            name: match sky_path {
+                PathBuf::Game(path) => path.clone(),
+                PathBuf::Os(path) => path
+                    .file_name()
+                    .expect("file is already read, file_name should exist")
+                    .to_string_lossy()
+                    .into_owned()
+                    .into(),
+            },
+            data,
+        })
     }
 
     fn load_texture(
