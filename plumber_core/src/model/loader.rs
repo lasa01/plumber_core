@@ -84,6 +84,7 @@ impl LoadedBone {
 pub struct LoadedAnimation {
     pub name: String,
     pub flags: AnimationDescFlags,
+    pub fps: f32,
     pub data: Option<BTreeMap<usize, BoneAnimationData>>,
 }
 
@@ -92,6 +93,7 @@ impl LoadedAnimation {
         Self {
             name: animation.name.to_owned(),
             flags: animation.flags,
+            fps: animation.fps,
             data: animation.data,
         }
     }

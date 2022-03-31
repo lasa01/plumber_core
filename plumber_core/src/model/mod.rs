@@ -314,6 +314,7 @@ impl<'a> Verified<'a> {
             .map(|animation_desc| {
                 let flags = animation_desc.flags();
                 let name = animation_desc.name()?;
+                let fps = animation_desc.animation_desc.fps;
 
                 if animation_desc.iter_movements()?.count() > 0 {
                     return Err(Error::Unsupported {
@@ -324,7 +325,12 @@ impl<'a> Verified<'a> {
 
                 let data = animation_desc.data()?;
 
-                Ok(Animation { name, flags, data })
+                Ok(Animation {
+                    name,
+                    flags,
+                    fps,
+                    data,
+                })
             }))
     }
 }
@@ -380,6 +386,7 @@ pub struct Bone<'a> {
 pub struct Animation<'a> {
     pub name: &'a str,
     pub flags: AnimationDescFlags,
+    pub fps: f32,
     pub data: Option<BTreeMap<usize, BoneAnimationData>>,
 }
 

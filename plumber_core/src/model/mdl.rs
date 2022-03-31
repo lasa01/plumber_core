@@ -225,10 +225,10 @@ struct HitBox {
 
 #[derive(Debug, PartialEq, FromBytes)]
 #[repr(C)]
-struct AnimationDesc {
+pub struct AnimationDesc {
     base_header_offset: i32,
     name_offset: i32,
-    fps: f32,
+    pub fps: f32,
     flags: i32,
     frame_count: i32,
     movement_count: i32,
@@ -1068,7 +1068,7 @@ bitflags! {
 
 #[derive(Debug, Clone, Copy)]
 pub struct AnimationDescRef<'a> {
-    animation_desc: &'a AnimationDesc,
+    pub animation_desc: &'a AnimationDesc,
     offset: usize,
     bones: &'a [Bone],
     bytes: &'a [u8],
