@@ -1124,9 +1124,15 @@ impl<'a> AnimationDescRef<'a> {
                 frame_animation,
                 self.animation_desc.frame_count as usize,
             )
-            .map(Some)
+            .map(|mut data| {
+                make_animation_quats_compatible(&mut data);
+                Some(data)
+            })
         } else if let Some(section) = self.animation_section()? {
-            section.data(frame_animation).map(Some)
+            section.data(frame_animation).map(|mut data| {
+                make_animation_quats_compatible(&mut data);
+                Some(data)
+            })
         } else {
             Ok(None)
         }
@@ -1287,6 +1293,28 @@ impl<'a> AnimationSectionRef<'a> {
             finished: false,
             bytes: self.bytes,
         }
+    }
+}
+
+fn make_animation_quats_compatible(animation_data: &mut BTreeMap<usize, BoneAnimationData>) {
+    for data in animation_data.values_mut() {
+        if let AnimationRotationData::Animated(values) = &mut data.rotation {
+            let mut previous = None;
+
+            for value in values {
+                if let Some(previous) = previous {
+                    make_quat_compatible(value, previous);
+                } else {
+                    previous = Some(*value);
+                }
+            }
+        }
+    }
+}
+
+fn make_quat_compatible(quat: &mut Quat, previous: Quat) {
+    if previous.dot(*quat) < 0.0 {
+        *quat = -*quat;
     }
 }
 
