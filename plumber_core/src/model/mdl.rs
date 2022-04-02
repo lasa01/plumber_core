@@ -1304,9 +1304,8 @@ fn make_animation_quats_compatible(animation_data: &mut BTreeMap<usize, BoneAnim
             for value in values {
                 if let Some(previous) = previous {
                     make_quat_compatible(value, previous);
-                } else {
-                    previous = Some(*value);
                 }
+                previous = Some(*value);
             }
         }
     }
