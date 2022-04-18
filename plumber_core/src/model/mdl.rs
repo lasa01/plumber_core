@@ -1121,6 +1121,7 @@ impl<'a> AnimationDescRef<'a> {
         if let Some(sections) = self.iter_animation_sections()? {
             merge_animation_sections(
                 sections,
+                self.bones,
                 frame_animation,
                 self.animation_desc.frame_count as usize,
             )
@@ -1250,7 +1251,7 @@ impl<'a> AnimationSectionRef<'a> {
                 .filter(|(_, d)| {
                     !matches!(
                         (&d.position, &d.rotation),
-                        (AnimationPositionData::None, AnimationRotationData::None)
+                        (AnimationData::None, AnimationData::None)
                     )
                 })
                 .collect())
@@ -1298,7 +1299,7 @@ impl<'a> AnimationSectionRef<'a> {
 
 fn make_animation_quats_compatible(animation_data: &mut BTreeMap<usize, BoneAnimationData>) {
     for data in animation_data.values_mut() {
-        if let AnimationRotationData::Animated(values) = &mut data.rotation {
+        if let AnimationData::Animated(values) = &mut data.rotation {
             let mut previous = None;
 
             for value in values {
@@ -1319,10 +1320,11 @@ fn make_quat_compatible(quat: &mut Quat, previous: Quat) {
 
 fn merge_animation_sections<'a>(
     sections: impl Iterator<Item = AnimationSectionRef<'a>>,
+    bones: &[Bone],
     frame_animation: bool,
     total_frames: usize,
 ) -> Result<BTreeMap<usize, BoneAnimationData>> {
-    let mut data = BTreeMap::new();
+    let mut acc_data = BTreeMap::new();
     let mut first_section = true;
     let mut accumulated_frames = 0;
 
@@ -1332,96 +1334,106 @@ fn merge_animation_sections<'a>(
         }
 
         let section_data = section.data(frame_animation)?;
-        let frames = section.frame_count.min(total_frames - accumulated_frames);
+        let current_frames = section.frame_count.min(total_frames - accumulated_frames);
 
         if first_section {
-            data = section_data;
+            acc_data = section_data;
             first_section = false;
-            accumulated_frames += frames;
+            accumulated_frames += current_frames;
             continue;
         }
 
         for (bone_index, bone_data) in section_data {
-            if let Some(BoneAnimationData { rotation, position }) = data.get_mut(&bone_index) {
-                use AnimationPositionData as P;
-                use AnimationRotationData as R;
+            let bone_acc = acc_data.entry(bone_index).or_default();
 
-                match (&mut *rotation, bone_data.rotation) {
-                    (R::None, R::None) => {}
-                    (R::Constant(prev), R::Constant(next)) => {
-                        if *prev != next {
-                            *rotation = R::Animated(merge_constant_constant(
-                                *prev,
-                                accumulated_frames,
-                                next,
-                                frames,
-                            ));
-                        }
-                    }
-                    (R::Constant(prev), R::Animated(next)) => {
-                        *rotation = R::Animated(merge_constant_animated(
-                            *prev,
-                            accumulated_frames,
-                            &next,
-                            frames,
-                        ));
-                    }
-                    (R::Animated(prev), R::Animated(next)) => {
-                        prev.extend_from_slice(next.get(0..frames).unwrap_or(&next));
-                    }
-                    (R::Animated(prev), R::Constant(next)) => {
-                        merge_animated_constant(prev, next, frames);
-                    }
-                    (_, _) => {
-                        return Err(unsupported_sections());
-                    }
-                }
+            let bone_rotation = euler_to_quat(bones[bone_index].rotation.into());
+            let bone_position = bones[bone_index].position.into();
 
-                match (&mut *position, bone_data.position) {
-                    (P::None, P::None) => {}
-                    (P::Constant(prev), P::Constant(next)) => {
-                        if *prev != next {
-                            *position = P::Animated(merge_constant_constant(
-                                *prev,
-                                accumulated_frames,
-                                next,
-                                frames,
-                            ));
-                        }
-                    }
-                    (P::Constant(prev), P::Animated(next)) => {
-                        *position = P::Animated(merge_constant_animated(
-                            *prev,
-                            accumulated_frames,
-                            &next,
-                            frames,
-                        ));
-                    }
-                    (P::Animated(prev), P::Animated(next)) => {
-                        prev.extend_from_slice(next.get(0..frames).unwrap_or(&next));
-                    }
-                    (P::Animated(prev), P::Constant(next)) => {
-                        merge_animated_constant(prev, next, frames);
-                    }
-                    (_, _) => {
-                        return Err(unsupported_sections());
-                    }
-                }
-            } else {
-                return Err(unsupported_sections());
-            }
+            accumulate_animation(
+                &mut bone_acc.rotation,
+                bone_data.rotation,
+                bone_rotation,
+                accumulated_frames,
+                current_frames,
+            );
+
+            accumulate_animation(
+                &mut bone_acc.position,
+                bone_data.position,
+                bone_position,
+                accumulated_frames,
+                current_frames,
+            );
         }
 
-        accumulated_frames += frames;
+        accumulated_frames += current_frames;
     }
 
-    Ok(data)
+    Ok(acc_data)
 }
 
-fn unsupported_sections() -> Error {
-    Error::Unsupported {
-        ty: FileType::Mdl,
-        feature: "animation sections inconsistent format",
+fn accumulate_animation<T: Copy + PartialEq>(
+    acc: &mut AnimationData<T>,
+    next: AnimationData<T>,
+    bone_data: T,
+    accumulated_frames: usize,
+    next_frames: usize,
+) {
+    use AnimationData::{Animated, Constant, None};
+
+    match (&mut *acc, next) {
+        (None, None) => {}
+        (None, Constant(next)) => {
+            *acc = Animated(merge_constant_constant(
+                bone_data,
+                accumulated_frames,
+                next,
+                next_frames,
+            ));
+        }
+        (None, Animated(next)) => {
+            *acc = Animated(merge_constant_animated(
+                bone_data,
+                accumulated_frames,
+                &next,
+                next_frames,
+            ));
+        }
+        (Constant(prev), None) => {
+            *acc = Animated(merge_constant_constant(
+                *prev,
+                accumulated_frames,
+                bone_data,
+                next_frames,
+            ));
+        }
+        (Constant(prev), Constant(next)) => {
+            if *prev != next {
+                *acc = Animated(merge_constant_constant(
+                    *prev,
+                    accumulated_frames,
+                    next,
+                    next_frames,
+                ));
+            }
+        }
+        (Constant(prev), Animated(next)) => {
+            *acc = Animated(merge_constant_animated(
+                *prev,
+                accumulated_frames,
+                &next,
+                next_frames,
+            ));
+        }
+        (Animated(prev), None) => {
+            merge_animated_constant(prev, bone_data, next_frames);
+        }
+        (Animated(prev), Animated(next)) => {
+            prev.extend_from_slice(next.get(0..next_frames).unwrap_or(&next));
+        }
+        (Animated(prev), Constant(next)) => {
+            merge_animated_constant(prev, next, next_frames);
+        }
     }
 }
 
@@ -1621,37 +1633,19 @@ pub fn vec3_from_u16s(u16s: [u16; 3]) -> Vec3 {
 #[cfg(test)]
 use serde::Deserialize;
 
-/// Rotation animation data of a bone.
+// Generic animation data of a bone.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(Deserialize))]
-pub enum AnimationRotationData {
-    /// The rotation of the bone stays constant during the animation.
-    Constant(Quat),
-    /// The rotation of the bone is animated. Contains one rotation quaternion for each frame.
-    Animated(Vec<Quat>),
-    /// The animation has no data of the rotation of the bone.
+pub enum AnimationData<T> {
+    /// The data of the bone stays constant during the animation.
+    Constant(T),
+    /// The data of the bone is animated. Contains one value for each frame.
+    Animated(Vec<T>),
+    /// The animation has no data for the bone.
     None,
 }
 
-impl Default for AnimationRotationData {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-/// Position animation data of a bone.
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(test, derive(Deserialize))]
-pub enum AnimationPositionData {
-    /// The position of the bone stays constant during the animation.
-    Constant(Vec3),
-    /// The position of the bone is animated. Contains one position for each frame.
-    Animated(Vec<Vec3>),
-    /// The animation has no data of the position of the bone.
-    None,
-}
-
-impl Default for AnimationPositionData {
+impl<T> Default for AnimationData<T> {
     fn default() -> Self {
         Self::None
     }
@@ -1661,8 +1655,8 @@ impl Default for AnimationPositionData {
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(test, derive(Deserialize))]
 pub struct BoneAnimationData {
-    pub rotation: AnimationRotationData,
-    pub position: AnimationPositionData,
+    pub rotation: AnimationData<Quat>,
+    pub position: AnimationData<Vec3>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1716,7 +1710,7 @@ impl<'a> FrameAnimationRef<'a> {
                     .ok_or_else(|| corrupted("frame animation bone constants out of bounds"))?
                     .try_into()
                     .expect("slice must have correct length");
-                data.rotation = AnimationRotationData::Constant(quat_from_bytes_48(value_bytes));
+                data.rotation = AnimationData::Constant(quat_from_bytes_48(value_bytes));
 
                 bytes = &bytes[6..];
             }
@@ -1726,7 +1720,7 @@ impl<'a> FrameAnimationRef<'a> {
                     corrupted("frame animation bone constants out of bounds or misaligned")
                 })?;
 
-                data.rotation = AnimationRotationData::Constant(quat_from_u16s(
+                data.rotation = AnimationData::Constant(quat_from_u16s(
                     u16s.try_into().expect("slice must have correct length"),
                 ));
             }
@@ -1736,7 +1730,7 @@ impl<'a> FrameAnimationRef<'a> {
                     corrupted("frame animation bone constants out of bounds or misaligned")
                 })?;
 
-                data.position = AnimationPositionData::Constant(vec3_from_u16s(
+                data.position = AnimationData::Constant(vec3_from_u16s(
                     u16s.try_into().expect("slice must have correct length"),
                 ));
             }
@@ -1767,13 +1761,11 @@ impl<'a> FrameAnimationRef<'a> {
             let flags = BoneFlags::from_bits_truncate(flags);
 
             if flags.contains(BoneFlags::ANIM_ROT2) || flags.contains(BoneFlags::ANIMROT) {
-                data.rotation =
-                    AnimationRotationData::Animated(Vec::with_capacity(self.frame_count));
+                data.rotation = AnimationData::Animated(Vec::with_capacity(self.frame_count));
             }
 
             if flags.contains(BoneFlags::ANIMPOS) || flags.contains(BoneFlags::FULLANIMPOS) {
-                data.position =
-                    AnimationPositionData::Animated(Vec::with_capacity(self.frame_count));
+                data.position = AnimationData::Animated(Vec::with_capacity(self.frame_count));
             }
         }
 
@@ -1788,7 +1780,7 @@ impl<'a> FrameAnimationRef<'a> {
                         .try_into()
                         .expect("slice must have correct length");
 
-                    if let AnimationRotationData::Animated(frames) = &mut data.rotation {
+                    if let AnimationData::Animated(frames) = &mut data.rotation {
                         frames.push(quat_from_bytes_48(value_bytes));
                     } else {
                         unreachable!();
@@ -1802,7 +1794,7 @@ impl<'a> FrameAnimationRef<'a> {
                         corrupted("frame animation bone frames out of bounds or misaligned")
                     })?;
 
-                    if let AnimationRotationData::Animated(frames) = &mut data.rotation {
+                    if let AnimationData::Animated(frames) = &mut data.rotation {
                         frames.push(quat_from_u16s(
                             u16s.try_into().expect("slice must have correct length"),
                         ));
@@ -1816,7 +1808,7 @@ impl<'a> FrameAnimationRef<'a> {
                         corrupted("frame animation bone frames out of bounds or misaligned")
                     })?;
 
-                    if let AnimationPositionData::Animated(frames) = &mut data.position {
+                    if let AnimationData::Animated(frames) = &mut data.position {
                         frames.push(vec3_from_u16s(
                             u16s.try_into().expect("slice must have correct length"),
                         ));
@@ -1830,7 +1822,7 @@ impl<'a> FrameAnimationRef<'a> {
                         corrupted("frame animation bone frames out of bounds or misaligned")
                     })?;
 
-                    if let AnimationPositionData::Animated(frames) = &mut data.position {
+                    if let AnimationData::Animated(frames) = &mut data.position {
                         frames.push(Vec3::from_slice(f32s));
                     } else {
                         unreachable!();
@@ -1909,7 +1901,7 @@ impl<'a> AnimationRef<'a> {
                 .ok_or_else(|| corrupted("animation constants out of bounds"))?
                 .try_into()
                 .expect("slice must have correct length");
-            data.rotation = AnimationRotationData::Constant(quat_from_bytes_64(value_bytes));
+            data.rotation = AnimationData::Constant(quat_from_bytes_64(value_bytes));
 
             *bytes = &bytes[8..];
         }
@@ -1918,7 +1910,7 @@ impl<'a> AnimationRef<'a> {
             let u16s = parse_slice_mut(bytes, 3)
                 .ok_or_else(|| corrupted("animation constants out of bounds"))?;
 
-            data.rotation = AnimationRotationData::Constant(quat_from_u16s(
+            data.rotation = AnimationData::Constant(quat_from_u16s(
                 u16s.try_into().expect("slice must have correct length"),
             ));
         }
@@ -1927,7 +1919,7 @@ impl<'a> AnimationRef<'a> {
             let u16s = parse_slice_mut(bytes, 3)
                 .ok_or_else(|| corrupted("animation constants out of bounds"))?;
 
-            data.position = AnimationPositionData::Constant(vec3_from_u16s(
+            data.position = AnimationData::Constant(vec3_from_u16s(
                 u16s.try_into().expect("slice must have correct length"),
             ));
         };
@@ -1999,7 +1991,7 @@ impl<'a> AnimationRef<'a> {
 
             let quat_frames = frames.into_iter().map(euler_to_quat).collect();
 
-            data.rotation = AnimationRotationData::Animated(quat_frames);
+            data.rotation = AnimationData::Animated(quat_frames);
         }
 
         if flags.contains(AnimationFlags::ANIMPOS) {
@@ -2058,7 +2050,7 @@ impl<'a> AnimationRef<'a> {
                 frame.z += self.bone.position[2];
             }
 
-            data.position = AnimationPositionData::Animated(frames);
+            data.position = AnimationData::Animated(frames);
         };
 
         Ok(())
@@ -2412,7 +2404,7 @@ mod tests {
     impl BoneAnimationDataSpec {
         fn verify(&self, data: &BoneAnimationData, uncrowbarify: bool) {
             match &data.position {
-                AnimationPositionData::Constant(v) => {
+                AnimationData::Constant(v) => {
                     assert_eq!(
                         self.position.len(),
                         1,
@@ -2421,7 +2413,7 @@ mod tests {
                     );
                     assert_vecs_equal(*v, self.position[0], 0, uncrowbarify);
                 }
-                AnimationPositionData::Animated(v) => {
+                AnimationData::Animated(v) => {
                     assert_eq!(
                         v.len(),
                         self.position.len(),
@@ -2433,7 +2425,7 @@ mod tests {
                         assert_vecs_equal(*a, *b, i, uncrowbarify);
                     }
                 }
-                AnimationPositionData::None => assert_eq!(
+                AnimationData::None => assert_eq!(
                     self.position.len(),
                     0,
                     "got no position, expected {} values",
@@ -2442,7 +2434,7 @@ mod tests {
             }
 
             match &data.rotation {
-                AnimationRotationData::Constant(v) => {
+                AnimationData::Constant(v) => {
                     assert_eq!(
                         self.rotation_euler.len(),
                         1,
@@ -2451,7 +2443,7 @@ mod tests {
                     );
                     assert_quats_equal(*v, euler_to_quat(self.rotation_euler[0]), 0, uncrowbarify);
                 }
-                AnimationRotationData::Animated(v) => {
+                AnimationData::Animated(v) => {
                     assert_eq!(
                         v.len(),
                         self.rotation_euler.len(),
@@ -2463,7 +2455,7 @@ mod tests {
                         assert_quats_equal(*a, euler_to_quat(*b), i, uncrowbarify);
                     }
                 }
-                AnimationRotationData::None => assert_eq!(
+                AnimationData::None => assert_eq!(
                     self.rotation_euler.len(),
                     0,
                     "got no rotation, expected {} values",
