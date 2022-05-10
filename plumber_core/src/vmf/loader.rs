@@ -108,7 +108,7 @@ impl Vmf {
                     self.load_props(
                         &importer.file_system,
                         &importer.model_loader,
-                        importer.material_loader.clone(),
+                        &importer.material_loader,
                         importer.asset_handler.clone(),
                         settings.scale,
                     )
@@ -132,7 +132,7 @@ impl Vmf {
 
                 if let BrushSetting::Import(geometry_settings) = settings.brushes {
                     self.load_brushes(
-                        importer.material_loader,
+                        &importer.material_loader,
                         &side_faces_map,
                         geometry_settings,
                         settings.scale,
@@ -207,7 +207,7 @@ impl Vmf {
         &'a self,
         file_system: &'a OpenFileSystem,
         model_loader: &'a ModelLoader,
-        material_loader: MaterialLoader,
+        material_loader: &'a MaterialLoader,
         asset_handler: impl Handler,
         scale: f32,
     ) -> impl ParallelIterator<Item = Result<LoadedProp, (i32, PropError)>> + 'a {
@@ -224,23 +224,20 @@ impl Vmf {
                     None
                 }
             })
-            .map_with(
-                (material_loader, asset_handler),
-                move |(material_loader, asset_handler), prop| {
-                    let (prop, model) = prop
-                        .load(model_loader, file_system, scale)
-                        .map_err(|e| (prop.entity().id, e))?;
+            .map_with(asset_handler, move |asset_handler, prop| {
+                let (prop, model) = prop
+                    .load(model_loader, file_system, scale)
+                    .map_err(|e| (prop.entity().id, e))?;
 
-                    if let Some(model) = model {
-                        for material in model.materials.iter().flatten() {
-                            material_loader.load_material(&PathBuf::Game(material.clone()));
-                        }
-                        asset_handler.handle_model(model);
+                if let Some(model) = model {
+                    for material in model.materials.iter().flatten() {
+                        material_loader.load_material(&PathBuf::Game(material.clone()));
                     }
+                    asset_handler.handle_model(model);
+                }
 
-                    Ok(prop)
-                },
-            )
+                Ok(prop)
+            })
     }
 
     fn load_other_entities(&self) -> impl ParallelIterator<Item = TypedEntity> {
@@ -259,42 +256,36 @@ impl Vmf {
 
     fn load_brushes<'a>(
         &'a self,
-        material_loader: MaterialLoader,
+        material_loader: &'a MaterialLoader,
         side_faces_map: &'a Mutex<SideFacesMap>,
         geometry_settings: GeometrySettings,
         scale: f32,
     ) -> impl ParallelIterator<Item = Result<BuiltBrushEntity, (i32, SolidError)>> + 'a {
-        let world_brush_iter = rayon::iter::once(&self.world).map_with(
-            (material_loader.clone(),),
-            move |(material_loader,), world| {
-                world
-                    .build_brush(
-                        |path| material_loader.block_on_material(path),
-                        side_faces_map,
-                        &geometry_settings,
-                        scale,
-                    )
-                    .map_err(|e| (world.id, e))
-            },
-        );
+        let world_brush_iter = rayon::iter::once(&self.world).map(move |world| {
+            world
+                .build_brush(
+                    |path| material_loader.block_on_material(path),
+                    side_faces_map,
+                    &geometry_settings,
+                    scale,
+                )
+                .map_err(|e| (world.id, e))
+        });
 
         let entity_brushes_iter = {
             self.entities
                 .par_iter()
                 .filter(|entity| !entity.solids.is_empty())
-                .map_with(
-                    (material_loader, side_faces_map, geometry_settings),
-                    move |(material_loader, side_faces_map, geometry_settings), entity| {
-                        entity
-                            .build_brush(
-                                |path| material_loader.block_on_material(path),
-                                side_faces_map,
-                                geometry_settings,
-                                scale,
-                            )
-                            .map_err(|e| (entity.id, e))
-                    },
-                )
+                .map(move |entity| {
+                    entity
+                        .build_brush(
+                            |path| material_loader.block_on_material(path),
+                            side_faces_map,
+                            &geometry_settings,
+                            scale,
+                        )
+                        .map_err(|e| (entity.id, e))
+                })
         };
 
         world_brush_iter.chain(entity_brushes_iter)
