@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use super::Plane;
 
 use approx::abs_diff_eq;
-use glam::{Vec3, Vec2, Mat3, Affine2};
+use glam::{Affine2, Mat3, Vec2, Vec3};
 use itertools::Itertools;
 
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +49,7 @@ pub struct GeometrySettings {
     pub(crate) cut_threshold: f32,
     pub(crate) merge_solids: MergeSolids,
     pub(crate) invisible_solids: InvisibleSolids,
+    pub(crate) overlays: bool,
 }
 
 impl GeometrySettings {
@@ -72,6 +73,10 @@ impl GeometrySettings {
     pub fn invisible_solids(&mut self, invisible: InvisibleSolids) {
         self.invisible_solids = invisible;
     }
+
+    pub fn overlays(&mut self, overlays: bool) {
+        self.overlays = overlays;
+    }
 }
 
 impl Default for GeometrySettings {
@@ -81,6 +86,7 @@ impl Default for GeometrySettings {
             cut_threshold: 1e-3,
             merge_solids: MergeSolids::Merge,
             invisible_solids: InvisibleSolids::Skip,
+            overlays: true,
         }
     }
 }
@@ -98,11 +104,7 @@ impl NdPlane {
     pub fn from_plane(plane: &Plane, center: Vec3) -> Self {
         // in vmf, plane points are in cw winding order,
         // everywhere from now on, ccw winding order
-        Self::from_points(
-            plane.2 - center,
-            plane.1 - center,
-            plane.0 - center,
-        )
+        Self::from_points(plane.2 - center, plane.1 - center, plane.0 - center)
     }
 
     pub fn from_points(a: Vec3, b: Vec3, c: Vec3) -> Self {
@@ -184,7 +186,7 @@ impl NdPlane {
             (-a.distance * b.normal.cross(c.normal)
                 - b.distance * c.normal.cross(a.normal)
                 - c.distance * a.normal.cross(b.normal))
-                / denominator
+                / denominator,
         )
     }
 
@@ -256,10 +258,7 @@ where
     normal.normalize()
 }
 
-pub(crate) fn affine_matrix(
-    src_points: [Vec2; 3],
-    dst_points: [Vec2; 3],
-) -> Affine2 {
+pub(crate) fn affine_matrix(src_points: [Vec2; 3], dst_points: [Vec2; 3]) -> Affine2 {
     let src_matrix = Mat3::from_cols_array(&[
         src_points[0].x,
         src_points[0].y,
@@ -270,7 +269,8 @@ pub(crate) fn affine_matrix(
         src_points[2].x,
         src_points[2].y,
         1.0,
-    ]).inverse();
+    ])
+    .inverse();
 
     let dst_matrix = Mat3::from_cols_array(&[
         dst_points[0].x,
@@ -291,11 +291,7 @@ pub(crate) fn affine_transform_point(matrix: Affine2, point: Vec2) -> Vec2 {
     matrix.transform_point2(point)
 }
 
-pub(crate) fn is_point_left_of_line(
-    line_a: Vec2,
-    line_b: Vec2,
-    point: Vec2,
-) -> bool {
+pub(crate) fn is_point_left_of_line(line_a: Vec2, line_b: Vec2, point: Vec2) -> bool {
     (point.x - line_a.x) * (line_b.y - line_a.y) - (point.y - line_a.y) * (line_b.x - line_a.x)
         < 0.0
 }
@@ -365,11 +361,7 @@ mod tests {
 
         let normal = polygon_normal(points.into_iter());
 
-        assert_relative_eq!(
-            normal,
-            Vec3::new(0.447_213, 0.0, 0.894_427),
-            epsilon = 1e-3
-        );
+        assert_relative_eq!(normal, Vec3::new(0.447_213, 0.0, 0.894_427), epsilon = 1e-3);
     }
 
     #[test]
@@ -382,32 +374,22 @@ mod tests {
 
         assert_relative_eq!(
             plane
-                .intersect_line(
-                    Vec3::new(-1.0, 0.0, 0.0),
-                    Vec3::new(1.0, 0.0, 2.0),
-                    1e-3
-                )
+                .intersect_line(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 2.0), 1e-3)
                 .unwrap(),
             Vec3::new(0.285_714, 0.0, 2.571_428),
             epsilon = 1e-3,
         );
 
         let (point, factor) = plane
-            .intersect_line_with_factor(
-                Vec3::new(2.0, 0.0, 1.0),
-                Vec3::new(0.0, 0.0, 1.0),
-                1e-3,
-            )
+            .intersect_line_with_factor(Vec3::new(2.0, 0.0, 1.0), Vec3::new(0.0, 0.0, 1.0), 1e-3)
             .unwrap();
 
         assert_relative_eq!(point, Vec3::new(4.0 / 3.0, 0.0, 1.0), epsilon = 1e-3,);
 
         assert_relative_eq!(factor, 1.0 / 3.0, epsilon = 1e-3,);
 
-        let plane_2 = NdPlane::from_point_normal(
-            Vec3::new(-1.0, 0.0, 0.0),
-            Vec3::new(-1.0, 0.0, 0.0),
-        );
+        let plane_2 =
+            NdPlane::from_point_normal(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(-1.0, 0.0, 0.0));
 
         assert_relative_eq!(
             plane_2

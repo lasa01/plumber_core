@@ -22,42 +22,21 @@ use super::{
 };
 
 #[derive(Debug, Clone, Copy)]
-pub enum GeometrySetting {
-    Nothing,
-    Brushes(GeometrySettings),
-    BrushesAndOverlays(GeometrySettings),
+pub enum BrushSetting {
+    Skip,
+    Import(GeometrySettings),
 }
 
-impl Default for GeometrySetting {
+impl Default for BrushSetting {
     fn default() -> Self {
-        Self::BrushesAndOverlays(GeometrySettings::default())
-    }
-}
-
-impl GeometrySetting {
-    #[must_use]
-    pub fn brushes(&self) -> Option<&GeometrySettings> {
-        if let Self::Brushes(s) | Self::BrushesAndOverlays(s) = self {
-            Some(s)
-        } else {
-            None
-        }
-    }
-
-    #[must_use]
-    pub fn overlays(&self) -> Option<&GeometrySettings> {
-        if let Self::BrushesAndOverlays(s) = self {
-            Some(s)
-        } else {
-            None
-        }
+        Self::Import(GeometrySettings::default())
     }
 }
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy)]
 pub struct Settings {
-    geometry: GeometrySetting,
+    brushes: BrushSetting,
     import_materials: bool,
     import_props: bool,
     import_entities: bool,
@@ -68,7 +47,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            geometry: GeometrySetting::default(),
+            brushes: BrushSetting::default(),
             import_materials: true,
             import_props: true,
             import_entities: true,
@@ -84,8 +63,8 @@ impl Settings {
         Self::default()
     }
 
-    pub fn geometry(&mut self, geometry: GeometrySetting) {
-        self.geometry = geometry;
+    pub fn brushes(&mut self, brushes: BrushSetting) {
+        self.brushes = brushes;
     }
 
     pub fn import_materials(&mut self, import_materials: bool) {
@@ -151,11 +130,11 @@ impl Vmf {
                     );
                 }
 
-                if let Some(geometry_settings) = settings.geometry.brushes() {
+                if let BrushSetting::Import(geometry_settings) = settings.brushes {
                     self.load_brushes(
                         importer.material_loader,
                         &side_faces_map,
-                        *geometry_settings,
+                        geometry_settings,
                         settings.scale,
                     )
                     .for_each_with(
@@ -165,18 +144,20 @@ impl Vmf {
                             Err((id, error)) => handler.handle_error(Error::Solid { id, error }),
                         },
                     );
-                }
 
-                if let Some(geometry_settings) = settings.geometry.overlays() {
-                    let side_faces_map = side_faces_map
-                        .into_inner()
-                        .expect("mutex shouldn't be poisoned");
+                    if geometry_settings.overlays {
+                        let side_faces_map = side_faces_map
+                            .into_inner()
+                            .expect("mutex shouldn't be poisoned");
 
-                    self.load_overlays(&side_faces_map, *geometry_settings, settings.scale)
-                        .for_each_with(importer.asset_handler, |handler, r| match r {
-                            Ok(overlay) => handler.handle_overlay(overlay),
-                            Err((id, error)) => handler.handle_error(Error::Overlay { id, error }),
-                        });
+                        self.load_overlays(&side_faces_map, geometry_settings, settings.scale)
+                            .for_each_with(importer.asset_handler, |handler, r| match r {
+                                Ok(overlay) => handler.handle_overlay(overlay),
+                                Err((id, error)) => {
+                                    handler.handle_error(Error::Overlay { id, error });
+                                }
+                            });
+                    }
                 }
 
                 // final copy of the asset handler is dropped above, possibly signaling the closure f to terminate
