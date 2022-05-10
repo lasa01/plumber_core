@@ -160,7 +160,9 @@ impl Vmf {
                     }
                 }
 
-                // final copy of the asset handler is dropped above, possibly signaling the closure f to terminate
+                // drop material loader so that the loader thread can terminate
+                drop(importer.material_loader);
+                // final copy of the asset handler is also dropped above, possibly signaling the closure f to terminate
             });
 
             f();
