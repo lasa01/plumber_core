@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::BTreeMap, sync::Mutex};
 
 use rayon::prelude::*;
 
@@ -119,7 +116,7 @@ impl Vmf {
         settings: &Settings,
         f: impl FnOnce(),
     ) {
-        let side_faces_map = Arc::new(Mutex::new(BTreeMap::new()));
+        let side_faces_map = Mutex::new(BTreeMap::new());
         self.send_material_jobs(&importer.material_loader, settings.import_materials);
 
         if settings.import_skybox {
@@ -130,8 +127,8 @@ impl Vmf {
             s.spawn(|_| {
                 if settings.import_props {
                     self.load_props(
-                        importer.file_system,
-                        importer.model_loader,
+                        &importer.file_system,
+                        &importer.model_loader,
                         importer.material_loader.clone(),
                         importer.asset_handler.clone(),
                         settings.scale,
@@ -157,7 +154,7 @@ impl Vmf {
                 if let Some(geometry_settings) = settings.geometry.brushes() {
                     self.load_brushes(
                         importer.material_loader,
-                        side_faces_map.clone(),
+                        &side_faces_map,
                         *geometry_settings,
                         settings.scale,
                     )
@@ -171,7 +168,11 @@ impl Vmf {
                 }
 
                 if let Some(geometry_settings) = settings.geometry.overlays() {
-                    self.load_overlays(side_faces_map, *geometry_settings, settings.scale)
+                    let side_faces_map = side_faces_map
+                        .into_inner()
+                        .expect("mutex shouldn't be poisoned");
+
+                    self.load_overlays(&side_faces_map, *geometry_settings, settings.scale)
                         .for_each_with(importer.asset_handler, |handler, r| match r {
                             Ok(overlay) => handler.handle_overlay(overlay),
                             Err((id, error)) => handler.handle_error(Error::Overlay { id, error }),
@@ -221,14 +222,14 @@ impl Vmf {
         }
     }
 
-    fn load_props(
-        &self,
-        file_system: Arc<OpenFileSystem>,
-        model_loader: Arc<ModelLoader>,
+    fn load_props<'a>(
+        &'a self,
+        file_system: &'a OpenFileSystem,
+        model_loader: &'a ModelLoader,
         material_loader: MaterialLoader,
         asset_handler: impl Handler,
         scale: f32,
-    ) -> impl ParallelIterator<Item = Result<LoadedProp, (i32, PropError)>> {
+    ) -> impl ParallelIterator<Item = Result<LoadedProp, (i32, PropError)>> + 'a {
         self.entities
             .par_iter()
             .filter_map(|e| {
@@ -243,8 +244,8 @@ impl Vmf {
                 }
             })
             .map_with(
-                (file_system, model_loader, material_loader, asset_handler),
-                move |(file_system, model_loader, material_loader, asset_handler), prop| {
+                (material_loader, asset_handler),
+                move |(material_loader, asset_handler), prop| {
                     let (prop, model) = prop
                         .load(model_loader, file_system, scale)
                         .map_err(|e| (prop.entity().id, e))?;
@@ -275,25 +276,21 @@ impl Vmf {
         })
     }
 
-    fn load_brushes(
-        &self,
+    fn load_brushes<'a>(
+        &'a self,
         material_loader: MaterialLoader,
-        side_faces_map: Arc<Mutex<SideFacesMap>>,
+        side_faces_map: &'a Mutex<SideFacesMap>,
         geometry_settings: GeometrySettings,
         scale: f32,
-    ) -> impl ParallelIterator<Item = Result<BuiltBrushEntity, (i32, SolidError)>> {
+    ) -> impl ParallelIterator<Item = Result<BuiltBrushEntity, (i32, SolidError)>> + 'a {
         let world_brush_iter = rayon::iter::once(&self.world).map_with(
-            (
-                material_loader.clone(),
-                side_faces_map.clone(),
-                geometry_settings,
-            ),
-            move |(material_loader, side_faces_map, geometry_settings), world| {
+            (material_loader.clone(),),
+            move |(material_loader,), world| {
                 world
                     .build_brush(
                         |path| material_loader.block_on_material(path),
                         side_faces_map,
-                        geometry_settings,
+                        &geometry_settings,
                         scale,
                     )
                     .map_err(|e| (world.id, e))
@@ -322,12 +319,12 @@ impl Vmf {
         world_brush_iter.chain(entity_brushes_iter)
     }
 
-    fn load_overlays(
-        &self,
-        side_faces_map: Arc<Mutex<SideFacesMap>>,
+    fn load_overlays<'a>(
+        &'a self,
+        side_faces_map: &'a SideFacesMap,
         geometry_settings: GeometrySettings,
         scale: f32,
-    ) -> impl ParallelIterator<Item = Result<BuiltOverlay, (i32, OverlayError)>> {
+    ) -> impl ParallelIterator<Item = Result<BuiltOverlay, (i32, OverlayError)>> + 'a {
         self.entities
             .par_iter()
             .filter_map(|e| {
@@ -337,13 +334,10 @@ impl Vmf {
                     None
                 }
             })
-            .map_with(
-                (side_faces_map, geometry_settings),
-                move |(side_faces_map, geometry_settings), o| {
-                    o.build_mesh(side_faces_map, geometry_settings, scale)
-                        .map_err(|(overlay, e)| (overlay.entity().id, e))
-                },
-            )
+            .map(move |o| {
+                o.build_mesh(side_faces_map, &geometry_settings, scale)
+                    .map_err(|(overlay, e)| (overlay.entity().id, e))
+            })
     }
 
     fn send_skybox_job(&self, material_loader: &MaterialLoader) {

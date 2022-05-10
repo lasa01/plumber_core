@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Debug, sync::Mutex};
+use std::{collections::BTreeMap, fmt::Debug};
 
 use crate::fs::GamePathBuf;
 
@@ -101,11 +101,10 @@ impl<'a> OverlayBuilder<'a> {
 
     fn create_vertices(
         &mut self,
-        side_faces_map: &Mutex<SideFacesMap>,
+        side_faces_map: &SideFacesMap,
         epsilon: f32,
     ) -> Result<(), OverlayError> {
         for side_i in self.overlay.sides()? {
-            let side_faces_map = side_faces_map.lock().expect("mutex shouldn't be poisoned");
             let faces = side_faces_map
                 .get(&side_i)
                 .ok_or(OverlayError::SideNotFound { id: side_i })?;
@@ -407,7 +406,7 @@ impl<'a> Overlay<'a> {
     /// Returns `Err` if the mesh creation fails.
     pub fn build_mesh(
         self,
-        side_faces_map: &Mutex<SideFacesMap>,
+        side_faces_map: &SideFacesMap,
         settings: &GeometrySettings,
         scale: f32,
     ) -> Result<BuiltOverlay<'a>, (Self, OverlayError)> {
@@ -433,7 +432,7 @@ impl<'a> Overlay<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::f32::consts::FRAC_1_SQRT_2;
+    use std::{f32::consts::FRAC_1_SQRT_2, sync::Mutex};
 
     use plumber_vdf as vdf;
 
@@ -651,6 +650,9 @@ mod tests {
                 .unwrap();
         }
 
+        let side_faces_map = side_faces_map
+            .into_inner()
+            .expect("mutex shouldn't be poisoned");
         let entity = get_test_overlay();
         let overlay = match entity.typed() {
             TypedEntity::Overlay(o) => o,
