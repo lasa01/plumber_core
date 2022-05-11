@@ -107,7 +107,7 @@ fn get_dimension_reference(shader: &Shader) -> Option<&String> {
 }
 
 #[derive(Clone)]
-pub struct LoadedMaterial<D: Send + Sync + 'static> {
+pub struct LoadedMaterial<D: Send + 'static> {
     pub name: GamePathBuf,
     pub info: MaterialInfo,
     pub data: D,
@@ -120,6 +120,11 @@ impl<D: Send + Sync + 'static> Debug for LoadedMaterial<D> {
             .field("info", &self.info)
             .finish_non_exhaustive()
     }
+}
+
+struct LoadedMaterialAndTextures<D: Send + 'static> {
+    loaded_material: LoadedMaterial<D>,
+    loaded_textures: Vec<LoadedTexture>,
 }
 
 #[derive(Debug)]
@@ -328,7 +333,13 @@ impl WorkerState {
                     match self.load_material(material_path, file_system, &mut vtf_lib, |vmt| {
                         handler.build_material(vmt)
                     }) {
-                        Ok((_, Some(loaded))) => handler.handle_material(loaded),
+                        Ok((_, Some(loaded))) => {
+                            for texture in loaded.loaded_textures {
+                                handler.handle_texture(texture);
+                            }
+
+                            handler.handle_material(loaded.loaded_material);
+                        }
                         Ok((_, None)) => continue,
                         Err((path, error)) => {
                             handler.handle_error(asset::Error::Material { path, error });
@@ -357,9 +368,9 @@ impl WorkerState {
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
         build: impl FnMut(LoadedVmt) -> Result<D, MaterialLoadError>,
-    ) -> Result<(MaterialInfo, Option<LoadedMaterial<D>>), (PathBuf, MaterialLoadError)>
+    ) -> Result<(MaterialInfo, Option<LoadedMaterialAndTextures<D>>), (PathBuf, MaterialLoadError)>
     where
-        D: Send + Sync + 'static,
+        D: Send + 'static,
     {
         if let Some(MaterialStatus::Done(info_result)) = self
             .material_cache
@@ -377,7 +388,10 @@ impl WorkerState {
             .map_err(|e| (material_path.clone(), e));
 
         let info_result = match &result {
-            Ok(LoadedMaterial { info, .. }) => Ok(info.clone()),
+            Ok(LoadedMaterialAndTextures {
+                loaded_material: LoadedMaterial { info, .. },
+                ..
+            }) => Ok(info.clone()),
             Err((_, err)) => Err(err.clone()),
         };
 
@@ -387,7 +401,7 @@ impl WorkerState {
             .insert(material_path, MaterialStatus::Done(info_result));
         self.material_condvar.notify_all();
 
-        result.map(|b| (b.info.clone(), Some(b)))
+        result.map(|b| (b.loaded_material.info.clone(), Some(b)))
     }
 
     fn load_material_inner<D>(
@@ -396,21 +410,31 @@ impl WorkerState {
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
         mut build: impl FnMut(LoadedVmt) -> Result<D, MaterialLoadError>,
-    ) -> Result<LoadedMaterial<D>, MaterialLoadError>
+    ) -> Result<LoadedMaterialAndTextures<D>, MaterialLoadError>
     where
-        D: Send + Sync + 'static,
+        D: Send + 'static,
     {
         let shader = get_shader(material_path, file_system)?;
 
-        let mut loaded_vmt = LoadedVmt {
+        let mut loaded_textures = Vec::new();
+
+        let info = MaterialInfo::get(
+            material_path,
+            &shader,
+            self,
+            vtf_lib,
+            file_system,
+            &mut loaded_textures,
+        )?;
+        let loaded_vmt = LoadedVmt {
             shader,
-            textures: Vec::new(),
+            loaded_textures: &mut loaded_textures,
             worker_state: self,
             vtf_lib,
             file_system,
             material_path,
+            info: info.clone(),
         };
-        let info = loaded_vmt.get_info()?;
         let data = build(loaded_vmt)?;
 
         let loaded_material = LoadedMaterial {
@@ -423,11 +447,14 @@ impl WorkerState {
                     .into_owned()
                     .into(),
             },
-            info,
             data,
+            info,
         };
 
-        Ok(loaded_material)
+        Ok(LoadedMaterialAndTextures {
+            loaded_material,
+            loaded_textures,
+        })
     }
 
     fn load_skybox(
@@ -621,6 +648,38 @@ impl MaterialInfo {
         }
     }
 
+    fn get(
+        material_path: &PathBuf,
+        shader: &Shader,
+        worker_state: &WorkerState,
+        vtf_lib: &mut (VtfLib, VtfGuard),
+        file_system: &OpenFileSystem,
+        loaded_textures: &mut Vec<LoadedTexture>,
+    ) -> Result<Self, MaterialLoadError> {
+        // get material dimensions
+        let (width, height) = match get_dimension_reference(shader) {
+            Some(texture_path) => {
+                let texture_path = texture_path.clone().into();
+                let (info, texture) =
+                    worker_state.load_texture(texture_path, file_system, vtf_lib)?;
+
+                if let Some(texture) = texture {
+                    loaded_textures.push(texture);
+                }
+
+                (info.width, info.height)
+            }
+            None => (512, 512),
+        };
+        let no_draw = is_nodraw(material_path, shader);
+
+        Ok(Self {
+            width,
+            height,
+            no_draw,
+        })
+    }
+
     #[must_use]
     pub fn width(&self) -> u32 {
         self.width
@@ -652,9 +711,10 @@ pub struct LoadedVmt<'a> {
     worker_state: &'a WorkerState,
     vtf_lib: &'a mut (VtfLib, VtfGuard),
     file_system: &'a OpenFileSystem,
+    loaded_textures: &'a mut Vec<LoadedTexture>,
     material_path: &'a PathBuf,
     shader: Shader,
-    textures: Vec<LoadedTexture>,
+    info: MaterialInfo,
 }
 
 impl<'a> LoadedVmt<'a> {
@@ -669,9 +729,14 @@ impl<'a> LoadedVmt<'a> {
             self.worker_state
                 .load_texture(texture_path, self.file_system, self.vtf_lib)?;
         if let Some(texture) = texture {
-            self.textures.push(texture);
+            self.loaded_textures.push(texture);
         }
         Ok(info)
+    }
+
+    #[must_use]
+    pub fn material_path(&self) -> &PathBuf {
+        self.material_path
     }
 
     #[must_use]
@@ -680,32 +745,8 @@ impl<'a> LoadedVmt<'a> {
     }
 
     #[must_use]
-    pub fn textures(&self) -> &[LoadedTexture] {
-        &self.textures
-    }
-
-    #[must_use]
-    pub fn textures_mut(&mut self) -> &mut Vec<LoadedTexture> {
-        &mut self.textures
-    }
-
-    fn get_info(&mut self) -> Result<MaterialInfo, MaterialLoadError> {
-        // get material dimensions
-        let (width, height) = match get_dimension_reference(&self.shader) {
-            Some(texture_path) => {
-                let texture_path = texture_path.clone().into();
-                self.load_texture(texture_path)
-                    .map(|info| (info.width, info.height))
-            }
-            None => Ok((512, 512)),
-        }?;
-        let no_draw = is_nodraw(self.material_path, &self.shader);
-
-        Ok(MaterialInfo {
-            width,
-            height,
-            no_draw,
-        })
+    pub fn info(&self) -> &MaterialInfo {
+        &self.info
     }
 }
 

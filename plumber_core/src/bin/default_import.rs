@@ -39,6 +39,10 @@ impl Handler for AssetHandler {
         writeln!(self.file.lock().unwrap(), "{:?}", &material).unwrap();
     }
 
+    fn handle_texture(&mut self, texture: plumber_core::vmt::loader::LoadedTexture) {
+        writeln!(self.file.lock().unwrap(), "{:?}", &texture).unwrap();
+    }
+
     fn handle_skybox(&mut self, skybox: plumber_core::vmt::loader::SkyBox) {
         writeln!(self.file.lock().unwrap(), "{:?}", &skybox).unwrap();
     }

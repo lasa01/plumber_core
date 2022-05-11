@@ -15,8 +15,8 @@ use crate::{
         Vmf,
     },
     vmt::loader::{
-        LoadedMaterial, LoadedVmt, Loader as MaterialLoader, MaterialInfo, MaterialLoadError,
-        SkyBox,
+        LoadedMaterial, LoadedTexture, LoadedVmt, Loader as MaterialLoader, MaterialInfo,
+        MaterialLoadError, SkyBox,
     },
 };
 
@@ -49,8 +49,8 @@ pub enum Error {
     },
 }
 
-pub trait Handler: Clone + Send + Sync + 'static {
-    type MaterialData: Send + Sync + 'static;
+pub trait Handler: Clone + Send + 'static {
+    type MaterialData: Send + 'static;
 
     fn handle_error(&mut self, error: Error) {
         error!("{}", error);
@@ -62,6 +62,7 @@ pub trait Handler: Clone + Send + Sync + 'static {
     fn build_material(&mut self, vmt: LoadedVmt) -> Result<Self::MaterialData, MaterialLoadError>;
 
     fn handle_material(&mut self, material: LoadedMaterial<Self::MaterialData>);
+    fn handle_texture(&mut self, texture: LoadedTexture);
 
     fn handle_skybox(&mut self, skybox: SkyBox);
 
@@ -88,6 +89,10 @@ impl Handler for DebugHandler {
 
     fn handle_material(&mut self, material: LoadedMaterial<Self::MaterialData>) {
         eprintln!("handle_material(): {:?}", material);
+    }
+
+    fn handle_texture(&mut self, texture: LoadedTexture) {
+        eprintln!("handle_texture(): {:?}", texture);
     }
 
     fn handle_skybox(&mut self, skybox: SkyBox) {
