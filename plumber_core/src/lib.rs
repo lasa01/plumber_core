@@ -17,5 +17,9 @@ pub mod steam;
 pub mod vmf;
 pub mod vmt;
 
+pub use plumber_uncased as uncased;
+pub use plumber_vdf as vdf;
+pub use plumber_vpk as vpk;
+
 #[cfg(test)]
 mod test_utils;
