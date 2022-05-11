@@ -9,6 +9,7 @@ use std::{
 };
 
 use log::{debug, warn};
+use plumber_uncased::AsUncased;
 use plumber_vdf as vdf;
 use plumber_vpk as vpk;
 use vpk::DirectoryReadError;
@@ -21,7 +22,6 @@ use serde::{
     Deserialize,
 };
 use thiserror::Error;
-use uncased::AsUncased;
 
 /// A borrowed path to import an asset from.
 /// Can be either a `Game` path to import assets from the game file system,
@@ -468,12 +468,12 @@ impl FileSystem {
 
         for path in &game_info.file_system.search_paths.game_search_paths {
             let path = path.as_uncased();
-            let path = if path.starts_with("|gameinfo_path|") {
+            let path = if path.starts_with("|gameinfo_path|".as_uncased()) {
                 match path[15..].as_str() {
                     "." => game_info_directory.into(),
                     other => game_info_directory.join(other),
                 }
-            } else if path.starts_with("|all_source_engine_paths|") {
+            } else if path.starts_with("|all_source_engine_paths|".as_uncased()) {
                 match path[25..].as_str() {
                     "." => root_path.into(),
                     other => root_path.join(other),

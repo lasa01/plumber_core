@@ -11,7 +11,6 @@ use half::f16;
 use image::{Rgba32FImage, RgbaImage};
 use itertools::Itertools;
 use thiserror::Error;
-use uncased::AsUncased;
 use vtflib::{BoundVtfFile, VtfFile, VtfGuard, VtfLib};
 use zerocopy::LayoutVerified;
 
@@ -21,6 +20,7 @@ use crate::{
     vmt::Vmt,
 };
 
+use plumber_uncased::AsUncased;
 use plumber_vdf as vdf;
 
 use super::{Shader, ShaderResolveError};

@@ -2,10 +2,10 @@ use std::str::FromStr;
 
 use glam::Vec3;
 use itertools::Itertools;
+use plumber_uncased::AsUncased;
 use plumber_vpk::PathBuf;
 use rgb::RGB8;
 use thiserror::Error;
-use uncased::AsUncased;
 
 use super::Entity;
 

@@ -1,0 +1,14 @@
+[package]
+name = "plumber_uncased"
+description = "Case-preserving, case-insensitive string wrapper."
+version = "0.1.0"
+repository = "https://github.com/lasa01/plumber_core"
+readme = "README.md"
+keywords = ["case-insensitive"]
+categories = ["text-processing"]
+authors = ["Lassi Säike"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+serde = "= 1.0.125"

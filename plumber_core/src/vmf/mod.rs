@@ -20,15 +20,13 @@ use std::{
 
 use itertools::Itertools;
 use ndarray::Array2;
+use plumber_uncased::UncasedString;
 use rgb::RGB8;
 use serde::{
     de::{self, DeserializeSeed, MapAccess, Visitor},
     ser::{SerializeMap, SerializeStruct},
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use uncased::Uncased;
-
-type UncasedString = Uncased<'static>;
 
 /// # Errors
 ///

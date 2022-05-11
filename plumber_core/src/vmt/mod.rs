@@ -7,15 +7,13 @@ use vdf::Value;
 
 use std::{collections::BTreeMap, fmt, io};
 
+use plumber_uncased::UncasedString;
 use serde::{
     de::{self, IgnoredAny, MapAccess, Visitor},
     ser::SerializeMap,
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use thiserror::Error;
-use uncased::Uncased;
-
-type UncasedString = Uncased<'static>;
 
 /// # Errors
 ///
