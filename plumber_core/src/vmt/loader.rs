@@ -16,14 +16,14 @@ use zerocopy::LayoutVerified;
 
 use crate::{
     asset::{self, Handler},
-    fs::{GamePath, GamePathBuf, OpenFileSystem, PathBuf},
+    fs::{GamePathBuf, OpenFileSystem, PathBuf},
     vmt::Vmt,
 };
 
 use plumber_uncased::AsUncased;
 use plumber_vdf as vdf;
 
-use super::{Shader, ShaderResolveError};
+use super::{ParameterError, Shader, ShaderResolveError, TexturePath};
 
 const DIMENSION_REFERENCE_TEXTURES: &[&str] = &["$basetexture", "$normalmap"];
 const NODRAW_MATERIALS: &[&str] = &[
@@ -59,6 +59,8 @@ pub enum MaterialLoadError {
     Deserialization(#[from] vdf::Error),
     #[error("error loading texture: {0}")]
     Texture(#[from] TextureLoadError),
+    #[error("error reading parameters: {0}")]
+    Parameter(#[from] ParameterError),
     #[error("{0}")]
     Custom(&'static str),
 }
@@ -100,10 +102,11 @@ fn is_nodraw(material_path: &PathBuf, shader: &Shader) -> bool {
     no_draw
 }
 
-fn get_dimension_reference(shader: &Shader) -> Option<&String> {
-    DIMENSION_REFERENCE_TEXTURES
-        .iter()
-        .find_map(|parameter| shader.parameters.get(parameter.as_uncased()))
+fn get_dimension_reference(shader: &Shader) -> Option<GamePathBuf> {
+    DIMENSION_REFERENCE_TEXTURES.iter().find_map(|parameter| {
+        let path: TexturePath = shader.extract_param(parameter).ok().flatten()?;
+        Some(path.absolute_path())
+    })
 }
 
 #[derive(Clone)]
@@ -178,6 +181,9 @@ impl Loader {
         }
     }
 
+    /// Starts loading the given material without waiting for it to finish.
+    /// Does nothing is the material is already requested.
+    /// `material_path` should be absolute, ie. start with `materials/`.
     pub fn load_material(&self, material_path: &PathBuf) {
         self.worker_state
             .send_material_job(material_path, &self.material_job_sender);
@@ -185,6 +191,7 @@ impl Loader {
 
     /// Block the thread until the worker thread has loaded a given material, and return the info.
     /// Blocks forever if the material isn't separately loaded using `load_material()`.
+    /// `material_path` should be absolute, ie. start with `materials/`.
     ///
     /// # Errors
     ///
@@ -203,6 +210,7 @@ impl Loader {
     /// Execute the given function and wait until the worker thread has loaded a given material,
     /// and return the info.
     /// Blocks forever if the material isn't separately loaded using `load_material()`.
+    /// `material_path` should be absolute, ie. start with `materials/`.
     ///
     /// # Errors
     ///
@@ -224,7 +232,10 @@ impl Loader {
         self.worker_state.wait_for_material(material_path)
     }
 
-    /// Block the thread until the worker thread has loaded a given material, and return the info.
+    /// Start loading the material, and
+    /// block the thread until the worker thread has loaded a given material, and return the info.
+    /// If the material is already loaded, instantly returns the result.
+    /// `material_path` should be absolute, ie. start with `materials/`.
     ///
     /// # Errors
     ///
@@ -242,6 +253,8 @@ impl Loader {
         self.worker_state.wait_for_material(material_path)
     }
 
+    /// Start loading the given skybox without waiting for it to finish.
+    /// `sky_path` should be absolute, ie. start with `materials/`.
     pub fn load_skybox(&self, sky_path: PathBuf) {
         self.material_job_sender
             .send(MaterialJob::SkyBox(sky_path))
@@ -517,7 +530,7 @@ impl WorkerState {
             let textures: Vec<_> = texture_paths
                 .into_iter()
                 .map(|path| {
-                    let (_, vtf) = open_texture(vtf_lib, &path, file_system)?;
+                    let vtf = open_texture(vtf_lib, &path, file_system)?;
                     let (data, format, width, height) = vtf_data(&vtf)?;
 
                     let f32_data = match format {
@@ -544,7 +557,7 @@ impl WorkerState {
             let textures: Vec<_> = texture_paths
                 .into_iter()
                 .map(|path| {
-                    let (_, vtf) = open_texture(vtf_lib, &path, file_system)?;
+                    let vtf = open_texture(vtf_lib, &path, file_system)?;
                     let (data, format, width, height) = vtf_data(&vtf)?;
 
                     let data = VtfFile::convert_image_to_rgba8888(data, width, height, format)?;
@@ -585,7 +598,7 @@ impl WorkerState {
         {
             return info_result.clone().map(|i| (i, None));
         }
-        let loaded_result = LoadedTexture::load(&texture_path, file_system, vtf_lib);
+        let loaded_result = LoadedTexture::load(texture_path.clone(), file_system, vtf_lib);
         self.texture_cache
             .lock()
             .expect("the mutex shouldn't be poisoned")
@@ -659,7 +672,6 @@ impl MaterialInfo {
         // get material dimensions
         let (width, height) = match get_dimension_reference(shader) {
             Some(texture_path) => {
-                let texture_path = texture_path.clone().into();
                 let (info, texture) =
                     worker_state.load_texture(texture_path, file_system, vtf_lib)?;
 
@@ -718,6 +730,10 @@ pub struct LoadedVmt<'a> {
 }
 
 impl<'a> LoadedVmt<'a> {
+    /// Loads the given texture and returns the texture details.
+    /// The texture itself will be automatically forwarded to the asset handler.
+    /// `texture_path` should be absolute, ie. start with `materials/`.
+    ///
     /// # Errors
     ///
     /// Returns `Err` if the texture loading fails.
@@ -777,11 +793,11 @@ pub struct LoadedTexture {
 
 impl LoadedTexture {
     fn load(
-        texture_path: &GamePath,
+        texture_path: GamePathBuf,
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<Self, TextureLoadError> {
-        let (texture_path, vtf) = open_texture(vtf_lib, texture_path, file_system)?;
+        let vtf = open_texture(vtf_lib, &texture_path, file_system)?;
         Self::load_vtf(texture_path, &vtf)
     }
 
@@ -809,19 +825,19 @@ impl LoadedTexture {
 
 fn open_texture<'a>(
     vtf_lib: &'a mut (VtfLib, VtfGuard),
-    texture_path: &GamePath,
+    texture_path: &GamePathBuf,
     file_system: &OpenFileSystem,
-) -> Result<(GamePathBuf, BoundVtfFile<'a, 'a>), TextureLoadError> {
+) -> Result<BoundVtfFile<'a, 'a>, TextureLoadError> {
     let (vtf_lib, guard) = vtf_lib;
-    let texture_path = GamePath::try_from_str("materials")
-        .unwrap()
-        .join(texture_path);
+
     let vtf_bytes = file_system
         .read(&texture_path.with_extension("vtf"))
         .map_err(|err| TextureLoadError::from_io(&err, &texture_path))?;
+
     let mut vtf = vtf_lib.new_vtf_file().bind(guard);
     vtf.load(&vtf_bytes)?;
-    Ok((texture_path, vtf))
+
+    Ok(vtf)
 }
 
 fn vtf_data<'a>(

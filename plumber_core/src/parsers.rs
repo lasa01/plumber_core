@@ -20,3 +20,9 @@ pub(crate) fn parenthesed<'a, O>(
 ) -> impl FnMut(&'a str) -> IResult<&'a str, O> {
     preceded(multispace0, delimited(char('('), parser, char(')')))
 }
+
+pub(crate) fn braced<'a, O>(
+    parser: impl FnMut(&'a str) -> IResult<&'a str, O>,
+) -> impl FnMut(&'a str) -> IResult<&'a str, O> {
+    preceded(multispace0, delimited(char('{'), parser, char('}')))
+}

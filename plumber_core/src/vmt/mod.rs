@@ -1,13 +1,25 @@
 pub mod loader;
 
-use crate::fs::{self, GamePath, GamePathBuf};
+use crate::{
+    fs::{self, GamePath, GamePathBuf},
+    parsers::{braced, bracketed, space_separated},
+};
 
+use log::warn;
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::multispace0,
+    sequence::{preceded, tuple},
+    IResult,
+};
 use plumber_vdf as vdf;
+use rgb::RGB;
 use vdf::Value;
 
 use std::{collections::BTreeMap, fmt, io};
 
-use plumber_uncased::UncasedString;
+use plumber_uncased::{AsUncased, UncasedString};
 use serde::{
     de::{self, IgnoredAny, MapAccess, Visitor},
     ser::SerializeMap,
@@ -195,7 +207,272 @@ pub struct Shader {
     pub proxies: BTreeMap<UncasedString, Value>,
 }
 
-impl Shader {}
+#[derive(Debug, Clone, Error, Hash, PartialEq, Eq)]
+#[error("parameter `{parameter}` is not a valid {kind}: `{value}`")]
+pub struct ParameterError {
+    parameter: &'static str,
+    kind: &'static str,
+    value: String,
+}
+
+pub trait ParameterType: Sized {
+    /// Type name to use for error messages.
+    const TYPE_NAME: &'static str;
+
+    /// Returns Some if parsing the parameter is successful, None if not.
+    fn parse(s: &str) -> Option<Self>;
+}
+
+impl ParameterType for bool {
+    const TYPE_NAME: &'static str = "boolean";
+
+    fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "0" => Some(false),
+            "1" => Some(true),
+            _ => None,
+        }
+    }
+}
+
+macro_rules! impl_parameter_type_from_str {
+    ($ty:ty, $type_name:expr) => {
+        impl ParameterType for $ty {
+            const TYPE_NAME: &'static str = $type_name;
+
+            fn parse(s: &str) -> Option<Self> {
+                s.trim().parse().ok()
+            }
+        }
+    };
+}
+
+impl_parameter_type_from_str!(u8, "integer (u8)");
+impl_parameter_type_from_str!(i8, "integer (i8)");
+impl_parameter_type_from_str!(u16, "integer (u16)");
+impl_parameter_type_from_str!(i16, "integer (i16)");
+impl_parameter_type_from_str!(u32, "integer (u32)");
+impl_parameter_type_from_str!(i32, "integer (i32)");
+impl_parameter_type_from_str!(u64, "integer (u64)");
+impl_parameter_type_from_str!(i64, "integer (i64)");
+impl_parameter_type_from_str!(usize, "integer (usize)");
+impl_parameter_type_from_str!(isize, "integer (isize)");
+
+impl_parameter_type_from_str!(f32, "float");
+impl_parameter_type_from_str!(f64, "float");
+
+impl ParameterType for glam::Vec2 {
+    const TYPE_NAME: &'static str = "vector2";
+
+    fn parse(s: &str) -> Option<Self> {
+        fn vec_parser(input: &str) -> IResult<&str, (&str, &str)> {
+            tuple((space_separated, space_separated))(input)
+        }
+
+        let (x, y) = alt((bracketed(vec_parser), vec_parser))(s).ok()?.1;
+
+        let x = x.parse().ok()?;
+        let y = y.parse().ok()?;
+
+        Some(glam::Vec2::new(x, y))
+    }
+}
+
+impl ParameterType for glam::Vec3 {
+    const TYPE_NAME: &'static str = "vector3";
+
+    fn parse(s: &str) -> Option<Self> {
+        fn vec_parser(input: &str) -> IResult<&str, (&str, &str, &str)> {
+            tuple((space_separated, space_separated, space_separated))(input)
+        }
+
+        let (x, y, z) = alt((bracketed(vec_parser), vec_parser))(s).ok()?.1;
+
+        let x = x.parse().ok()?;
+        let y = y.parse().ok()?;
+        let z = z.parse().ok()?;
+
+        Some(glam::Vec3::new(x, y, z))
+    }
+}
+
+impl ParameterType for rgb::RGB<f32> {
+    const TYPE_NAME: &'static str = "color";
+
+    fn parse(s: &str) -> Option<Self> {
+        fn integer_color_parser(input: &str) -> IResult<&str, (&str, &str, &str)> {
+            braced(tuple((space_separated, space_separated, space_separated)))(input)
+        }
+
+        if let Ok((_, (r, g, b))) = integer_color_parser(s) {
+            let r = r.parse::<f32>().ok()? / 255.0;
+            let g = g.parse::<f32>().ok()? / 255.0;
+            let b = b.parse::<f32>().ok()? / 255.0;
+
+            return Some(RGB::new(r, g, b));
+        }
+
+        glam::Vec3::parse(s).map(|v| RGB::new(v.x, v.y, v.z))
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Transform {
+    pub center: glam::Vec2,
+    pub scale: glam::Vec2,
+    pub rotate: f32,
+    pub translate: glam::Vec2,
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self {
+            center: glam::Vec2::new(0.5, 0.5),
+            scale: glam::Vec2::ONE,
+            rotate: 0.0,
+            translate: glam::Vec2::ZERO,
+        }
+    }
+}
+
+impl ParameterType for Transform {
+    const TYPE_NAME: &'static str = "transform";
+
+    fn parse(s: &str) -> Option<Self> {
+        type TransformResult<'a> = (
+            (&'a str, &'a str),
+            (&'a str, &'a str),
+            &'a str,
+            (&'a str, &'a str),
+        );
+
+        fn transform_parser(input: &str) -> IResult<&str, TransformResult> {
+            tuple((
+                preceded(
+                    tuple((tag("center"), multispace0)),
+                    tuple((space_separated, space_separated)),
+                ),
+                preceded(
+                    tuple((multispace0, tag("scale"), multispace0)),
+                    tuple((space_separated, space_separated)),
+                ),
+                preceded(
+                    tuple((multispace0, tag("rotate"), multispace0)),
+                    space_separated,
+                ),
+                preceded(
+                    tuple((multispace0, tag("translate"), multispace0)),
+                    tuple((space_separated, space_separated)),
+                ),
+            ))(input)
+        }
+
+        let (center, scale, rotate, translate) = transform_parser(s).ok()?.1;
+
+        let x = center.0.parse().ok()?;
+        let y = center.1.parse().ok()?;
+        let center = glam::Vec2::new(x, y);
+
+        let x = scale.0.parse().ok()?;
+        let y = scale.1.parse().ok()?;
+        let scale = glam::Vec2::new(x, y);
+
+        let rotate = rotate.parse().ok()?;
+
+        let x = translate.0.parse().ok()?;
+        let y = translate.1.parse().ok()?;
+        let translate = glam::Vec2::new(x, y);
+
+        Some(Self {
+            center,
+            scale,
+            rotate,
+            translate,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct TexturePath(pub GamePathBuf);
+
+impl TexturePath {
+    #[must_use]
+    pub fn absolute_path(&self) -> GamePathBuf {
+        path_to_absolute(&self.0)
+    }
+}
+
+impl ParameterType for TexturePath {
+    const TYPE_NAME: &'static str = "texture";
+
+    fn parse(s: &str) -> Option<Self> {
+        Some(Self(GamePathBuf::from(s)))
+    }
+}
+
+impl Shader {
+    /// # Errors
+    ///
+    /// Returns `Err` if the parameter is not valid.
+    pub fn extract_param<T: ParameterType>(
+        &self,
+        parameter: &'static str,
+    ) -> Result<Option<T>, ParameterError> {
+        let value = if let Some(value) = self.parameters.get(parameter.as_uncased()) {
+            value
+        } else {
+            return Ok(None);
+        };
+
+        if let Some(res) = T::parse(value) {
+            Ok(Some(res))
+        } else {
+            Err(ParameterError {
+                parameter,
+                kind: T::TYPE_NAME,
+                value: value.clone(),
+            })
+        }
+    }
+
+    /// # Errors
+    ///
+    /// Returns `Err` if the parameter is not valid.
+    pub fn extract_param_or_default<T: ParameterType + Default>(
+        &self,
+        parameter: &'static str,
+    ) -> Result<T, ParameterError> {
+        self.extract_param(parameter).map(Option::unwrap_or_default)
+    }
+
+    /// Extracts a parameter, or returns the default value if the
+    /// parameter doesn't exist. Returns the default value and logs a warning if the
+    /// parameter is invalid.
+    #[must_use]
+    pub fn extract_param_infallible<T: ParameterType + Default>(
+        &self,
+        parameter: &'static str,
+        material_name: &str,
+    ) -> T {
+        match self.extract_param(parameter) {
+            Ok(Some(res)) => res,
+            Ok(None) => T::default(),
+            Err(err) => {
+                warn!("material `{}`: {}", material_name, err);
+                T::default()
+            }
+        }
+    }
+}
+
+/// Converts a texture/material path into an absolute version,
+/// ie. one that starts with `materials/`.
+#[must_use]
+pub fn path_to_absolute(path: &GamePathBuf) -> GamePathBuf {
+    GamePath::try_from_str("materials")
+        .expect("cannot fail")
+        .join(path)
+}
 
 #[derive(Debug, Clone, Error, Hash, PartialEq, Eq)]
 pub enum ShaderResolveError {
