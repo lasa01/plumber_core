@@ -1,7 +1,7 @@
 pub mod loader;
 
 use crate::{
-    fs::{self, GamePath, GamePathBuf},
+    fs::{self, GamePath, GamePathBuf, PathBuf},
     parsers::{braced, bracketed, space_separated},
 };
 
@@ -452,7 +452,7 @@ impl Shader {
     pub fn extract_param_infallible<T: ParameterType + Default>(
         &self,
         parameter: &'static str,
-        material_name: &str,
+        material_name: &PathBuf,
     ) -> T {
         match self.extract_param(parameter) {
             Ok(Some(res)) => res,
