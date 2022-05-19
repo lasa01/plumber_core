@@ -411,10 +411,12 @@ impl ParameterType for TexturePath {
 }
 
 impl Shader {
+    /// Extracts a parameter.
+    ///
     /// # Errors
     ///
     /// Returns `Err` if the parameter is not valid.
-    pub fn extract_param<T: ParameterType>(
+    pub fn try_extract_param<T: ParameterType>(
         &self,
         parameter: &'static str,
     ) -> Result<Option<T>, ParameterError> {
@@ -435,26 +437,48 @@ impl Shader {
         }
     }
 
+    /// Extracts a parameter, or returns the default value if the
+    /// parameter doesn't exist.
+    ///
     /// # Errors
     ///
     /// Returns `Err` if the parameter is not valid.
-    pub fn extract_param_or_default<T: ParameterType + Default>(
+    pub fn try_extract_param_or_default<T: ParameterType + Default>(
         &self,
         parameter: &'static str,
     ) -> Result<T, ParameterError> {
-        self.extract_param(parameter).map(Option::unwrap_or_default)
+        self.try_extract_param(parameter)
+            .map(Option::unwrap_or_default)
+    }
+
+    /// Extracts a parameter, or returns None if the
+    /// parameter doesn't exist. Returns None and logs a warning if the
+    /// parameter is invalid.
+    #[must_use]
+    pub fn extract_param<T: ParameterType>(
+        &self,
+        parameter: &'static str,
+        material_name: &PathBuf,
+    ) -> Option<T> {
+        match self.try_extract_param(parameter) {
+            Ok(res) => res,
+            Err(err) => {
+                warn!("material `{}`: {}", material_name, err);
+                None
+            }
+        }
     }
 
     /// Extracts a parameter, or returns the default value if the
     /// parameter doesn't exist. Returns the default value and logs a warning if the
     /// parameter is invalid.
     #[must_use]
-    pub fn extract_param_infallible<T: ParameterType + Default>(
+    pub fn extract_param_or_default<T: ParameterType + Default>(
         &self,
         parameter: &'static str,
         material_name: &PathBuf,
     ) -> T {
-        match self.extract_param(parameter) {
+        match self.try_extract_param(parameter) {
             Ok(Some(res)) => res,
             Ok(None) => T::default(),
             Err(err) => {

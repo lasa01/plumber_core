@@ -104,7 +104,7 @@ fn is_nodraw(material_path: &PathBuf, shader: &Shader) -> bool {
 
 fn get_dimension_reference(shader: &Shader) -> Option<GamePathBuf> {
     DIMENSION_REFERENCE_TEXTURES.iter().find_map(|parameter| {
-        let path: TexturePath = shader.extract_param(parameter).ok().flatten()?;
+        let path: TexturePath = shader.try_extract_param(parameter).ok().flatten()?;
         Some(path.absolute_path())
     })
 }
