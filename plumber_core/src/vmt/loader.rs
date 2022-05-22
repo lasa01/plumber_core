@@ -23,7 +23,7 @@ use crate::{
 use plumber_uncased::AsUncased;
 use plumber_vdf as vdf;
 
-use super::{ParameterError, Shader, ShaderResolveError, TexturePath};
+use super::{ParameterError, ParameterType, Shader, ShaderResolveError, TexturePath};
 
 const DIMENSION_REFERENCE_TEXTURES: &[&str] = &["$basetexture", "$normalmap"];
 const NODRAW_MATERIALS: &[&str] = &[
@@ -748,6 +748,51 @@ impl<'a> LoadedVmt<'a> {
             self.loaded_textures.push(texture);
         }
         Ok(info)
+    }
+
+    /// Extracts a parameter.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the parameter is not valid.
+    pub fn try_extract_param<T: ParameterType>(
+        &self,
+        parameter: &'static str,
+    ) -> Result<Option<T>, ParameterError> {
+        self.shader.try_extract_param(parameter)
+    }
+
+    /// Extracts a parameter, or returns the default value if the
+    /// parameter doesn't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the parameter is not valid.
+    pub fn try_extract_param_or_default<T: ParameterType + Default>(
+        &self,
+        parameter: &'static str,
+    ) -> Result<T, ParameterError> {
+        self.shader.try_extract_param_or_default(parameter)
+    }
+
+    /// Extracts a parameter, or returns None if the
+    /// parameter doesn't exist. Returns None and logs a warning if the
+    /// parameter is invalid.
+    #[must_use]
+    pub fn extract_param<T: ParameterType>(&self, parameter: &'static str) -> Option<T> {
+        self.shader.extract_param(parameter, self.material_path)
+    }
+
+    /// Extracts a parameter, or returns the default value if the
+    /// parameter doesn't exist. Returns the default value and logs a warning if the
+    /// parameter is invalid.
+    #[must_use]
+    pub fn extract_param_or_default<T: ParameterType + Default>(
+        &self,
+        parameter: &'static str,
+    ) -> T {
+        self.shader
+            .extract_param_or_default(parameter, self.material_path)
     }
 
     #[must_use]
