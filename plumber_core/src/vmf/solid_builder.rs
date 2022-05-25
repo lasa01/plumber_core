@@ -129,7 +129,7 @@ impl<'a> FaceBuilder<'a> {
             .map(|info| 2 * (info.dimension() - 1).pow(2))
     }
 
-    fn sort_vertices(&mut self, vertices: &mut Vec<Vec3>) {
+    fn sort_vertices(&mut self, vertices: &[Vec3]) {
         let center = polygon_center(self.vertice_indices.iter().map(|&i| vertices[i]));
 
         for i in 0..self.vertice_indices.len() - 2 {
