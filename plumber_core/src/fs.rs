@@ -370,7 +370,12 @@ impl SearchPath {
                             .map_err(|err| OpenError::new(path, err.into()))?;
                         if file_type.is_file() {
                             if entry.file_name().to_str().map_or(false, is_vpk_file) {
-                                open_search_paths.push(OpenSearchPath::Directory(entry.path()));
+                                let path = entry.path();
+
+                                // Silently ignore errors, these could be multipart vpk files
+                                if let Ok(vpk) = vpk::Directory::read(path) {
+                                    open_search_paths.push(OpenSearchPath::Vpk(vpk));
+                                }
                             }
                         } else if file_type.is_dir() {
                             open_search_paths.push(OpenSearchPath::Directory(entry.path()));
