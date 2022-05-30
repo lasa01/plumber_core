@@ -54,7 +54,7 @@ pub struct SolidFace {
     pub vertice_indices: Vec<usize>,
     pub vertice_uvs: Vec<Vec2>,
     pub material_index: usize,
-    pub vertice_alphas: Option<Vec<f32>>,
+    pub vertice_alphas: Vec<f32>,
 }
 
 #[derive(Clone)]
@@ -64,7 +64,7 @@ struct FaceBuilder<'a> {
     vertice_indices: Vec<usize>,
     vertice_uvs: Vec<Vec2>,
     material_index: usize,
-    vertice_alphas: Option<Vec<f32>>,
+    vertice_alphas: Vec<f32>,
 }
 
 impl<'a> PartialEq for FaceBuilder<'a> {
@@ -98,7 +98,7 @@ impl<'a> FaceBuilder<'a> {
             vertice_indices: Vec::new(),
             vertice_uvs: Vec::new(),
             material_index: 0,
-            vertice_alphas: None,
+            vertice_alphas: Vec::new(),
         }
     }
 
@@ -109,7 +109,7 @@ impl<'a> FaceBuilder<'a> {
             vertice_indices: Vec::new(),
             vertice_uvs: Vec::new(),
             material_index: self.material_index,
-            vertice_alphas: None,
+            vertice_alphas: Vec::new(),
         }
     }
 
@@ -358,7 +358,7 @@ impl<'a> FaceBuilder<'a> {
                     vertice_indices: Vec::with_capacity(3),
                     vertice_uvs: Vec::with_capacity(3),
                     material_index: self.material_index,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
             );
 
@@ -376,17 +376,19 @@ impl<'a> FaceBuilder<'a> {
                     .extend(face_vert_is.iter().map(|&i| disp_uvs[i]));
                 face.material_index = self.material_index;
 
-                face.vertice_alphas = Some(
-                    face_vert_is
-                        .iter()
-                        .map(|&i| info.alphas.data[i] as f32)
-                        .collect(),
-                );
+                face.vertice_alphas = face_vert_is
+                    .iter()
+                    .map(|&i| info.alphas.data[i] as f32)
+                    .collect();
             }
 
             faces.append(&mut disp_faces.into_raw_vec());
         }
         Ok(())
+    }
+
+    fn create_default_alphas(&mut self) {
+        self.vertice_alphas = vec![0.0; self.vertice_indices.len()];
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -741,6 +743,12 @@ impl<'a> SolidBuilder<'a> {
         Ok(())
     }
 
+    fn create_default_alphas(&mut self) {
+        for builder in &mut self.faces {
+            builder.create_default_alphas();
+        }
+    }
+
     fn extend_side_faces_map(&self, map: &Mutex<SideFacesMap>) {
         let mut map = map.lock().expect("mutex shouldn't be poisoned");
         for builder in &self.faces {
@@ -766,6 +774,10 @@ impl<'a> SolidBuilder<'a> {
         self.build_uvs(get_material_info);
         self.maybe_build_displacement()?;
         self.extend_side_faces_map(side_faces_map);
+
+        if !self.is_displacement {
+            self.create_default_alphas();
+        }
 
         Ok(())
     }
@@ -1662,7 +1674,7 @@ mod tests {
                 vertice_indices: Vec::new(),
                 vertice_uvs: Vec::new(),
                 material_index: 0,
-                vertice_alphas: None,
+                vertice_alphas: Vec::new(),
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -1673,7 +1685,7 @@ mod tests {
                 vertice_indices: Vec::new(),
                 vertice_uvs: Vec::new(),
                 material_index: 0,
-                vertice_alphas: None,
+                vertice_alphas: Vec::new(),
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -1684,7 +1696,7 @@ mod tests {
                 vertice_indices: Vec::new(),
                 vertice_uvs: Vec::new(),
                 material_index: 0,
-                vertice_alphas: None,
+                vertice_alphas: Vec::new(),
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -1695,7 +1707,7 @@ mod tests {
                 vertice_indices: Vec::new(),
                 vertice_uvs: Vec::new(),
                 material_index: 0,
-                vertice_alphas: None,
+                vertice_alphas: Vec::new(),
             },
         ];
 
@@ -1705,7 +1717,7 @@ mod tests {
             vertice_indices: vec![0, 1, 2, 3],
             vertice_uvs: vec![Vec2::ZERO; 4],
             material_index: 0,
-            vertice_alphas: None,
+            vertice_alphas: Vec::new(),
         };
 
         let mut clipped = Vec::new();
@@ -1746,7 +1758,7 @@ mod tests {
                 vertice_indices: vec![0, 1, 2, 6, 7],
                 vertice_uvs: vec![Vec2::ZERO; 5],
                 material_index: 0,
-                vertice_alphas: None,
+                vertice_alphas: Vec::new(),
             }]
         );
 
@@ -1756,7 +1768,7 @@ mod tests {
             vertice_indices: vec![0, 1, 4, 5],
             vertice_uvs: vec![Vec2::ZERO; 4],
             material_index: 0,
-            vertice_alphas: None,
+            vertice_alphas: Vec::new(),
         };
 
         let mut clipped = Vec::new();
@@ -1779,7 +1791,7 @@ mod tests {
             vertice_indices: vec![3, 7, 6],
             vertice_uvs: vec![Vec2::ZERO; 2],
             material_index: 0,
-            vertice_alphas: None,
+            vertice_alphas: Vec::new(),
         };
 
         let mut clipped = Vec::new();
@@ -1816,7 +1828,7 @@ mod tests {
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1827,7 +1839,7 @@ mod tests {
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1838,7 +1850,7 @@ mod tests {
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1849,7 +1861,7 @@ mod tests {
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1860,7 +1872,7 @@ mod tests {
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1871,7 +1883,7 @@ mod tests {
                     vertice_indices: Vec::new(),
                     vertice_uvs: Vec::new(),
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
             ],
             vertices: Vec::new(),
@@ -1894,7 +1906,7 @@ mod tests {
                     vertice_indices: vec![0, 1, 5, 4],
                     vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1905,7 +1917,7 @@ mod tests {
                     vertice_indices: vec![1, 2, 6, 5],
                     vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1916,7 +1928,7 @@ mod tests {
                     vertice_indices: vec![2, 3, 7, 6],
                     vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1927,7 +1939,7 @@ mod tests {
                     vertice_indices: vec![3, 0, 4, 7],
                     vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1938,7 +1950,7 @@ mod tests {
                     vertice_indices: vec![0, 1, 2, 3],
                     vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
                 FaceBuilder {
                     side: &dummy_side,
@@ -1949,7 +1961,7 @@ mod tests {
                     vertice_indices: vec![7, 6, 5, 4],
                     vertice_uvs: vec![Vec2::ZERO; 4],
                     material_index: 0,
-                    vertice_alphas: None,
+                    vertice_alphas: Vec::new(),
                 },
             ],
             vertices: vec![
