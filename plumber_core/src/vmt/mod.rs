@@ -10,7 +10,7 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::multispace0,
-    sequence::{preceded, tuple},
+    sequence::{preceded, tuple, terminated},
     IResult,
 };
 use plumber_vdf as vdf;
@@ -266,7 +266,7 @@ impl ParameterType for glam::Vec2 {
 
     fn parse(s: &str) -> Option<Self> {
         fn vec_parser(input: &str) -> IResult<&str, (&str, &str)> {
-            tuple((space_separated, space_separated))(input)
+            terminated(tuple((space_separated, space_separated)), multispace0)(input)
         }
 
         let (x, y) = alt((bracketed(vec_parser), vec_parser))(s).ok()?.1;
@@ -283,7 +283,7 @@ impl ParameterType for glam::Vec3 {
 
     fn parse(s: &str) -> Option<Self> {
         fn vec_parser(input: &str) -> IResult<&str, (&str, &str, &str)> {
-            tuple((space_separated, space_separated, space_separated))(input)
+            terminated(tuple((space_separated, space_separated, space_separated)), multispace0)(input)
         }
 
         let (x, y, z) = alt((bracketed(vec_parser), vec_parser))(s).ok()?.1;
@@ -301,7 +301,7 @@ impl ParameterType for rgb::RGB<f32> {
 
     fn parse(s: &str) -> Option<Self> {
         fn integer_color_parser(input: &str) -> IResult<&str, (&str, &str, &str)> {
-            braced(tuple((space_separated, space_separated, space_separated)))(input)
+            braced(terminated(tuple((space_separated, space_separated, space_separated)), multispace0))(input)
         }
 
         if let Ok((_, (r, g, b))) = integer_color_parser(s) {
@@ -693,5 +693,17 @@ mod tests {
                 DirEntryType::Directory => recurse(entry.read_dir()),
             }
         }
+    }
+
+    #[test]
+    fn vec_param_parsing() {
+        assert_eq!(
+            ParameterType::parse(" [ 1.0  2.0 ] "),
+            Some(glam::Vec2::new(1.0, 2.0))
+        );
+        assert_eq!(
+            ParameterType::parse("[ 1.0  2.0    3.0] "),
+            Some(glam::Vec3::new(1.0, 2.0, 3.0))
+        );
     }
 }
