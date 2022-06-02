@@ -217,6 +217,7 @@ impl<'a> FaceBuilder<'a> {
         // normalize
         let mut nearest_u = f32::MAX;
         let mut nearest_v = f32::MAX;
+
         for uv in &self.vertice_uvs {
             if uv.x.abs() <= 1.0 {
                 nearest_u = 0.0;
@@ -225,7 +226,9 @@ impl<'a> FaceBuilder<'a> {
             if uv.x.abs() < nearest_u.abs() {
                 nearest_u = uv.x;
             }
+        }
 
+        for uv in &self.vertice_uvs {
             if uv.y.abs() <= 1.0 {
                 nearest_v = 0.0;
                 break;
@@ -234,6 +237,7 @@ impl<'a> FaceBuilder<'a> {
                 nearest_v = uv.y;
             }
         }
+
         nearest_u = if nearest_u > 0.0 {
             nearest_u.floor()
         } else {
@@ -1160,6 +1164,8 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Range;
+
     use plumber_vdf as vdf;
 
     use super::*;
@@ -1983,5 +1989,105 @@ mod tests {
         clipped_solid.clip_to_solid(&clipping_solid, false, 1e-3);
 
         dbg!(clipped_solid);
+    }
+
+    #[test]
+    fn uv_normalization_finite_results() {
+        const UV_RANGE: Range<f32> = -1000.0..1000.0;
+
+        let test_data = r#"
+            "id" "13354"
+            side
+            {
+                "id" "13355"
+                "plane" "(0 -24 112) (0 -24 104) (0 152 104)"
+                "smoothing_groups" "0"
+                "material" "tools/toolsnodraw"
+                "uaxis" "[0 -1 0 0] 0.25"
+                "vaxis" "[0 0 -1 0] 0.25"
+                "lightmapscale" "16"
+            }
+            side
+            {
+                "id" "13356"
+                "plane" "(88 152 112) (88 152 104) (88 -24 104)"
+                "smoothing_groups" "0"
+                "material" "tools/toolsnodraw"
+                "uaxis" "[0 1 -0 0] 0.25"
+                "vaxis" "[0 -0 -1 0] 0.25"
+                "lightmapscale" "16"
+            }
+            side
+            {
+                "id" "13357"
+                "plane" "(88 -24 112) (88 -24 104) (0 -24 104)"
+                "smoothing_groups" "0"
+                "material" "tools/toolsnodraw"
+                "uaxis" "[1 0 0 0] 0.25"
+                "vaxis" "[0 0 -1 0] 0.25"
+                "lightmapscale" "16"
+            }
+            side
+            {
+                "id" "13358"
+                "plane" "(0 152 112) (0 152 104) (88 152 104)"
+                "smoothing_groups" "0"
+                "material" "tools/toolsnodraw"
+                "uaxis" "[-1 0 0 0] 0.25"
+                "vaxis" "[-0 -0 -1 0] 0.25"
+                "lightmapscale" "16"
+            }
+            side
+            {
+                "id" "13359"
+                "plane" "(0 152 104) (0 -24 104) (88 -24 104)"
+                "smoothing_groups" "0"
+                "material" "tools/toolsnodraw"
+                "uaxis" "[-1 0 0 0] 0.25"
+                "vaxis" "[0 -1 0 0] 0.25"
+                "lightmapscale" "16"
+            }
+            side
+            {
+                "id" "13360"
+                "plane" "(0 -24 112) (0 152 112) (88 152 112)"
+                "smoothing_groups" "0"
+                "material" "de_mirage/base/de_mirage_mid_ver1_diffuse"
+                "uaxis" "[1 0 0 0] 5"
+                "vaxis" "[0 -1 0 0] 5"
+                "lightmapscale" "16"
+            }
+        "#;
+
+        let solid: Solid = vdf::from_str(test_data).unwrap();
+
+        let mut builder = SolidBuilder::new(&solid);
+
+        builder.intersect_sides(1e-3, 1e-3);
+        builder.remove_invalid_faces();
+        builder.sort_vertices();
+        builder.build_uvs(|_| Ok(MaterialInfo::new(1024, 1024, false)));
+        builder.maybe_build_displacement().unwrap();
+
+        if !builder.is_displacement {
+            builder.create_default_alphas();
+        }
+
+        for face in &builder.faces {
+            for uv in &face.vertice_uvs {
+                assert!(
+                    UV_RANGE.contains(&uv.x),
+                    "invalid u {} for {}",
+                    uv.x,
+                    face.side.id
+                );
+                assert!(
+                    UV_RANGE.contains(&uv.y),
+                    "invalid v {} for {}",
+                    uv.y,
+                    face.side.id
+                );
+            }
+        }
     }
 }
