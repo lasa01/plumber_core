@@ -501,15 +501,16 @@ impl WorkerState {
                 let texture_path;
 
                 if let Some(value) = shader
-                    .parameters
-                    .get("$hdrbasetexture".as_uncased())
-                    .or_else(|| shader.parameters.get("$hdrcompressedtexture".as_uncased()))
+                    .extract_param::<TexturePath>("$hdrbasetexture", sky_path)
+                    .or_else(|| shader.extract_param("$hdrcompressedtexture", sky_path))
                 {
                     current_hdr = true;
-                    texture_path = value;
-                } else if let Some(value) = shader.parameters.get("$basetexture".as_uncased()) {
+                    texture_path = value.absolute_path();
+                } else if let Some(value) =
+                    shader.extract_param::<TexturePath>("$basetexture", sky_path)
+                {
                     current_hdr = false;
-                    texture_path = value;
+                    texture_path = value.absolute_path();
                 } else {
                     return Err(MaterialLoadError::Custom(
                         "skybox material has no texture specified",
@@ -522,7 +523,7 @@ impl WorkerState {
                     ));
                 }
 
-                Ok(GamePathBuf::from(texture_path.clone()))
+                Ok(texture_path)
             })
             .try_collect()?;
 
