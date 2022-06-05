@@ -264,9 +264,12 @@ impl Loader {
     pub fn start_worker_thread(&self, file_system: Arc<OpenFileSystem>, handler: impl Handler) {
         let worker_state = self.worker_state.clone();
 
-        thread::spawn(move || {
-            worker_state.work(&file_system, handler);
-        });
+        thread::Builder::new()
+            .name("material loader".into())
+            .spawn(move || {
+                worker_state.work(&file_system, handler);
+            })
+            .expect("thread spawning shouldn't fail");
     }
 }
 

@@ -280,6 +280,7 @@ where
 fn build_thread_pool(num_threads: usize) -> rayon::ThreadPool {
     ThreadPoolBuilder::new()
         .num_threads(num_threads)
+        .thread_name(|index| format!("asset loader {}", index))
         .build()
         .expect("thread pool building shouldn't fail")
 }
