@@ -52,8 +52,8 @@ impl<'a> Prop<'a> {
                 }
             };
 
-        let scale = self.scale()? * scale;
         let position = self.origin()? * scale;
+        let scale = self.scale()? * scale;
         let rotation = self.angles()?;
 
         Ok((
