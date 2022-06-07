@@ -10,7 +10,7 @@ use crate::{
         entities::{EntityParseError, TypedEntity},
         loader::{
             BuiltBrushEntity, BuiltOverlay, LoadedProp, OverlayError, PropError,
-            Settings as VmfSettings, SolidError,
+            Settings as VmfSettings,
         },
         Vmf,
     },
@@ -35,8 +35,6 @@ pub enum Error {
     },
     #[error("model `{path}`: {error}")]
     Model { path: PathBuf, error: ModelError },
-    #[error("solid `{id}`: {error}")]
-    Solid { id: i32, error: SolidError },
     #[error("overlay `{id}`: {error}")]
     Overlay { id: i32, error: OverlayError },
     #[error("prop `{id}`: {error}")]

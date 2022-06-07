@@ -18,6 +18,7 @@ use approx::relative_eq;
 use float_ord::FloatOrd;
 use glam::{Vec2, Vec3};
 use itertools::{izip, Itertools};
+use log::warn;
 use ndarray::{Array2, Array3, Zip};
 use thiserror::Error;
 
@@ -1064,13 +1065,16 @@ impl<'a> BuiltBrushEntity<'a> {
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
         scale: f32,
-    ) -> Result<Self, SolidError> {
+    ) -> Self {
         if settings.merge_solids.merge() {
             let mut mergable_solids = Vec::new();
 
             for solid in solids {
                 let mut builder = SolidBuilder::new(solid);
-                builder.build(&mut get_material_info, side_faces_map, settings)?;
+                if let Err(err) = builder.build(&mut get_material_info, side_faces_map, settings) {
+                    warn!("brush `{}`: {}", id, err);
+                    continue;
+                }
 
                 if !settings.invisible_solids.import() && builder.is_nodraw() {
                     continue;
@@ -1079,7 +1083,7 @@ impl<'a> BuiltBrushEntity<'a> {
                 mergable_solids.push(builder);
             }
 
-            Ok(BuiltBrushEntity {
+            BuiltBrushEntity {
                 id,
                 class_name,
                 merged_solids: MergedSolids::merge(
@@ -1089,9 +1093,9 @@ impl<'a> BuiltBrushEntity<'a> {
                     scale,
                 ),
                 solids: Vec::new(),
-            })
+            }
         } else {
-            Ok(BuiltBrushEntity {
+            BuiltBrushEntity {
                 id,
                 class_name,
                 merged_solids: None,
@@ -1102,16 +1106,17 @@ impl<'a> BuiltBrushEntity<'a> {
                         if let Err(err) =
                             builder.build(&mut get_material_info, side_faces_map, settings)
                         {
-                            return Some(Err(err));
+                            warn!("brush `{}`: {}", id, err);
+                            return None;
                         }
                         if settings.invisible_solids.import() || !builder.is_nodraw() {
-                            Some(Ok(builder.finish(scale)))
+                            Some(builder.finish(scale))
                         } else {
                             None
                         }
                     })
-                    .try_collect()?,
-            })
+                    .collect(),
+            }
         }
     }
 }
@@ -1126,7 +1131,7 @@ impl Entity {
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
         scale: f32,
-    ) -> Result<BuiltBrushEntity, SolidError> {
+    ) -> BuiltBrushEntity {
         BuiltBrushEntity::new(
             &self.solids,
             self.id,
@@ -1149,7 +1154,7 @@ impl World {
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
         scale: f32,
-    ) -> Result<BuiltBrushEntity, SolidError> {
+    ) -> BuiltBrushEntity {
         BuiltBrushEntity::new(
             &self.solids,
             self.id,

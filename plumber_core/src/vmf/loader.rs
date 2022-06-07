@@ -139,9 +139,8 @@ impl Vmf {
                     )
                     .for_each_with(
                         importer.asset_handler.clone(),
-                        |handler, r| match r {
-                            Ok(brush) => handler.handle_brush(brush),
-                            Err((id, error)) => handler.handle_error(Error::Solid { id, error }),
+                        |handler, brush| {
+                            handler.handle_brush(brush);
                         },
                     );
 
@@ -262,16 +261,14 @@ impl Vmf {
         side_faces_map: &'a Mutex<SideFacesMap>,
         geometry_settings: GeometrySettings,
         scale: f32,
-    ) -> impl ParallelIterator<Item = Result<BuiltBrushEntity, (i32, SolidError)>> + 'a {
+    ) -> impl ParallelIterator<Item = BuiltBrushEntity> + 'a {
         let world_brush_iter = rayon::iter::once(&self.world).map(move |world| {
-            world
-                .build_brush(
-                    |path| material_loader.block_on_material(path),
-                    side_faces_map,
-                    &geometry_settings,
-                    scale,
-                )
-                .map_err(|e| (world.id, e))
+            world.build_brush(
+                |path| material_loader.block_on_material(path),
+                side_faces_map,
+                &geometry_settings,
+                scale,
+            )
         });
 
         let entity_brushes_iter = {
@@ -279,14 +276,12 @@ impl Vmf {
                 .par_iter()
                 .filter(|entity| !entity.solids.is_empty())
                 .map(move |entity| {
-                    entity
-                        .build_brush(
-                            |path| material_loader.block_on_material(path),
-                            side_faces_map,
-                            &geometry_settings,
-                            scale,
-                        )
-                        .map_err(|e| (entity.id, e))
+                    entity.build_brush(
+                        |path| material_loader.block_on_material(path),
+                        side_faces_map,
+                        &geometry_settings,
+                        scale,
+                    )
                 })
         };
 
