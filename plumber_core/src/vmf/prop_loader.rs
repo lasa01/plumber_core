@@ -9,6 +9,7 @@ use crate::{
 use super::entities::{AngledEntity, EntityParseError, PointEntity, Prop};
 
 use glam::Vec3;
+use rgb::RGBA8;
 use thiserror::Error;
 
 #[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
@@ -28,6 +29,7 @@ pub struct LoadedProp<'a> {
     /// Rotation in in pitch, yaw, roll order (YZX), in degrees.
     pub rotation: [f32; 3],
     pub scale: f32,
+    pub color: RGBA8,
 }
 
 impl<'a> Prop<'a> {
@@ -55,6 +57,7 @@ impl<'a> Prop<'a> {
         let position = self.origin()? * scale;
         let scale = self.scale()? * scale;
         let rotation = self.angles()?;
+        let color = self.render_color()?.alpha(self.render_amt()?);
 
         Ok((
             LoadedProp {
@@ -64,6 +67,7 @@ impl<'a> Prop<'a> {
                 position,
                 rotation,
                 scale,
+                color,
             },
             model,
         ))
