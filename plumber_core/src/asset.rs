@@ -273,6 +273,10 @@ where
         vmf.load(self, settings, f);
         Ok(())
     }
+
+    pub fn file_system(&self) -> &OpenFileSystem {
+        &self.file_system
+    }
 }
 
 fn build_thread_pool(num_threads: usize) -> rayon::ThreadPool {
