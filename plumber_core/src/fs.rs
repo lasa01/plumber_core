@@ -332,6 +332,8 @@ impl SearchPath {
                                     "opening filesystem: vpk file `{}` not found",
                                     path.to_string_lossy()
                                 );
+
+                                return Ok(());
                             }
                         }
                         return Err(OpenError::new(path, err.into()));
