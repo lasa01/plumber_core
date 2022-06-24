@@ -487,7 +487,6 @@ impl<'a> LodRef<'a> {
     pub fn merged_meshes(&self, mdl_model: mdl::ModelRef) -> Result<(Vec<usize>, Vec<Face>)> {
         let mut vertice_indices = Vec::new();
         let mut faces = Vec::new();
-        let mut index_offset = 0_usize;
 
         for (vtx_mesh, mdl_mesh) in self.iter_meshes()?.zip(mdl_model.iter_meshes()?) {
             let vertex_index_start: usize =
@@ -507,24 +506,20 @@ impl<'a> LodRef<'a> {
                         error: "mesh material index is negative",
                     })?;
 
-            let (mesh_face_indices, mesh_vertices, mesh_index_offset) = vtx_mesh
+            let (mesh_face_indices, mesh_vertices) = vtx_mesh
                 .merged_strip_groups::<StripGroupNormal>()
                 .or_else(|_| vtx_mesh.merged_strip_groups::<StripGroupAlternate>())?;
 
             faces.extend(
                 mesh_face_indices
                     .into_iter()
+                    .map(|i| i + vertice_indices.len())
                     .tuples()
                     .map(|(i_1, i_2, i_3)| Face {
-                        vertice_indices: [
-                            i_1 + index_offset,
-                            i_2 + index_offset,
-                            i_3 + index_offset,
-                        ],
+                        vertice_indices: [i_1, i_2, i_3],
                         material_index,
                     }),
             );
-            index_offset += mesh_index_offset;
 
             vertice_indices.extend(mesh_vertices.into_iter().map(|i| i + vertex_index_start));
         }
@@ -569,34 +564,37 @@ impl<'a> MeshRef<'a> {
             }))
     }
 
-    fn merged_strip_groups<S: StripGroup + Clone>(
-        &self,
-    ) -> Result<(Vec<usize>, Vec<usize>, usize)> {
+    fn merged_strip_groups<S: StripGroup + Clone>(&self) -> Result<(Vec<usize>, Vec<usize>)> {
         let mut face_indices = Vec::new();
         let mut vertices = Vec::new();
-        let mut index_offset: usize = 0;
 
         for strip_group in self.iter_strip_groups::<S>()? {
+            let strip_group_indices = strip_group.indices()?;
+            let strip_group_vertices = strip_group.vertices()?;
+
+            for i in strip_group_indices {
+                if i.get() as usize >= strip_group_vertices.len() {
+                    return Err(Error::Corrupted {
+                        ty: FileType::Vtx,
+                        error: "strip group vertice index out of bounds",
+                    });
+                }
+            }
+
             face_indices.extend(
-                strip_group
-                    .indices()?
+                strip_group_indices
                     .iter()
-                    .map(|&i| i.get() as usize + index_offset),
+                    .map(|&i| i.get() as usize + vertices.len()),
             );
+
             vertices.extend(
-                strip_group
-                    .vertices()?
+                strip_group_vertices
                     .iter()
                     .map(|v| v.original_mesh_vertex_index.get() as usize),
             );
-            index_offset += strip_group
-                .strips()?
-                .iter()
-                .map(|s| s.vertex_count() as usize)
-                .sum::<usize>();
         }
 
-        Ok((face_indices, vertices, index_offset))
+        Ok((face_indices, vertices))
     }
 }
 
@@ -645,7 +643,7 @@ where
         })
     }
 
-    pub fn strips(&self) -> Result<&'a [<S as StripGroup>::Strip]> {
+    pub fn _strips(&self) -> Result<&'a [<S as StripGroup>::Strip]> {
         let offset = (self.offset as isize + self.strip_group.strip_offset() as isize) as usize;
         let count = self
             .strip_group
