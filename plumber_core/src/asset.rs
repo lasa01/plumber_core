@@ -16,7 +16,7 @@ use crate::{
     },
     vmt::loader::{
         LoadedMaterial, LoadedTexture, LoadedVmt, Loader as MaterialLoader, MaterialInfo,
-        MaterialLoadError, SkyBox,
+        MaterialLoadError, SkyBox, TextureLoadError,
     },
 };
 
@@ -32,6 +32,11 @@ pub enum Error {
     Material {
         path: PathBuf,
         error: MaterialLoadError,
+    },
+    #[error("texture `{path}`: {error}")]
+    Texture {
+        path: PathBuf,
+        error: TextureLoadError,
     },
     #[error("model `{path}`: {error}")]
     Model { path: PathBuf, error: ModelError },
@@ -180,6 +185,11 @@ where
         drop(self.asset_handler);
 
         self.material_loader.parallel_block_on_material(path, f)
+    }
+
+    /// Errors are handled in [Handler].
+    pub fn import_vtf(&self, path: PathBuf) {
+        self.material_loader.load_texture(path);
     }
 
     /// Errors are handled in [Handler].
