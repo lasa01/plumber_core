@@ -418,9 +418,9 @@ fn open_wildcard_dir(
 ) -> Result<(), OpenError> {
     match fs::read_dir(path) {
         Ok(readdir) => {
-            for entry in readdir {
-                debug!("reading wildcard directory `{}`", path.display());
+            debug!("reading wildcard directory `{}`", path.display());
 
+            for entry in readdir {
                 let entry = entry.map_err(|err| OpenError::new(path, err.into()))?;
 
                 let file_type = entry
