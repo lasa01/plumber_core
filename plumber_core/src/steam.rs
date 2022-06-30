@@ -5,6 +5,7 @@ use std::{
     slice::Iter,
 };
 
+use log::warn;
 use plumber_vdf as vdf;
 
 use itertools::Itertools;
@@ -285,14 +286,20 @@ impl Libraries {
         .library_folders
         .0;
 
-        let normalized_paths: Vec<_> = libraries
+        let mut normalized_paths = libraries
             .paths
             .iter()
-            .map(|p| {
-                p.canonicalize()
-                    .map_err(|err| LibraryDiscoveryError::from_io(err, p))
-            })
-            .try_collect()?;
+            .filter_map(|p| match p.canonicalize() {
+                Ok(p) => Some(p),
+                Err(err) => {
+                    warn!(
+                        "error reading steam library folder `{}`: {}",
+                        p.display(),
+                        err
+                    );
+                    None
+                }
+            });
 
         let normalized_steam_path = steam_path
             .canonicalize()
