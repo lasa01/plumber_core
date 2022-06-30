@@ -5,6 +5,7 @@ use std::{
     slice::Iter,
 };
 
+use log::debug;
 use log::warn;
 use plumber_vdf as vdf;
 
@@ -237,6 +238,8 @@ impl Libraries {
     fn discover_impl() -> Result<Self, LibraryDiscoveryError> {
         use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
+        debug!("reading registry to determine steam install directory");
+
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
         let steam = hkcu.open_subkey("SOFTWARE\\Valve\\Steam").map_err(|err| {
             LibraryDiscoveryError::Io {
@@ -252,6 +255,9 @@ impl Libraries {
                     path: "registry HKEY_CURRENT_USER\\SOFTWARE\\Valve\\Steam\\SteamPath"
                         .to_string(),
                 })?;
+
+        debug!("steam install directory found at `{}`", steam_path);
+
         Self::discover_from_steam_path(Path::new(&steam_path))
     }
 
@@ -285,6 +291,12 @@ impl Libraries {
     ) -> Result<Self, LibraryDiscoveryError> {
         let steam_path = steam_path.as_ref();
         let libraryfolders_path = steam_path.join("steamapps").join("libraryfolders.vdf");
+
+        debug!(
+            "reading installed steam games from `{}`, file: `{}`",
+            steam_path.display(),
+            libraryfolders_path.display()
+        );
 
         let mut libraries = vdf::escaped_from_str::<LibraryFoldersFile>(
             &fs::read_to_string(&libraryfolders_path)
@@ -372,14 +384,20 @@ impl<'a> Iterator for Apps<'a> {
                         Ok(entry) => entry,
                         Err(err) => return Some(Err(AppError::from_io(err, current_path))),
                     };
+
                     if !entry.file_type().map_or(false, |t| t.is_file()) {
                         continue;
                     }
+
                     if let Some(filename) = entry.file_name().to_str() {
                         if !filename.starts_with("appmanifest_") || !is_acf_file(filename) {
                             continue;
                         }
+
                         let path = entry.path();
+
+                        debug!("reading appmanifest `{}`", path.display());
+
                         return Some(
                             fs::read_to_string(&path)
                                 .map_err(|err| AppError::from_io(err, &path))
@@ -392,7 +410,11 @@ impl<'a> Iterator for Apps<'a> {
                     }
                 }
             }
+
             let steamapps_path = self.paths.next()?.join("steamapps");
+
+            debug!("reading app manifests from `{}`", steamapps_path.display());
+
             match fs::read_dir(&steamapps_path) {
                 Ok(iter) => {
                     self.current_path = Some((steamapps_path, iter));
@@ -421,10 +443,15 @@ impl<'a> Iterator for SourceApps<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         for result in &mut self.apps {
-            if result
-                .as_ref()
-                .map_or(true, |app| self.source_app_ids.contains(&app.app_id))
-            {
+            if result.as_ref().map_or(true, |app| {
+                if self.source_app_ids.contains(&app.app_id) {
+                    debug!("app id `{}` is a source app", app.app_id);
+                    true
+                } else {
+                    debug!("skipped app id `{}`: is not a source app", app.app_id);
+                    false
+                }
+            }) {
                 return Some(result);
             }
         }

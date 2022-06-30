@@ -315,97 +315,158 @@ pub enum SearchPath {
 impl SearchPath {
     fn open(&self, open_search_paths: &mut Vec<OpenSearchPath>) -> Result<(), OpenError> {
         match self {
-            SearchPath::Vpk(path) => {
-                let alt_path = path.file_stem().map(|s| {
-                    let mut s = s.to_os_string();
-                    s.push("_dir.vpk");
-                    path.with_file_name(s)
-                });
-                match vpk::Directory::read(path)
-                    .or_else(|e| alt_path.map_or(Err(e), vpk::Directory::read))
-                {
-                    Ok(dir) => open_search_paths.push(OpenSearchPath::Vpk(dir)),
-                    Err(err) => {
-                        if let DirectoryReadError::Io(inner) = &err {
-                            if inner.kind() == io::ErrorKind::NotFound {
-                                warn!(
-                                    "opening filesystem: vpk file `{}` not found",
-                                    path.to_string_lossy()
-                                );
-
-                                return Ok(());
-                            }
-                        }
-                        return Err(OpenError::new(path, err.into()));
-                    }
-                }
-            }
-            SearchPath::Directory(path) => match fs::read_dir(path) {
-                Ok(readdir) => {
-                    for entry in readdir {
-                        let entry = entry.map_err(|err| OpenError::new(path, err.into()))?;
-                        if entry
-                            .file_type()
-                            .map_err(|err| OpenError::new(path, err.into()))?
-                            .is_file()
-                            && entry.file_name().to_str() == Some("pak01_dir.vpk")
-                        {
-                            let path = entry.path();
-                            open_search_paths.push(OpenSearchPath::Vpk(
-                                vpk::Directory::read(&path)
-                                    .map_err(|err| OpenError::new(&path, err.into()))?,
-                            ));
-                        }
-                    }
-                    open_search_paths.push(OpenSearchPath::Directory(path.clone()));
-                }
-                Err(err) => {
-                    if err.kind() == io::ErrorKind::NotFound {
-                        warn!(
-                            "opening filesystem: directory `{}` not found",
-                            path.to_string_lossy()
-                        );
-                    } else {
-                        return Err(OpenError::new(path, err.into()));
-                    }
-                }
-            },
-            SearchPath::Wildcard(path) => match fs::read_dir(path) {
-                Ok(readdir) => {
-                    for entry in readdir {
-                        let entry = entry.map_err(|err| OpenError::new(path, err.into()))?;
-                        let file_type = entry
-                            .file_type()
-                            .map_err(|err| OpenError::new(path, err.into()))?;
-                        if file_type.is_file() {
-                            if entry.file_name().to_str().map_or(false, is_vpk_file) {
-                                let path = entry.path();
-
-                                // Silently ignore errors, these could be multipart vpk files
-                                if let Ok(vpk) = vpk::Directory::read(path) {
-                                    open_search_paths.push(OpenSearchPath::Vpk(vpk));
-                                }
-                            }
-                        } else if file_type.is_dir() {
-                            open_search_paths.push(OpenSearchPath::Directory(entry.path()));
-                        }
-                    }
-                }
-                Err(err) => {
-                    if err.kind() == io::ErrorKind::NotFound {
-                        warn!(
-                            "opening filesystem: directory `{}` not found",
-                            path.to_string_lossy()
-                        );
-                    } else {
-                        return Err(OpenError::new(path, err.into()));
-                    }
-                }
-            },
+            SearchPath::Vpk(path) => open_vpk(path, open_search_paths)?,
+            SearchPath::Directory(path) => open_directory(path, open_search_paths)?,
+            SearchPath::Wildcard(path) => open_wildcard_dir(path, open_search_paths)?,
         }
 
         Ok(())
     }
+}
+
+fn open_vpk(
+    path: &StdPathBuf,
+    open_search_paths: &mut Vec<OpenSearchPath>,
+) -> Result<(), OpenError> {
+    debug!("opening vpk file `{}`", path.display());
+
+    let alt_path = path.file_stem().map(|s| {
+        let mut s = s.to_os_string();
+        s.push("_dir.vpk");
+
+        path.with_file_name(s)
+    });
+
+    match vpk::Directory::read(path).or_else(|e| {
+        alt_path.map_or(Err(e), |path| {
+            debug!(
+                "opening failed, trying alternative path `{}`",
+                path.display()
+            );
+
+            vpk::Directory::read(path)
+        })
+    }) {
+        Ok(dir) => open_search_paths.push(OpenSearchPath::Vpk(dir)),
+        Err(err) => {
+            if let DirectoryReadError::Io(inner) = &err {
+                if inner.kind() == io::ErrorKind::NotFound {
+                    warn!(
+                        "opening filesystem: vpk file `{}` not found",
+                        path.to_string_lossy()
+                    );
+
+                    return Ok(());
+                }
+            }
+
+            return Err(OpenError::new(path, err.into()));
+        }
+    }
+
+    Ok(())
+}
+
+fn open_directory(
+    path: &StdPathBuf,
+    open_search_paths: &mut Vec<OpenSearchPath>,
+) -> Result<(), OpenError> {
+    match fs::read_dir(path) {
+        Ok(readdir) => {
+            debug!("reading directory `{}`", path.display());
+
+            for entry in readdir {
+                let entry = entry.map_err(|err| OpenError::new(path, err.into()))?;
+
+                if entry
+                    .file_type()
+                    .map_err(|err| OpenError::new(path, err.into()))?
+                    .is_file()
+                    && entry.file_name().to_str() == Some("pak01_dir.vpk")
+                {
+                    let path = entry.path();
+
+                    debug!("found pak01_dir.vpk at `{}`, opening", path.display());
+
+                    open_search_paths.push(OpenSearchPath::Vpk(
+                        vpk::Directory::read(&path)
+                            .map_err(|err| OpenError::new(&path, err.into()))?,
+                    ));
+                }
+            }
+
+            open_search_paths.push(OpenSearchPath::Directory(path.clone()));
+        }
+        Err(err) => {
+            if err.kind() == io::ErrorKind::NotFound {
+                warn!(
+                    "opening filesystem: directory `{}` not found",
+                    path.to_string_lossy()
+                );
+            } else {
+                return Err(OpenError::new(path, err.into()));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn open_wildcard_dir(
+    path: &StdPathBuf,
+    open_search_paths: &mut Vec<OpenSearchPath>,
+) -> Result<(), OpenError> {
+    match fs::read_dir(path) {
+        Ok(readdir) => {
+            for entry in readdir {
+                debug!("reading wildcard directory `{}`", path.display());
+
+                let entry = entry.map_err(|err| OpenError::new(path, err.into()))?;
+
+                let file_type = entry
+                    .file_type()
+                    .map_err(|err| OpenError::new(path, err.into()))?;
+
+                if file_type.is_file() {
+                    if entry.file_name().to_str().map_or(false, is_vpk_file) {
+                        let path = entry.path();
+                        debug!(
+                            "found vpk `{}` in wildcard directory, opening",
+                            path.display()
+                        );
+
+                        // Silently ignore errors, these could be multipart vpk files
+                        if let Ok(vpk) = vpk::Directory::read(path) {
+                            open_search_paths.push(OpenSearchPath::Vpk(vpk));
+
+                            debug!("vpk opened successfully");
+                        } else {
+                            debug!("could not read vpk, ignoring");
+                        }
+                    }
+                } else if file_type.is_dir() {
+                    debug!(
+                        "found directory `{}` in wildcard directory, adding to search paths",
+                        path.display()
+                    );
+
+                    open_search_paths.push(OpenSearchPath::Directory(entry.path()));
+                }
+            }
+        }
+        Err(err) => {
+            if err.kind() == io::ErrorKind::NotFound {
+                warn!(
+                    "opening filesystem: directory `{}` not found",
+                    path.to_string_lossy()
+                );
+            } else {
+                return Err(OpenError::new(path, err.into()));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Represents a Source game's filesystem.
@@ -484,6 +545,8 @@ impl FileSystem {
         let mut search_paths = Vec::new();
 
         for path in &game_info.file_system.search_paths.game_search_paths {
+            debug!("got search path from gameinfo: `{}`", path);
+
             let path = path.as_uncased();
             let path = if path.starts_with("|gameinfo_path|".as_uncased()) {
                 match path[15..].as_str() {
@@ -499,25 +562,43 @@ impl FileSystem {
                 root_path.join(path.as_str())
             };
 
+            debug!("search path resolved as: `{}`", path.display());
+
             if let Some(file_name) = path.file_name().and_then(OsStr::to_str) {
                 if is_vpk_file(file_name) {
+                    debug!("search path detected as a vpk file");
+
                     let new_path = SearchPath::Vpk(path);
                     if !search_paths.contains(&new_path) {
                         search_paths.push(new_path);
                     }
                 } else if file_name == "*" {
                     if let Some(parent) = path.parent() {
+                        debug!("search path detected as a wildcard directory");
+
                         let new_path = SearchPath::Wildcard(parent.into());
                         if !search_paths.contains(&new_path) {
                             search_paths.push(new_path);
                         }
+                    } else {
+                        warn!(
+                            "search path `{}` in gameinfo.txt is invalid",
+                            path.display()
+                        );
                     }
                 } else {
+                    debug!("search path detected as a directory");
+
                     let new_path = SearchPath::Directory(path);
                     if !search_paths.contains(&new_path) {
                         search_paths.push(new_path);
                     }
                 }
+            } else {
+                warn!(
+                    "search path `{}` in gameinfo.txt is invalid",
+                    path.display()
+                );
             }
         }
 
@@ -534,10 +615,14 @@ impl FileSystem {
     ///
     /// Returns `Err` if a search path or a vpk archive can't be opened.
     pub fn open(&self) -> Result<OpenFileSystem, OpenError> {
+        debug!("opening search paths for file system `{}`", self.name);
+
         let mut open_search_paths = Vec::new();
+
         for search_path in &self.search_paths {
             search_path.open(&mut open_search_paths)?;
         }
+
         Ok(OpenFileSystem {
             search_paths: open_search_paths,
         })
@@ -779,16 +864,28 @@ impl OpenFileSystem {
     /// Returns `Err` if `file_path` doesn't exist or if the file can't be opened.
     pub fn open_file<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<GameFile> {
         let file_path = file_path.into();
+
         match file_path {
             Path::Game(file_path) => {
+                debug!("opening `{}` from game file system", file_path);
+
                 for path in &self.search_paths {
+                    debug!("looking in `{}`", path.path().display());
+
                     if let Some(file) = path.try_open_file(file_path)? {
+                        debug!("file `{}` found in `{}`", file_path, path.path().display());
+
                         return Ok(file);
                     }
                 }
+
+                debug!("file `{}` not found in any search path", file_path);
+
                 Err(io::Error::new(io::ErrorKind::NotFound, "no such file"))
             }
             Path::Os(file_path) => {
+                debug!("opening `{}` from os file system", file_path.display());
+
                 let file = fs::File::open(file_path)?;
                 Ok(GameFile::Fs(file))
             }
