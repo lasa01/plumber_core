@@ -16,7 +16,7 @@ use zerocopy::LayoutVerified;
 
 use crate::{
     asset::{self, Handler},
-    fs::{GamePathBuf, OpenFileSystem, PathBuf},
+    fs::{GamePathBuf, OpenFileSystem, Path, PathBuf},
     vmt::Vmt,
 };
 
@@ -138,8 +138,9 @@ enum MaterialStatus {
 
 #[derive(Debug)]
 enum MaterialJob {
-    Normal(PathBuf),
+    Material(PathBuf),
     SkyBox(PathBuf),
+    Texture(PathBuf),
 }
 
 #[derive(Clone, Debug)]
@@ -261,6 +262,14 @@ impl Loader {
             .expect("material job channel shouldn't be disconnected");
     }
 
+    /// Start loading the given texture without waiting for it to finish.
+    /// `texture_path` should be absolute, ie. start with `materials/`.
+    pub fn load_texture(&self, texture_path: PathBuf) {
+        self.material_job_sender
+            .send(MaterialJob::Texture(texture_path))
+            .expect("material job channel shouldn't be disconnected");
+    }
+
     pub fn start_worker_thread(&self, file_system: Arc<OpenFileSystem>, handler: impl Handler) {
         let worker_state = self.worker_state.clone();
 
@@ -284,7 +293,7 @@ struct WorkerState {
     material_job_receiver: crossbeam_channel::Receiver<MaterialJob>,
     material_cache: Mutex<HashMap<PathBuf, MaterialStatus>>,
     material_condvar: Condvar,
-    texture_cache: Mutex<HashMap<GamePathBuf, Result<TextureInfo, TextureLoadError>>>,
+    texture_cache: Mutex<HashMap<PathBuf, Result<TextureInfo, TextureLoadError>>>,
 }
 
 impl WorkerState {
@@ -311,7 +320,7 @@ impl WorkerState {
 
         guard.insert(path.clone(), MaterialStatus::Loading);
         sender
-            .send(MaterialJob::Normal(path.clone()))
+            .send(MaterialJob::Material(path.clone()))
             .expect("material job channel shouldn't be disconnected");
     }
 
@@ -345,7 +354,7 @@ impl WorkerState {
 
         for job in &self.material_job_receiver {
             match job {
-                MaterialJob::Normal(material_path) => {
+                MaterialJob::Material(material_path) => {
                     match self.load_material(material_path, file_system, &mut vtf_lib, |vmt| {
                         handler.build_material(vmt)
                     }) {
@@ -371,6 +380,18 @@ impl WorkerState {
                                 error,
                             });
                         }
+                    }
+                }
+                MaterialJob::Texture(texture_path) => {
+                    match self.load_texture(texture_path.clone(), file_system, &mut vtf_lib) {
+                        Ok((_, Some(loaded))) => {
+                            handler.handle_texture(loaded);
+                        }
+                        Ok((_, None)) => continue,
+                        Err(error) => handler.handle_error(asset::Error::Texture {
+                            path: texture_path,
+                            error,
+                        }),
                     }
                 }
             }
@@ -534,7 +555,8 @@ impl WorkerState {
             let textures: Vec<_> = texture_paths
                 .into_iter()
                 .map(|path| {
-                    let vtf = open_texture(vtf_lib, &path, file_system)?;
+                    let texture_path = Path::Game(&path);
+                    let vtf = open_texture(vtf_lib, texture_path, file_system)?;
                     let (data, format, width, height) = vtf_data(&vtf)?;
 
                     let f32_data = match format {
@@ -561,7 +583,8 @@ impl WorkerState {
             let textures: Vec<_> = texture_paths
                 .into_iter()
                 .map(|path| {
-                    let vtf = open_texture(vtf_lib, &path, file_system)?;
+                    let texture_path = Path::Game(&path);
+                    let vtf = open_texture(vtf_lib, texture_path, file_system)?;
                     let (data, format, width, height) = vtf_data(&vtf)?;
 
                     let data = VtfFile::convert_image_to_rgba8888(data, width, height, format)?;
@@ -590,7 +613,7 @@ impl WorkerState {
 
     fn load_texture(
         &self,
-        texture_path: GamePathBuf,
+        texture_path: PathBuf,
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<(TextureInfo, Option<LoadedTexture>), TextureLoadError> {
@@ -677,7 +700,7 @@ impl MaterialInfo {
         let (width, height) = match get_dimension_reference(shader) {
             Some(texture_path) => {
                 let (info, texture) =
-                    worker_state.load_texture(texture_path, file_system, vtf_lib)?;
+                    worker_state.load_texture(PathBuf::Game(texture_path), file_system, vtf_lib)?;
 
                 if let Some(texture) = texture {
                     loaded_textures.push(texture);
@@ -745,9 +768,11 @@ impl<'a> LoadedVmt<'a> {
         &mut self,
         texture_path: GamePathBuf,
     ) -> Result<TextureInfo, TextureLoadError> {
-        let (info, texture) =
-            self.worker_state
-                .load_texture(texture_path, self.file_system, self.vtf_lib)?;
+        let (info, texture) = self.worker_state.load_texture(
+            PathBuf::Game(texture_path),
+            self.file_system,
+            self.vtf_lib,
+        )?;
         if let Some(texture) = texture {
             self.loaded_textures.push(texture);
         }
@@ -842,12 +867,23 @@ pub struct LoadedTexture {
 
 impl LoadedTexture {
     fn load(
-        texture_path: GamePathBuf,
+        texture_path: PathBuf,
         file_system: &OpenFileSystem,
         vtf_lib: &mut (VtfLib, VtfGuard),
     ) -> Result<Self, TextureLoadError> {
-        let vtf = open_texture(vtf_lib, &texture_path, file_system)?;
-        Self::load_vtf(texture_path, &vtf)
+        let vtf = open_texture(vtf_lib, Path::from(&texture_path), file_system)?;
+
+        let name = match texture_path {
+            PathBuf::Game(path) => path,
+            PathBuf::Os(path) => path
+                .file_name()
+                .expect("file is already read, file_name should exist")
+                .to_string_lossy()
+                .into_owned()
+                .into(),
+        };
+
+        Self::load_vtf(name, &vtf)
     }
 
     fn load_vtf(name: GamePathBuf, vtf: &BoundVtfFile) -> Result<Self, TextureLoadError> {
@@ -874,7 +910,7 @@ impl LoadedTexture {
 
 fn open_texture<'a>(
     vtf_lib: &'a mut (VtfLib, VtfGuard),
-    texture_path: &GamePathBuf,
+    texture_path: Path,
     file_system: &OpenFileSystem,
 ) -> Result<BoundVtfFile<'a, 'a>, TextureLoadError> {
     let (vtf_lib, guard) = vtf_lib;

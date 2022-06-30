@@ -442,10 +442,23 @@ mod tests {
         let model = Model::read(entry.path(), file_system)?;
         let verified = model.verify()?;
         eprintln!("reading `{}`", verified.name()?);
-        verified.meshes()?;
-        for result in verified.materials(file_system)? {
-            result.unwrap();
+
+        let material_results = verified.materials(file_system)?.collect_vec();
+
+        for mesh in verified.meshes()? {
+            for face in &mesh.faces {
+                assert!(face.material_index < material_results.len());
+
+                for i in face.vertice_indices {
+                    assert!(i < mesh.vertices.len());
+                }
+            }
         }
+
+        for result in material_results {
+            result?;
+        }
+
         verified.bones()?;
         verified.animations()?.try_for_each(|r| r.map(|_| ()))?;
         Ok(())

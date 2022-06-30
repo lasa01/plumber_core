@@ -10,7 +10,7 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::multispace0,
-    sequence::{preceded, tuple, terminated},
+    sequence::{preceded, terminated, tuple},
     IResult,
 };
 use plumber_vdf as vdf;
@@ -283,7 +283,10 @@ impl ParameterType for glam::Vec3 {
 
     fn parse(s: &str) -> Option<Self> {
         fn vec_parser(input: &str) -> IResult<&str, (&str, &str, &str)> {
-            terminated(tuple((space_separated, space_separated, space_separated)), multispace0)(input)
+            terminated(
+                tuple((space_separated, space_separated, space_separated)),
+                multispace0,
+            )(input)
         }
 
         let (x, y, z) = alt((bracketed(vec_parser), vec_parser))(s).ok()?.1;
@@ -301,7 +304,10 @@ impl ParameterType for rgb::RGB<f32> {
 
     fn parse(s: &str) -> Option<Self> {
         fn integer_color_parser(input: &str) -> IResult<&str, (&str, &str, &str)> {
-            braced(terminated(tuple((space_separated, space_separated, space_separated)), multispace0))(input)
+            braced(terminated(
+                tuple((space_separated, space_separated, space_separated)),
+                multispace0,
+            ))(input)
         }
 
         if let Ok((_, (r, g, b))) = integer_color_parser(s) {
@@ -504,8 +510,6 @@ pub enum ShaderResolveError {
     Io { path: String, error: String },
     #[error("error deserializing included material: {0}")]
     Deserialization(#[from] vdf::Error),
-    #[error("included material cannot be a patch material")]
-    RecursivePatch,
 }
 
 impl ShaderResolveError {
@@ -543,8 +547,7 @@ impl Vmt {
     /// # Errors
     ///
     /// If this is a patch material,
-    /// returns `Err` if the included material can't be found or parsed,
-    /// or if the included material is also a patch material.
+    /// returns `Err` if any of the included materials can't be found or parsed.
     pub fn resolve_shader(
         self,
         file_system: &fs::OpenFileSystem,
@@ -556,9 +559,7 @@ impl Vmt {
                     .read(&patch.include)
                     .map_err(|err| ShaderResolveError::from_io(&err, &patch.include))?;
                 let base_vmt = Self::from_bytes(&base_contents)?;
-                let mut base_shader = base_vmt
-                    .into_shader()
-                    .ok_or(ShaderResolveError::RecursivePatch)?;
+                let mut base_shader = base_vmt.resolve_shader(file_system)?;
                 base_shader.parameters.append(&mut patch.insert);
                 Ok(base_shader)
             }

@@ -16,7 +16,7 @@ use crate::{
     },
     vmt::loader::{
         LoadedMaterial, LoadedTexture, LoadedVmt, Loader as MaterialLoader, MaterialInfo,
-        MaterialLoadError, SkyBox,
+        MaterialLoadError, SkyBox, TextureLoadError,
     },
 };
 
@@ -32,6 +32,11 @@ pub enum Error {
     Material {
         path: PathBuf,
         error: MaterialLoadError,
+    },
+    #[error("texture `{path}`: {error}")]
+    Texture {
+        path: PathBuf,
+        error: TextureLoadError,
     },
     #[error("model `{path}`: {error}")]
     Model { path: PathBuf, error: ModelError },
@@ -183,6 +188,11 @@ where
     }
 
     /// Errors are handled in [Handler].
+    pub fn import_vtf(&self, path: PathBuf) {
+        self.material_loader.load_texture(path);
+    }
+
+    /// Errors are handled in [Handler].
     pub fn import_mdl(&self, path: PathBuf, settings: MdlSettings, import_materials: bool) {
         let model_loader = self.model_loader.clone();
         let material_loader = self.material_loader.clone();
@@ -272,6 +282,10 @@ where
         let vmf = Vmf::from_bytes(bytes)?;
         vmf.load(self, settings, f);
         Ok(())
+    }
+
+    pub fn file_system(&self) -> &OpenFileSystem {
+        &self.file_system
     }
 }
 

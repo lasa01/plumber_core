@@ -247,17 +247,22 @@ fn is_vpk_file(filename: &str) -> bool {
 pub enum ParseError {
     #[error("io error reading `{path}`: {inner}")]
     Io { path: String, inner: io::Error },
-    #[error("could not find gameinfo.txt")]
-    NoGameInfo,
-    #[error("error deserializing gameinfo.txt: {0}")]
-    Deserialization(#[from] vdf::Error),
-    #[error("error deserializing appmanifest: {0}")]
-    AppDeserialization(vdf::Error),
+    #[error("could not find gameinfo.txt in `{path}`")]
+    NoGameInfo { path: String },
+    #[error("error deserializing `{path}`: {inner}")]
+    Deserialization { path: String, inner: vdf::Error },
 }
 
 impl ParseError {
     fn from_io(err: io::Error, path: &StdPath) -> Self {
         Self::Io {
+            path: path.as_os_str().to_string_lossy().into_owned(),
+            inner: err,
+        }
+    }
+
+    fn from_vdf(err: vdf::Error, path: &StdPath) -> Self {
+        Self::Deserialization {
             path: path.as_os_str().to_string_lossy().into_owned(),
             inner: err,
         }
@@ -268,7 +273,9 @@ impl From<steam::AppError> for ParseError {
     fn from(e: steam::AppError) -> Self {
         match e {
             steam::AppError::Io { path, inner } => ParseError::Io { path, inner },
-            steam::AppError::Deserialization(e) => ParseError::AppDeserialization(e),
+            steam::AppError::Deserialization { path, inner } => {
+                ParseError::Deserialization { path, inner }
+            }
         }
     }
 }
@@ -325,6 +332,8 @@ impl SearchPath {
                                     "opening filesystem: vpk file `{}` not found",
                                     path.to_string_lossy()
                                 );
+
+                                return Ok(());
                             }
                         }
                         return Err(OpenError::new(path, err.into()));
@@ -430,7 +439,9 @@ impl FileSystem {
                     break maybe_gameinfo_path;
                 }
             } else {
-                return Err(ParseError::NoGameInfo);
+                return Err(ParseError::NoGameInfo {
+                    path: app.install_dir.as_os_str().to_string_lossy().into_owned(),
+                });
             }
         };
         Self::from_paths(&app.install_dir, &gameinfo_path)
@@ -450,11 +461,12 @@ impl FileSystem {
         let root_path = root_path.as_ref();
         let game_info_path = game_info_path.as_ref();
 
-        let game_info = vdf::from_str::<GameInfoFile>(
-            &fs::read_to_string(game_info_path)
-                .map_err(|err| ParseError::from_io(err, game_info_path))?,
-        )?
-        .game_info;
+        let game_info_str = fs::read_to_string(game_info_path)
+            .map_err(|err| ParseError::from_io(err, game_info_path))?;
+        let game_info = vdf::from_str::<GameInfoFile>(&game_info_str)
+            .map_err(|err| ParseError::from_vdf(err, game_info_path))?
+            .game_info;
+
         Ok(Self::from_game_info(
             game_info,
             game_info_path

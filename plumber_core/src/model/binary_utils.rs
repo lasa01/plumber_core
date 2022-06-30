@@ -38,6 +38,10 @@ pub fn parse<T: FromBytes>(bytes: &[u8], offset: usize) -> Option<&T> {
 }
 
 pub fn parse_slice<T: FromBytes>(bytes: &[u8], offset: usize, count: usize) -> Option<&[T]> {
+    if count == 0 {
+        return Some(&[]);
+    }
+
     bytes
         .get(offset..)
         .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
@@ -52,6 +56,10 @@ pub fn parse_mut<'a, T: FromBytes>(bytes: &mut &'a [u8]) -> Option<&'a T> {
 }
 
 pub fn parse_slice_mut<'a, T: FromBytes>(bytes: &mut &'a [u8], count: usize) -> Option<&'a [T]> {
+    if count == 0 {
+        return Some(&[]);
+    }
+
     LayoutVerified::new_slice_from_prefix(*bytes, count).map(|(res, remaining)| {
         *bytes = remaining;
         res.into_slice()

@@ -181,13 +181,20 @@ impl LibraryDiscoveryError {
 pub enum AppError {
     #[error("io error reading `{path}`: {inner}")]
     Io { path: String, inner: io::Error },
-    #[error("error deserializing appmanifest: {0}")]
-    Deserialization(#[from] vdf::Error),
+    #[error("error deserializing appmanifest `{path}`: {inner}")]
+    Deserialization { path: String, inner: vdf::Error },
 }
 
 impl AppError {
     fn from_io(err: io::Error, path: &Path) -> Self {
         Self::Io {
+            path: path.as_os_str().to_string_lossy().into_owned(),
+            inner: err,
+        }
+    }
+
+    fn from_vdf(err: vdf::Error, path: &Path) -> Self {
+        Self::Deserialization {
             path: path.as_os_str().to_string_lossy().into_owned(),
             inner: err,
         }
@@ -377,7 +384,8 @@ impl<'a> Iterator for Apps<'a> {
                             fs::read_to_string(&path)
                                 .map_err(|err| AppError::from_io(err, &path))
                                 .and_then(|s| {
-                                    vdf::from_str::<AppManifest>(&s).map_err(AppError::from)
+                                    vdf::from_str::<AppManifest>(&s)
+                                        .map_err(|err| AppError::from_vdf(err, &path))
                                 })
                                 .map(|m| m.app_state.into_app(&current_path)),
                         );
