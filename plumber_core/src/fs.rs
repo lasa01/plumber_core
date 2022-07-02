@@ -39,6 +39,16 @@ impl<'a> Path<'a> {
             Path::Os(p) => PathBuf::Os(p.with_extension(extension.as_ref())),
         }
     }
+
+    /// Makes sure game paths have the provided extension,
+    /// does nothing for os paths since they may have non-default extension.
+    #[must_use]
+    pub fn ensure_extension(self, extension: impl AsRef<str>) -> PathBuf {
+        match self {
+            Path::Game(p) => PathBuf::Game(p.with_extension(extension)),
+            Path::Os(p) => PathBuf::Os(p.to_path_buf()),
+        }
+    }
 }
 
 impl PartialEq<str> for Path<'_> {
@@ -107,6 +117,39 @@ impl PathBuf {
         match self {
             PathBuf::Game(p) => PathBuf::Game(p.with_extension(extension)),
             PathBuf::Os(p) => PathBuf::Os(p.with_extension(extension.as_ref())),
+        }
+    }
+
+    /// Makes sure game paths have the provided extension,
+    /// does nothing for os paths since they may have non-default extension.
+    #[must_use]
+    pub fn ensure_extension(&self, extension: impl AsRef<str>) -> PathBuf {
+        match self {
+            PathBuf::Game(p) => PathBuf::Game(p.with_extension(extension)),
+            PathBuf::Os(p) => PathBuf::Os(p.clone()),
+        }
+    }
+
+    /// Makes sure game paths have the provided extension,
+    /// does nothing for os paths since they may have non-default extension.
+    pub fn ensure_extension_mut(&mut self, extension: impl AsRef<str>) {
+        if let PathBuf::Game(p) = self {
+            p.set_extension(extension);
+        }
+    }
+
+    pub fn set_extension(&mut self, extension: impl AsRef<str>) -> bool {
+        match self {
+            PathBuf::Game(p) => p.set_extension(extension),
+            PathBuf::Os(p) => p.set_extension(extension.as_ref()),
+        }
+    }
+
+    /// Removes the extension on game paths,
+    /// doesn't touch os paths (they may have non-default extension).
+    pub fn normalize_extension(&mut self) {
+        if let PathBuf::Game(p) = self {
+            p.set_extension("");
         }
     }
 

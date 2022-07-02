@@ -137,7 +137,9 @@ impl Loader {
         file_system: &OpenFileSystem,
         settings: Settings,
     ) -> Result<(ModelInfo, Option<LoadedModel>)> {
-        let model_path = model_path.into();
+        let mut model_path: PathBuf = model_path.into();
+        model_path.normalize_extension();
+
         let mut guard = self
             .model_cache
             .lock()
@@ -183,10 +185,12 @@ impl Loader {
     }
 
     fn load_model_inner(
-        model_path: PathBuf,
+        mut model_path: PathBuf,
         file_system: &OpenFileSystem,
         settings: Settings,
     ) -> Result<LoadedModel> {
+        model_path.ensure_extension_mut("mdl");
+
         let model = Model::read(&model_path, file_system)?;
         let verified = model.verify()?;
 

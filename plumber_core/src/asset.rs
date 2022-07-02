@@ -164,7 +164,7 @@ where
     }
 
     /// Errors are handled in [Handler].
-    pub fn import_vmt(&self, path: &PathBuf) {
+    pub fn import_vmt(&self, path: PathBuf) {
         self.material_loader.load_material(path);
     }
 
@@ -176,10 +176,10 @@ where
     /// Returns `Err` if the material loading fails or has failed in the past
     pub fn import_vmt_blocking(
         self,
-        path: &PathBuf,
+        path: PathBuf,
         f: impl FnOnce(),
     ) -> Result<MaterialInfo, MaterialLoadError> {
-        self.material_loader.load_material(path);
+        self.material_loader.load_material(path.clone());
 
         // Make sure no deadlocks
         drop(self.asset_handler);
@@ -205,7 +205,7 @@ where
                     if let Some(model) = model {
                         if import_materials {
                             for material in model.materials.iter().flatten() {
-                                material_loader.load_material(&PathBuf::Game(material.clone()));
+                                material_loader.load_material(PathBuf::Game(material.clone()));
                             }
                         }
 
@@ -243,7 +243,7 @@ where
                             if import_materials {
                                 for material in model.materials.iter().flatten() {
                                     self.material_loader
-                                        .load_material(&PathBuf::Game(material.clone()));
+                                        .load_material(PathBuf::Game(material.clone()));
                                 }
                             }
 

@@ -185,9 +185,11 @@ impl Loader {
     /// Starts loading the given material without waiting for it to finish.
     /// Does nothing is the material is already requested.
     /// `material_path` should be absolute, ie. start with `materials/`.
-    pub fn load_material(&self, material_path: &PathBuf) {
+    pub fn load_material(&self, mut material_path: PathBuf) {
+        material_path.normalize_extension();
+
         self.worker_state
-            .send_material_job(material_path, &self.material_job_sender);
+            .send_material_job(&material_path, &self.material_job_sender);
     }
 
     /// Block the thread until the worker thread has loaded a given material, and return the info.
@@ -203,9 +205,11 @@ impl Loader {
     /// Panics after 30 seconds if any materials haven't been loaded to prevent deadlocks.
     pub fn block_on_material(
         &self,
-        material_path: &PathBuf,
+        mut material_path: PathBuf,
     ) -> Result<MaterialInfo, MaterialLoadError> {
-        self.worker_state.wait_for_material(material_path)
+        material_path.normalize_extension();
+
+        self.worker_state.wait_for_material(&material_path)
     }
 
     /// Execute the given function and wait until the worker thread has loaded a given material,
@@ -222,7 +226,7 @@ impl Loader {
     /// Panics after 30 seconds if any materials haven't been loaded to prevent deadlocks.
     pub fn parallel_block_on_material(
         self,
-        material_path: &PathBuf,
+        mut material_path: PathBuf,
         f: impl FnOnce(),
     ) -> Result<MaterialInfo, MaterialLoadError> {
         // prevent locks waiting for new materials
@@ -230,7 +234,9 @@ impl Loader {
 
         f();
 
-        self.worker_state.wait_for_material(material_path)
+        material_path.normalize_extension();
+
+        self.worker_state.wait_for_material(&material_path)
     }
 
     /// Start loading the material, and
@@ -247,11 +253,14 @@ impl Loader {
     /// Panics after 30 seconds if any materials haven't been loaded to prevent deadlocks.
     pub fn load_material_blocking(
         &self,
-        material_path: &PathBuf,
+        mut material_path: PathBuf,
     ) -> Result<MaterialInfo, MaterialLoadError> {
+        material_path.normalize_extension();
+
         self.worker_state
-            .send_material_job(material_path, &self.material_job_sender);
-        self.worker_state.wait_for_material(material_path)
+            .send_material_job(&material_path, &self.material_job_sender);
+
+        self.worker_state.wait_for_material(&material_path)
     }
 
     /// Start loading the given skybox without waiting for it to finish.
@@ -264,7 +273,9 @@ impl Loader {
 
     /// Start loading the given texture without waiting for it to finish.
     /// `texture_path` should be absolute, ie. start with `materials/`.
-    pub fn load_texture(&self, texture_path: PathBuf) {
+    pub fn load_texture(&self, mut texture_path: PathBuf) {
+        texture_path.normalize_extension();
+
         self.material_job_sender
             .send(MaterialJob::Texture(texture_path))
             .expect("material job channel shouldn't be disconnected");
@@ -663,7 +674,7 @@ fn get_shader(
     material_path: &PathBuf,
     file_system: &OpenFileSystem,
 ) -> Result<Shader, MaterialLoadError> {
-    let material_path = material_path.with_extension("vmt");
+    let material_path = material_path.ensure_extension("vmt");
     let material_contents = file_system
         .read(&material_path)
         .map_err(|err| MaterialLoadError::from_io(&err, &material_path))?;
@@ -916,7 +927,7 @@ fn open_texture<'a>(
     let (vtf_lib, guard) = vtf_lib;
 
     let vtf_bytes = file_system
-        .read(&texture_path.with_extension("vtf"))
+        .read(&texture_path.ensure_extension("vtf"))
         .map_err(|err| TextureLoadError::from_io(&err, &texture_path))?;
 
     let mut vtf = vtf_lib.new_vtf_file().bind(guard);

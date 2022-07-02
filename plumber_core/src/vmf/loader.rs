@@ -177,7 +177,7 @@ impl Vmf {
             for side in &solid.sides {
                 let mut material = GamePathBuf::from("materials");
                 material.push(&side.material);
-                material_loader.load_material(&PathBuf::Game(material));
+                material_loader.load_material(PathBuf::Game(material));
             }
         }
         for entity in &self.entities {
@@ -185,7 +185,7 @@ impl Vmf {
                 for side in &solid.sides {
                     let mut material = GamePathBuf::from("materials");
                     material.push(&side.material);
-                    material_loader.load_material(&PathBuf::Game(material));
+                    material_loader.load_material(PathBuf::Game(material));
                 }
             }
         }
@@ -197,7 +197,7 @@ impl Vmf {
                     if let Ok(material) = overlay.material() {
                         let mut path = GamePathBuf::from("materials");
                         path.push(&material);
-                        material_loader.load_material(&PathBuf::Game(path));
+                        material_loader.load_material(PathBuf::Game(path));
                     }
                 }
             }
@@ -232,7 +232,7 @@ impl Vmf {
 
                 if let Some(model) = model {
                     for material in model.materials.iter().flatten() {
-                        material_loader.load_material(&PathBuf::Game(material.clone()));
+                        material_loader.load_material(PathBuf::Game(material.clone()));
                     }
                     asset_handler.handle_model(model);
                 }
@@ -264,7 +264,7 @@ impl Vmf {
     ) -> impl ParallelIterator<Item = BuiltBrushEntity> + 'a {
         let world_brush_iter = rayon::iter::once(&self.world).map(move |world| {
             world.build_brush(
-                |path| material_loader.block_on_material(path),
+                |path| material_loader.block_on_material(path.clone()),
                 side_faces_map,
                 &geometry_settings,
                 scale,
@@ -277,7 +277,7 @@ impl Vmf {
                 .filter(|entity| !entity.solids.is_empty())
                 .map(move |entity| {
                     entity.build_brush(
-                        |path| material_loader.block_on_material(path),
+                        |path| material_loader.block_on_material(path.clone()),
                         side_faces_map,
                         &geometry_settings,
                         scale,
