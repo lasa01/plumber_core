@@ -559,7 +559,13 @@ impl FileSystem {
                 .map_err(|err| ParseError::from_vdf(err, &maybe_gameinfo_path))?
                 .game_info;
 
-            if game_info_is_better(&best_game_info, &best_dir, &game_info, &maybe_gameinfo_dir) {
+            if game_info_is_better(
+                &best_game_info,
+                &best_dir,
+                &game_info,
+                &maybe_gameinfo_dir,
+                &app.install_dir,
+            ) {
                 debug!(
                     "gameinfo.txt candidate for `{}` found in `{}` is better than the current best candidate",
                     app.name,
@@ -737,22 +743,21 @@ fn game_info_is_better(
     old_dir: &StdPath,
     new: &GameInfo,
     new_dir: &StdPath,
+    root_path: &StdPath,
 ) -> bool {
-    let root_path = StdPathBuf::new();
-
     let old_set: BTreeSet<_> = old
         .file_system
         .search_paths
         .game_search_paths
         .iter()
-        .map(|path| comparable_search_path(path, old_dir, &root_path))
+        .map(|path| comparable_search_path(path, old_dir, root_path))
         .collect();
     let new_set: BTreeSet<_> = new
         .file_system
         .search_paths
         .game_search_paths
         .iter()
-        .map(|path| comparable_search_path(path, new_dir, &root_path))
+        .map(|path| comparable_search_path(path, new_dir, root_path))
         .collect();
 
     new_set.is_superset(&old_set)
