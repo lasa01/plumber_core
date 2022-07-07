@@ -1,15 +1,16 @@
 use std::{
     borrow::Cow,
+    collections::BTreeSet,
     ffi::OsStr,
     fmt::{self, Debug, Display, Formatter},
     fs::{self, FileType},
     io::{self, Read, Seek},
     path::{Path as StdPath, PathBuf as StdPathBuf},
-    slice, collections::BTreeSet,
+    slice,
 };
 
 use log::{debug, warn};
-use plumber_uncased::{AsUncased, UncasedStr};
+use plumber_uncased::{AsUncased, UncasedString};
 use plumber_vdf as vdf;
 use plumber_vpk as vpk;
 use vpk::DirectoryReadError;
@@ -525,57 +526,61 @@ impl FileSystem {
     /// Returns `Err` if gameinfo.txt can't be found,
     /// the gameinfo.txt read fails or the gameinfo deserialization fails.
     pub fn from_app(app: &steam::App) -> Result<Self, ParseError> {
-        let mut entries = fs::read_dir(&app.install_dir)
+        let entries = fs::read_dir(&app.install_dir)
             .map_err(|err| ParseError::from_io(err, &app.install_dir))?;
 
-        let (best_game_info, best_path) = entries.try_fold((GameInfo::default(), StdPathBuf::new()), |best_candidate, entry| {
+        let mut best_game_info = GameInfo::default();
+        let mut best_path = StdPathBuf::new();
+        let mut best_dir = StdPathBuf::new();
+
+        for entry in entries {
             let entry = entry.map_err(|err| ParseError::from_io(err, &app.install_dir))?;
 
             if !entry.file_type().as_ref().map_or(false, FileType::is_dir) {
-                return <Result<_, ParseError>>::Ok(best_candidate);
+                continue;
             }
 
-            let maybe_gameinfo_path = entry.path().join("gameinfo.txt");
+            let maybe_gameinfo_dir = entry.path();
+            let maybe_gameinfo_path = maybe_gameinfo_dir.join("gameinfo.txt");
 
             if !maybe_gameinfo_path.is_file() {
-                return Ok(best_candidate);
+                continue;
             }
 
             debug!(
                 "gameinfo.txt candidate for `{}` found in `{}`",
                 app.name,
-                maybe_gameinfo_path.to_string_lossy()
+                maybe_gameinfo_path.display()
             );
 
             let game_info_str = fs::read_to_string(&maybe_gameinfo_path)
                 .map_err(|err| ParseError::from_io(err, &maybe_gameinfo_path))?;
             let game_info = vdf::from_str::<GameInfoFile>(&game_info_str)
-                .map_err(|err| ParseError::from_vdf(err, &maybe_gameinfo_path))?.game_info;
-            
-            if game_info_is_better(&best_candidate.0, &game_info) {
+                .map_err(|err| ParseError::from_vdf(err, &maybe_gameinfo_path))?
+                .game_info;
+
+            if game_info_is_better(&best_game_info, &best_dir, &game_info, &maybe_gameinfo_dir) {
                 debug!(
                     "gameinfo.txt candidate for `{}` found in `{}` is better than the current best candidate",
                     app.name,
-                    maybe_gameinfo_path.to_string_lossy()
+                    maybe_gameinfo_path.display()
                 );
 
-                Ok((game_info, maybe_gameinfo_path))
-            } else {
-                Ok(best_candidate)
+                best_game_info = game_info;
+                best_path = maybe_gameinfo_path;
+                best_dir = maybe_gameinfo_dir;
             }
-        })?;
+        }
 
         if best_path.as_os_str().is_empty() {
             return Err(ParseError::NoGameInfo {
                 path: app.install_dir.as_os_str().to_string_lossy().into_owned(),
             });
         }
-        
+
         Ok(Self::from_game_info(
             best_game_info,
-            best_path
-                .parent()
-                .expect("`game_info_path` has no parent"),
+            &best_dir,
             &app.install_dir,
         ))
     }
@@ -619,20 +624,7 @@ impl FileSystem {
         for path in &game_info.file_system.search_paths.game_search_paths {
             debug!("got search path from gameinfo: `{}`", path);
 
-            let path = path.as_uncased();
-            let path = if path.starts_with("|gameinfo_path|".as_uncased()) {
-                match path[15..].as_str() {
-                    "." => game_info_directory.into(),
-                    other => game_info_directory.join(other),
-                }
-            } else if path.starts_with("|all_source_engine_paths|".as_uncased()) {
-                match path[25..].as_str() {
-                    "." => root_path.into(),
-                    other => root_path.join(other),
-                }
-            } else {
-                root_path.join(path.as_str())
-            };
+            let path = resolve_search_path(path, game_info_directory, root_path);
 
             debug!("search path resolved as: `{}`", path.display());
 
@@ -713,11 +705,71 @@ impl FileSystem {
     }
 }
 
-fn game_info_is_better(old: &GameInfo, new: &GameInfo) -> bool {
-    let old_set: BTreeSet<_> = old.file_system.search_paths.game_search_paths.iter().map(UncasedStr::new).collect();
-    let new_set: BTreeSet<_> = new.file_system.search_paths.game_search_paths.iter().map(UncasedStr::new).collect();
+fn resolve_search_path(
+    path: &String,
+    game_info_directory: &StdPath,
+    root_path: &StdPath,
+) -> StdPathBuf {
+    const GAMEINFO_PATH: &str = "|gameinfo_path|";
+    const ALL_SOURCE_ENGINE_PATHS: &str = "|all_source_engine_paths|";
+
+    let path = path.as_uncased();
+
+    let path = if path.starts_with(GAMEINFO_PATH.as_uncased()) {
+        match path[GAMEINFO_PATH.len()..].as_str() {
+            "." => game_info_directory.into(),
+            other => game_info_directory.join(other),
+        }
+    } else if path.starts_with(ALL_SOURCE_ENGINE_PATHS.as_uncased()) {
+        match path[ALL_SOURCE_ENGINE_PATHS.len()..].as_str() {
+            "." => root_path.into(),
+            other => root_path.join(other),
+        }
+    } else {
+        root_path.join(path.as_str())
+    };
+
+    path
+}
+
+fn game_info_is_better(
+    old: &GameInfo,
+    old_dir: &StdPath,
+    new: &GameInfo,
+    new_dir: &StdPath,
+) -> bool {
+    let root_path = StdPathBuf::new();
+
+    let old_set: BTreeSet<_> = old
+        .file_system
+        .search_paths
+        .game_search_paths
+        .iter()
+        .map(|path| comparable_search_path(path, old_dir, &root_path))
+        .collect();
+    let new_set: BTreeSet<_> = new
+        .file_system
+        .search_paths
+        .game_search_paths
+        .iter()
+        .map(|path| comparable_search_path(path, new_dir, &root_path))
+        .collect();
 
     new_set.is_superset(&old_set)
+}
+
+fn comparable_search_path(
+    path: &String,
+    game_info_directory: &StdPath,
+    root_path: &StdPath,
+) -> UncasedString {
+    let resolved_path = resolve_search_path(path, game_info_directory, root_path);
+    let resolved_string = resolved_path
+        .into_os_string()
+        .into_string()
+        .unwrap_or_else(|path| path.to_string_lossy().into_owned());
+
+    UncasedString::from(resolved_string)
 }
 
 enum OpenSearchPath {
