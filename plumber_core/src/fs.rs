@@ -698,7 +698,7 @@ impl FileSystem {
         })
     }
 
-    /// Clones `self` with additional `search_paths` taking predecence over the existing search paths.
+    /// Clones `self` with additional `search_paths` taking precedence over the existing search paths.
     /// The first supplied search path is searched first.
     #[must_use]
     pub fn with_search_paths(&self, mut search_paths: Vec<SearchPath>) -> Self {
@@ -1077,6 +1077,12 @@ impl OpenFileSystem {
             path,
             current_readdir: None,
         }
+    }
+
+    /// Adds a new open search path to `self`, taking precedence over the existing search paths.
+    /// This directly adds the path as is, without support for handling wildcard directories, `pak01_dir.vpk`, etc.
+    pub fn add_open_search_path(&mut self, search_path: OpenSearchPath) {
+        self.search_paths.insert(0, search_path);
     }
 }
 
