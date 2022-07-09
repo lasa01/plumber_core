@@ -17,7 +17,6 @@ plumber_vdf = { version = "0.1.0", path = "../plumber_vdf" }
 plumber_vpk = { version = "0.1.0", path = "../plumber_vpk", features = ["serde"] }
 plumber_uncased = { version = "0.1.0", path = "../plumber_uncased" }
 approx = "0.5.0"
-float-ord = "0.3.1"
 itertools = "0.10.0"
 ndarray = "0.15.1"
 rgb = "0.8.27"

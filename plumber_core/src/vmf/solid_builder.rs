@@ -15,7 +15,6 @@ use super::{
 };
 
 use approx::relative_eq;
-use float_ord::FloatOrd;
 use glam::{Vec2, Vec3};
 use itertools::{izip, Itertools};
 use log::warn;
@@ -152,7 +151,7 @@ impl<'a> FaceBuilder<'a> {
                     (i, dot)
                 })
                 // max because smaller angle -> bigger dot product
-                .max_by_key(|(_, d)| FloatOrd(*d))
+                .max_by(|(_, a), (_, b)| a.total_cmp(b))
             {
                 self.vertice_indices.swap(i + 1, i + 1 + next_idx);
             }
@@ -285,9 +284,13 @@ impl<'a> FaceBuilder<'a> {
                 .vertice_indices
                 .iter()
                 .enumerate()
-                .min_by_key(|(_, &vertice_i)| {
-                    let vertice = old_vertices[vertice_i];
-                    FloatOrd(vertice.distance(start_position))
+                .min_by(|(_, &vertice_i_a), (_, &vertice_i_b)| {
+                    let vertice_a = old_vertices[vertice_i_a];
+                    let vertice_b = old_vertices[vertice_i_b];
+
+                    vertice_a
+                        .distance(start_position)
+                        .total_cmp(&vertice_b.distance(start_position))
                 })
                 .expect("vertice_indices shouldn't be empty");
 
