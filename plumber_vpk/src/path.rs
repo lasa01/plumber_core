@@ -81,12 +81,12 @@ impl Path {
     #[must_use]
     pub fn file_stem(&self) -> Option<&str> {
         self.file_name().map(|file_name| {
-            let mut split = file_name.rsplitn(2, '.');
-            let _after = split.next();
-            let before = match split.next() {
-                Some(s) => s,
-                None => return file_name,
+            let (before, _after) = if let Some(res) = file_name.rsplit_once('.') {
+                res
+            } else {
+                return file_name;
             };
+
             if before.is_empty() {
                 file_name
             } else {
@@ -98,9 +98,8 @@ impl Path {
     #[must_use]
     pub fn extension(&self) -> Option<&str> {
         self.file_name().and_then(|file_name| {
-            let mut split = file_name.rsplitn(2, '.');
-            let after = split.next()?;
-            let before = split.next()?;
+            let (before, after) = file_name.rsplit_once('.')?;
+
             if before.is_empty() {
                 None
             } else {
