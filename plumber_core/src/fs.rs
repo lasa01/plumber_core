@@ -777,7 +777,7 @@ fn comparable_search_path(
     UncasedString::from(resolved_string)
 }
 
-enum OpenSearchPath {
+pub enum OpenSearchPath {
     Vpk(vpk::Directory),
     Directory(StdPathBuf),
 }
@@ -992,13 +992,16 @@ fn initial_buffer_size(file: &GameFile) -> usize {
 }
 
 impl OpenFileSystem {
-    /// Opens the specified file if it exists.
+    /// Opens the specified file if it exists, with additional info.
     /// The path is case-insensitive even when the underlying filesystem is not.
     ///
     /// # Errors
     ///
     /// Returns `Err` if `file_path` doesn't exist or if the file can't be opened.
-    pub fn open_file<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<GameFile> {
+    pub fn open_file_with_info<'a>(
+        &self,
+        file_path: impl Into<Path<'a>>,
+    ) -> io::Result<GameFileInfo> {
         let file_path = file_path.into();
 
         match file_path {
@@ -1011,7 +1014,10 @@ impl OpenFileSystem {
                     if let Some(file) = path.try_open_file(file_path)? {
                         debug!("file `{}` found in `{}`", file_path, path.path().display());
 
-                        return Ok(file);
+                        return Ok(GameFileInfo {
+                            file,
+                            search_path: Some(path),
+                        });
                     }
                 }
 
@@ -1023,9 +1029,23 @@ impl OpenFileSystem {
                 debug!("opening `{}` from os file system", file_path.display());
 
                 let file = fs::File::open(file_path)?;
-                Ok(GameFile::Fs(file))
+
+                Ok(GameFileInfo {
+                    file: GameFile::Fs(file),
+                    search_path: None,
+                })
             }
         }
+    }
+
+    /// Opens the specified file if it exists.
+    /// The path is case-insensitive even when the underlying filesystem is not.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `file_path` doesn't exist or if the file can't be opened.
+    pub fn open_file<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<GameFile> {
+        Ok(self.open_file_with_info(file_path)?.file)
     }
 
     /// Reads the specified file into a [`Vec`].
@@ -1036,9 +1056,7 @@ impl OpenFileSystem {
     /// Returns `Err` if `file_path` doesn't exist or if the file can't be read.
     pub fn read<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<Vec<u8>> {
         let mut file = self.open_file(file_path)?;
-        let mut buffer = Vec::with_capacity(initial_buffer_size(&file));
-        file.read_to_end(&mut buffer)?;
-        Ok(buffer)
+        file.read_file()
     }
 
     /// Reads the specified file into a [`String`].
@@ -1049,9 +1067,7 @@ impl OpenFileSystem {
     /// Returns `Err` if `file_path` doesn't exist or if the file can't be read.
     pub fn read_to_string<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<String> {
         let mut file = self.open_file(file_path)?;
-        let mut buffer = String::with_capacity(initial_buffer_size(&file));
-        file.read_to_string(&mut buffer)?;
-        Ok(buffer)
+        file.read_file_to_string()
     }
 
     /// Returns an iterator over the entries within a directory.
@@ -1196,9 +1212,7 @@ impl<'a> DirEntry<'a> {
     /// Returns `Err` if `self` is not a file or if the file can't be read.
     pub fn read(&self) -> io::Result<Vec<u8>> {
         let mut file = self.open()?;
-        let mut buffer = Vec::with_capacity(initial_buffer_size(&file));
-        file.read_to_end(&mut buffer)?;
-        Ok(buffer)
+        file.read_file()
     }
 
     /// Reads the entry into a [`String`].
@@ -1208,9 +1222,7 @@ impl<'a> DirEntry<'a> {
     /// Returns `Err` if `self` is not a file or if the file can't be read.
     pub fn read_to_string(&self) -> io::Result<String> {
         let mut file = self.open()?;
-        let mut buffer = String::with_capacity(initial_buffer_size(&file));
-        file.read_to_string(&mut buffer)?;
-        Ok(buffer)
+        file.read_file_to_string()
     }
 
     /// Returns an iterator over the entries within this entry.
@@ -1237,6 +1249,32 @@ impl<'a> GameFile<'a> {
             GameFile::Vpk(f) => Some(f.size()),
         }
     }
+
+    /// Reads this file into a [`Vec`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the file can't be read.
+    pub fn read_file(&mut self) -> io::Result<Vec<u8>> {
+        let mut buffer = Vec::with_capacity(initial_buffer_size(self));
+
+        self.read_to_end(&mut buffer)?;
+
+        Ok(buffer)
+    }
+
+    /// Reads this file into a [`String`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the file can't be read.
+    pub fn read_file_to_string(&mut self) -> io::Result<String> {
+        let mut buffer = String::with_capacity(initial_buffer_size(self));
+
+        self.read_to_string(&mut buffer)?;
+
+        Ok(buffer)
+    }
 }
 
 impl<'a> Read for GameFile<'a> {
@@ -1255,6 +1293,14 @@ impl<'a> Seek for GameFile<'a> {
             GameFile::Vpk(f) => f.seek(pos),
         }
     }
+}
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct GameFileInfo<'a> {
+    pub file: GameFile<'a>,
+    /// The search path where the file was found, if this was a game file.
+    pub search_path: Option<&'a OpenSearchPath>,
 }
 
 #[cfg(test)]
