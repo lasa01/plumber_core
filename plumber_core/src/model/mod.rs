@@ -323,6 +323,13 @@ impl<'a> Verified<'a> {
 
                 let data = animation_desc.data()?;
 
+                if data.is_none() {
+                    return Err(Error::Unsupported {
+                        ty: FileType::Mdl,
+                        feature: "external animation",
+                    });
+                }
+
                 Ok(Animation {
                     name,
                     flags,
