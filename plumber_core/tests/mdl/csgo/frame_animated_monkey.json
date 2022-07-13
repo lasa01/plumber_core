@@ -47,6 +47,7 @@
         {
             "name": "@idle",
             "flags": 64,
+            "should_error": true,
             "sections": [
                 {
                     "data_post_calc": {

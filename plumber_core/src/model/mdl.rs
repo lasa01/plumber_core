@@ -1115,7 +1115,7 @@ impl<'a> AnimationDescRef<'a> {
             }))
     }
 
-    pub fn data(&self) -> Result<Option<BTreeMap<usize, BoneAnimationData>>> {
+    pub fn data(&self) -> Result<BTreeMap<usize, BoneAnimationData>> {
         let frame_animation = self.flags().contains(AnimationDescFlags::FRAMEANIM);
 
         if let Some(sections) = self.iter_animation_sections()? {
@@ -1127,15 +1127,15 @@ impl<'a> AnimationDescRef<'a> {
             )
             .map(|mut data| {
                 make_animation_quats_compatible(&mut data);
-                Some(data)
-            })
-        } else if let Some(section) = self.animation_section()? {
-            section.data(frame_animation).map(|mut data| {
-                make_animation_quats_compatible(&mut data);
-                Some(data)
+                data
             })
         } else {
-            Ok(None)
+            self.animation_section()?
+                .data(frame_animation)
+                .map(|mut data| {
+                    make_animation_quats_compatible(&mut data);
+                    data
+                })
         }
     }
 
@@ -1153,6 +1153,13 @@ impl<'a> AnimationDescRef<'a> {
 
         let animation_sections: &[AnimationSection] = parse_slice(self.bytes, offset, count)
             .ok_or_else(|| corrupted("animation sections out of bounds or misaligned"))?;
+
+        if animation_sections.iter().any(|sec| sec.anim_block != 0) {
+            return Err(Error::Unsupported {
+                ty: FileType::Mdl,
+                feature: "external animation in .ani file",
+            });
+        }
 
         let first_section_anim_offset = match animation_sections.get(0) {
             None => 0,
@@ -1176,32 +1183,30 @@ impl<'a> AnimationDescRef<'a> {
         let bytes = self.bytes;
         let bones = self.bones;
 
-        Ok(Some(
-            animation_sections
-                .iter()
-                .enumerate()
-                .map(move |(i, animation_section)| AnimationSectionRef {
-                    anim_offset: (anim_offset as isize + animation_section.anim_offset as isize)
-                        as usize,
-                    anim_block: animation_section.anim_block,
-                    bones,
-                    // check for last section (there are apparently 2 last sections)
-                    frame_count: if i < count - 2 {
-                        section_frame_count
-                    } else {
-                        frame_count - (count - 2) * section_frame_count
-                    },
-                    // I have no idea but this is what Crowbar does
-                    last_section: i >= count - 2 || frame_count == (i + 1) * section_frame_count,
-                    bytes,
-                })
-                .filter(|section| section.anim_block == 0),
-        ))
+        Ok(Some(animation_sections.iter().enumerate().map(
+            move |(i, animation_section)| AnimationSectionRef {
+                anim_offset: (anim_offset as isize + animation_section.anim_offset as isize)
+                    as usize,
+                bones,
+                // check for last section (there are apparently 2 last sections)
+                frame_count: if i < count - 2 {
+                    section_frame_count
+                } else {
+                    frame_count - (count - 2) * section_frame_count
+                },
+                // I have no idea but this is what Crowbar does
+                last_section: i >= count - 2 || frame_count == (i + 1) * section_frame_count,
+                bytes,
+            },
+        )))
     }
 
-    fn animation_section(&self) -> Result<Option<AnimationSectionRef<'a>>> {
+    fn animation_section(&self) -> Result<AnimationSectionRef<'a>> {
         if self.animation_desc.anim_block != 0 {
-            return Ok(None);
+            return Err(Error::Unsupported {
+                ty: FileType::Mdl,
+                feature: "external animation in .ani file",
+            });
         }
 
         let anim_offset =
@@ -1212,14 +1217,13 @@ impl<'a> AnimationDescRef<'a> {
             .try_into()
             .map_err(|_| corrupted("animation frame count is negative"))?;
 
-        Ok(Some(AnimationSectionRef {
+        Ok(AnimationSectionRef {
             anim_offset,
-            anim_block: 0,
             bones: self.bones,
             frame_count,
             last_section: true,
             bytes: self.bytes,
-        }))
+        })
     }
 }
 
@@ -1233,7 +1237,6 @@ pub struct MovementRef<'a> {
 #[derive(Debug, Clone, Copy)]
 struct AnimationSectionRef<'a> {
     anim_offset: usize,
-    anim_block: i32,
     bones: &'a [Bone],
     frame_count: usize,
     last_section: bool,
@@ -2333,7 +2336,11 @@ mod tests {
     pub struct AnimationSpec {
         pub name: String,
         pub flags: i32,
+        #[serde(default)]
+        pub should_error: bool,
+        #[serde(default)]
         pub sections: Vec<SectionSpec>,
+        #[serde(default)]
         pub data_final: BTreeMap<u8, BoneAnimationDataSpec>,
     }
 
@@ -2342,12 +2349,15 @@ mod tests {
             assert_eq!(animation.name().unwrap(), self.name);
             assert_eq!(animation.flags().bits, self.flags);
 
-            for (i, section) in animation
-                .iter_animation_sections()
-                .unwrap()
-                .unwrap()
-                .enumerate()
-            {
+            let result = animation.iter_animation_sections();
+
+            if self.should_error {
+                assert!(result.is_err());
+                eprintln!("    Animation errored as expected, ok");
+                return;
+            }
+
+            for (i, section) in result.unwrap().unwrap().enumerate() {
                 match self.sections.get(i) {
                     None => continue,
                     Some(spec) => {
@@ -2357,7 +2367,7 @@ mod tests {
                 };
             }
 
-            let data = animation.data().unwrap().unwrap();
+            let data = animation.data().unwrap();
 
             assert_eq!(data.len(), self.data_final.len());
 
@@ -2582,8 +2592,8 @@ mod tests {
                 for section in sections {
                     read_animation_section(animation, section);
                 }
-            } else if let Some(section) = animation.animation_section().unwrap() {
-                read_animation_section(animation, section);
+            } else {
+                read_animation_section(animation, animation.animation_section().unwrap());
             }
         }
     }

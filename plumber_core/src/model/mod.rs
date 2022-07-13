@@ -323,13 +323,6 @@ impl<'a> Verified<'a> {
 
                 let data = animation_desc.data()?;
 
-                if data.is_none() {
-                    return Err(Error::Unsupported {
-                        ty: FileType::Mdl,
-                        feature: "external animation",
-                    });
-                }
-
                 Ok(Animation {
                     name,
                     flags,
@@ -392,7 +385,7 @@ pub struct Animation<'a> {
     pub name: &'a str,
     pub flags: AnimationDescFlags,
     pub fps: f32,
-    pub data: Option<BTreeMap<usize, BoneAnimationData>>,
+    pub data: BTreeMap<usize, BoneAnimationData>,
 }
 
 #[cfg(test)]
@@ -431,12 +424,8 @@ mod tests {
                 DirEntryType::File => {
                     if is_mdl_file(name.as_str()) {
                         if let Err(err) = read_mdl(&entry, file_system) {
-                            if let Error::Corrupted { .. } = err {
-                                panic!("failed: {:?}", err);
-                            } else {
-                                // ignore other errors, probably not our fault
-                                eprintln!("failed: {:?}", err);
-                            }
+                            // ignore errors, probably not our fault
+                            eprintln!("failed: {:?}", err);
                         }
                     }
                 }

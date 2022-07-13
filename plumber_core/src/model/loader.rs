@@ -85,7 +85,7 @@ pub struct LoadedAnimation {
     pub name: String,
     pub flags: AnimationDescFlags,
     pub fps: f32,
-    pub data: Option<BTreeMap<usize, BoneAnimationData>>,
+    pub data: BTreeMap<usize, BoneAnimationData>,
 }
 
 impl LoadedAnimation {
