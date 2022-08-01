@@ -31,6 +31,7 @@ impl Entity {
             "sky_camera" => TypedEntity::SkyCamera(SkyCamera::new(self)),
             "info_overlay" => TypedEntity::Overlay(Overlay::new(self)),
             "prop_static"
+            | "prop_world"
             | "prop_detail"
             | "prop_ragdoll"
             | "prop_door_rotating"
