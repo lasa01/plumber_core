@@ -659,14 +659,24 @@ impl<'a> Prop<'a> {
     /// # Errors
     ///
     /// Returns `Err` if the parameter `modelscale` or `uniformscale` can't be parsed.
-    pub fn scale(&self) -> Result<f32, EntityParseError> {
+    pub fn scale(&self) -> Result<[f32; 3], EntityParseError> {
         if let Some(scale) = self.parse_float_parameter("modelscale")? {
-            return Ok(scale);
+            return Ok([scale; 3]);
         }
+
         if let Some(scale) = self.parse_float_parameter("uniformscale")? {
+            return Ok([scale; 3]);
+        }
+
+        if let Some(scale) = self.parse_vector3_parameter("scale")? {
             return Ok(scale);
         }
-        Ok(1.0)
+
+        if let Some(scale) = self.parse_vector3_parameter("renderscale")? {
+            return Ok(scale);
+        }
+
+        Ok([1.0; 3])
     }
 
     /// # Errors

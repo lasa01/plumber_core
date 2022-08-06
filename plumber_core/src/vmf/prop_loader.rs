@@ -28,7 +28,7 @@ pub struct LoadedProp<'a> {
     pub position: Vec3,
     /// Rotation in in pitch, yaw, roll order (YZX), in degrees.
     pub rotation: [f32; 3],
-    pub scale: f32,
+    pub scale: [f32; 3],
     pub color: RGBA8,
 }
 
@@ -55,7 +55,7 @@ impl<'a> Prop<'a> {
             };
 
         let position = self.origin()? * scale;
-        let scale = self.scale()? * scale;
+        let scale = self.scale()?.map(|s| s * scale);
         let rotation = self.angles()?;
         let color = self.render_color()?.alpha(self.render_amt()?);
 
