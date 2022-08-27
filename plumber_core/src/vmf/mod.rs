@@ -72,7 +72,7 @@ impl Vmf {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(default, expecting = "class versioninfo")]
 pub struct VersionInfo {
     #[serde(rename = "editorversion")]
@@ -98,14 +98,14 @@ impl Default for VersionInfo {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Default)]
 #[serde(expecting = "class visgroups")]
 pub struct VisGroups {
     #[serde(default, rename = "visgroup", skip_serializing_if = "Vec::is_empty")]
     pub vis_groups: Vec<VisGroup>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(expecting = "class visgroup")]
 pub struct VisGroup {
     pub name: String,
@@ -116,7 +116,7 @@ pub struct VisGroup {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(default, expecting = "class viewsettings")]
 pub struct ViewSettings {
     #[serde(rename = "bSnapToGrid")]
@@ -554,7 +554,7 @@ impl Serialize for Vector3DispData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NumDispData<T>
 where
     T: Default + FromStr + Display,
@@ -683,7 +683,7 @@ impl Serialize for AllowedVertsInner {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AllowedVerts([i32; 10]);
 
 impl<'de> Deserialize<'de> for AllowedVerts {

@@ -221,14 +221,14 @@ impl NdPlane {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PointClassification {
     Front,
     Back,
     OnPlane,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolygonClassification {
     Front,
     Back,

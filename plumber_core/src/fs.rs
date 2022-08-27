@@ -349,7 +349,7 @@ pub enum OpenErrorType {
 }
 
 /// A search path in a [`FileSystem`].
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SearchPath {
     Vpk(StdPathBuf),
     Directory(StdPathBuf),
@@ -514,7 +514,7 @@ fn open_wildcard_dir(
 }
 
 /// Represents a Source game's filesystem.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FileSystem {
     pub name: String,
     pub search_paths: Vec<SearchPath>,
@@ -1121,7 +1121,7 @@ impl<'a> Iterator for ReadDir<'a> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirEntryType {
     File,
     Directory,

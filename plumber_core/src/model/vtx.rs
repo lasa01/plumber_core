@@ -661,7 +661,7 @@ where
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Face {
     pub vertice_indices: [usize; 3],
     pub material_index: usize,

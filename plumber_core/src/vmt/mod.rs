@@ -398,7 +398,7 @@ impl ParameterType for Transform {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TexturePath(pub GamePathBuf);
 
 impl TexturePath {

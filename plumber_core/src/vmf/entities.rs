@@ -444,6 +444,7 @@ impl<'a> SpotLight<'a> {
         Self { entity }
     }
 
+    #[must_use]
     pub fn target(&self) -> Option<&str> {
         self.entity
             .properties

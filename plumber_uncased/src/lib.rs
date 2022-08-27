@@ -157,7 +157,7 @@ impl UncasedString {
 
     #[must_use]
     pub fn as_uncased_str(&self) -> &UncasedStr {
-        &*self
+        self
     }
 }
 
@@ -177,13 +177,13 @@ impl Deref for UncasedString {
 
 impl AsRef<UncasedStr> for UncasedString {
     fn as_ref(&self) -> &UncasedStr {
-        &*self
+        self
     }
 }
 
 impl Borrow<UncasedStr> for UncasedString {
     fn borrow(&self) -> &UncasedStr {
-        &*self
+        self
     }
 }
 
@@ -215,25 +215,25 @@ impl Eq for UncasedString {}
 
 impl PartialEq<UncasedStr> for UncasedString {
     fn eq(&self, other: &UncasedStr) -> bool {
-        UncasedStr::eq(&*self, other)
+        UncasedStr::eq(self, other)
     }
 }
 
 impl PartialEq<str> for UncasedString {
     fn eq(&self, other: &str) -> bool {
-        UncasedStr::eq(&*self, other)
+        UncasedStr::eq(self, other)
     }
 }
 
 impl PartialOrd for UncasedString {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        UncasedStr::partial_cmp(&*self, &*other)
+        UncasedStr::partial_cmp(self, other)
     }
 }
 
 impl Ord for UncasedString {
     fn cmp(&self, other: &Self) -> Ordering {
-        UncasedStr::cmp(&*self, &*other)
+        UncasedStr::cmp(self, other)
     }
 }
 

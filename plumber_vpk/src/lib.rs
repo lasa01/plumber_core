@@ -144,7 +144,7 @@ impl Entry {
 }
 
 /// A directory or file inside a vpk archive.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectoryContent {
     Directory(PathBuf),
     File(PathBuf),

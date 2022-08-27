@@ -190,7 +190,7 @@ impl PathBuf {
 
     #[must_use]
     pub fn as_path(&self) -> &Path {
-        &*self
+        self
     }
 
     pub fn push(&mut self, path: impl AsRef<Path>) {
@@ -276,13 +276,13 @@ impl Deref for PathBuf {
 
 impl Borrow<Path> for PathBuf {
     fn borrow(&self) -> &Path {
-        &*self
+        self
     }
 }
 
 impl AsRef<Path> for PathBuf {
     fn as_ref(&self) -> &Path {
-        &*self
+        self
     }
 }
 

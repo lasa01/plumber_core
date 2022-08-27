@@ -1637,7 +1637,7 @@ pub fn vec3_from_u16s(u16s: [u16; 3]) -> Vec3 {
 use serde::Deserialize;
 
 // Generic animation data of a bone.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(Deserialize))]
 pub enum AnimationData<T> {
     /// The data of the bone stays constant during the animation.
@@ -2302,7 +2302,7 @@ mod tests {
         }
     }
 
-    #[derive(Debug, PartialEq, Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Deserialize)]
     pub struct BodyPartSpec {
         pub name: String,
         pub models: Vec<ModelSpec>,
@@ -2320,7 +2320,7 @@ mod tests {
         }
     }
 
-    #[derive(Debug, PartialEq, Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Deserialize)]
     pub struct ModelSpec {
         pub name: String,
     }

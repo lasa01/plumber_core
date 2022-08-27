@@ -203,7 +203,7 @@ impl AppError {
 }
 
 /// A steam app. `install_dir` is absolute.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct App {
     pub app_id: u32,
     pub name: String,
@@ -211,7 +211,7 @@ pub struct App {
 }
 
 /// A list of steam's libraries.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Libraries {
     pub paths: Vec<PathBuf>,
 }
