@@ -79,9 +79,8 @@ fn discover_test_files(path: &Path, extension: &str) -> Vec<TestFile> {
 
         let file_name = entry.path().strip_prefix(path).unwrap();
         let name_with_ext = file_name.to_string_lossy();
-        let name = match name_with_ext.strip_suffix(extension) {
-            None => continue,
-            Some(name) => name,
+        let Some(name) = name_with_ext.strip_suffix(extension) else {
+            continue;
         };
 
         files.push(TestFile {

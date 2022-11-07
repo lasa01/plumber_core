@@ -214,19 +214,14 @@ pub mod bracketed_vector2 {
     pub mod option {
         use super::*;
 
-        pub fn serialize<S>(
-            vector: &Option<Vec2>,
-            serializer: S,
-        ) -> Result<S::Ok, S::Error>
+        pub fn serialize<S>(vector: &Option<Vec2>, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
             Option::<BracketedVector2>::serialize(&vector.map(BracketedVector2), serializer)
         }
 
-        pub fn deserialize<'de, D>(
-            deserializer: D,
-        ) -> Result<Option<Vec2>, D::Error>
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec2>, D::Error>
         where
             D: Deserializer<'de>,
         {
@@ -359,11 +354,7 @@ impl Display for BracketedVector3 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Plane(
-    pub Vec3,
-    pub Vec3,
-    pub Vec3,
-);
+pub struct Plane(pub Vec3, pub Vec3, pub Vec3);
 
 impl Default for Plane {
     fn default() -> Self {

@@ -423,9 +423,7 @@ impl<'a> FaceBuilder<'a> {
             return false;
         }
 
-        let (side, remaining_sides) = if let Some(r) = sides.split_first() {
-            r
-        } else {
+        let Some((side, remaining_sides)) = sides.split_first() else {
             clipped_sides.push(self);
             return false;
         };
@@ -714,14 +712,13 @@ impl<'a> SolidBuilder<'a> {
 
     fn maybe_build_displacement(&mut self) -> Result<(), SolidError> {
         // calculate amount of new vertices
-        let vertices_len = match self
+        let Some(vertices_len) = self
             .faces
             .iter()
             .filter_map(FaceBuilder::disp_vertices_len)
             .sum1()
-        {
-            Some(sum) => sum,
-            None => return Ok(()), // this is not a displacement
+        else {
+            return Ok(()); // this is not a displacement
         };
 
         let old_vertices = &self.vertices;

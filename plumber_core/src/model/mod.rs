@@ -235,9 +235,7 @@ impl<'a> Verified<'a> {
                     })?;
 
                 let lods = vtx_model.lods()?;
-                let lod_0 = if let Some(lod) = lods.get(0) {
-                    lod
-                } else {
+                let Some(lod_0) = lods.get(0) else {
                     continue;
                 };
 

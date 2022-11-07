@@ -1512,13 +1512,10 @@ impl<'a> Iterator for IterBoneAnimations<'a> {
             bytes: self.bytes,
         };
 
-        let next_offset: usize = match animation.next_offset.try_into() {
-            Ok(offset) => offset,
-            Err(_) => {
-                return Some(Err(corrupted(
-                    "animation section animation next offset is negative",
-                )))
-            }
+        let Ok(next_offset) = usize::try_from(animation.next_offset) else {
+            return Some(Err(corrupted(
+                "animation section animation next offset is negative",
+            )))
         };
 
         if next_offset == 0 {

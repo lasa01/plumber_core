@@ -426,9 +426,7 @@ impl Shader {
         &self,
         parameter: &'static str,
     ) -> Result<Option<T>, ParameterError> {
-        let value = if let Some(value) = self.parameters.get(parameter.as_uncased()) {
-            value
-        } else {
+        let Some(value) = self.parameters.get(parameter.as_uncased()) else {
             return Ok(None);
         };
 

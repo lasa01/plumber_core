@@ -81,9 +81,7 @@ impl Path {
     #[must_use]
     pub fn file_stem(&self) -> Option<&str> {
         self.file_name().map(|file_name| {
-            let (before, _after) = if let Some(res) = file_name.rsplit_once('.') {
-                res
-            } else {
+            let Some((before, _after)) =  file_name.rsplit_once('.') else {
                 return file_name;
             };
 
