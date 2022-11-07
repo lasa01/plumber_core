@@ -279,6 +279,8 @@ fn side_clipping() {
             vertice_uvs: Vec::new(),
             material_index: 0,
             vertice_alphas: Vec::new(),
+            aabb_min: Vec3::ZERO,
+            aabb_max: Vec3::ZERO,
         },
         FaceBuilder {
             side: &dummy_side,
@@ -287,6 +289,8 @@ fn side_clipping() {
             vertice_uvs: Vec::new(),
             material_index: 0,
             vertice_alphas: Vec::new(),
+            aabb_min: Vec3::ZERO,
+            aabb_max: Vec3::ZERO,
         },
         FaceBuilder {
             side: &dummy_side,
@@ -295,6 +299,8 @@ fn side_clipping() {
             vertice_uvs: Vec::new(),
             material_index: 0,
             vertice_alphas: Vec::new(),
+            aabb_min: Vec3::ZERO,
+            aabb_max: Vec3::ZERO,
         },
         FaceBuilder {
             side: &dummy_side,
@@ -303,6 +309,8 @@ fn side_clipping() {
             vertice_uvs: Vec::new(),
             material_index: 0,
             vertice_alphas: Vec::new(),
+            aabb_min: Vec3::ZERO,
+            aabb_max: Vec3::ZERO,
         },
     ];
 
@@ -313,6 +321,8 @@ fn side_clipping() {
         vertice_uvs: vec![Vec2::ZERO; 4],
         material_index: 0,
         vertice_alphas: Vec::new(),
+        aabb_min: Vec3::ZERO,
+        aabb_max: Vec3::ZERO,
     };
 
     let mut clipped = Vec::new();
@@ -351,6 +361,8 @@ fn side_clipping() {
             vertice_uvs: vec![Vec2::ZERO; 5],
             material_index: 0,
             vertice_alphas: Vec::new(),
+            aabb_min: Vec3::ZERO,
+            aabb_max: Vec3::ZERO,
         }]
     );
 
@@ -361,6 +373,8 @@ fn side_clipping() {
         vertice_uvs: vec![Vec2::ZERO; 4],
         material_index: 0,
         vertice_alphas: Vec::new(),
+        aabb_min: Vec3::ZERO,
+        aabb_max: Vec3::ZERO,
     };
 
     let mut clipped = Vec::new();
@@ -384,6 +398,8 @@ fn side_clipping() {
         vertice_uvs: vec![Vec2::ZERO; 2],
         material_index: 0,
         vertice_alphas: Vec::new(),
+        aabb_min: Vec3::ZERO,
+        aabb_max: Vec3::ZERO,
     };
 
     let mut clipped = Vec::new();
@@ -421,6 +437,8 @@ fn solid_clipping() {
                 vertice_uvs: Vec::new(),
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -432,6 +450,8 @@ fn solid_clipping() {
                 vertice_uvs: Vec::new(),
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -443,6 +463,8 @@ fn solid_clipping() {
                 vertice_uvs: Vec::new(),
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -454,6 +476,8 @@ fn solid_clipping() {
                 vertice_uvs: Vec::new(),
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -465,6 +489,8 @@ fn solid_clipping() {
                 vertice_uvs: Vec::new(),
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -476,6 +502,8 @@ fn solid_clipping() {
                 vertice_uvs: Vec::new(),
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
         ],
         vertices: Vec::new(),
@@ -499,6 +527,8 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -510,6 +540,8 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -521,6 +553,8 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -532,6 +566,8 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -543,6 +579,8 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -554,6 +592,8 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                aabb_min: Vec3::ZERO,
+                aabb_max: Vec3::ZERO,
             },
         ],
         vertices: vec![
@@ -611,5 +651,215 @@ fn uv_normalization_finite_results() {
                 face.side.id
             );
         }
+    }
+}
+
+#[test]
+fn solid_distance_to_point() {
+    let solid = get_test_solid();
+    let mut builder = SolidBuilder::new(&solid);
+    builder.intersect_sides(1e-3, 1e-3);
+    builder.remove_invalid_faces();
+    builder.sort_vertices();
+    builder.recenter();
+
+    let point = Vec3::new(-930.0, 1.0, 100.0);
+    assert_relative_eq!(builder.distance_to_point(point), 36.0, epsilon = 0.001);
+
+    let point = Vec3::new(-1000.0, 96.0, 96.0);
+    assert_relative_eq!(builder.distance_to_point(point), 60.398_68, epsilon = 0.001);
+
+    let point = Vec3::new(-1000.0, 96.0, 64.0);
+    assert_relative_eq!(builder.distance_to_point(point), 51.224_99, epsilon = 0.001);
+
+    let point = Vec3::new(-832.0, -64.0, 0.0);
+    assert_relative_eq!(builder.distance_to_point(point), 0.0, epsilon = 0.001);
+}
+
+fn create_test_face<'a, 'b>(
+    solid: &'a Solid,
+    side: &'b Side,
+    vertices: Vec<Vec3>,
+) -> (SolidBuilder<'a>, FaceBuilder<'b>) {
+    let face = FaceBuilder {
+        side,
+        plane: NdPlane::from_points(vertices[0], vertices[1], vertices[2]),
+        vertice_indices: (0..vertices.len()).collect(),
+        vertice_uvs: vec![],
+        material_index: 0,
+        vertice_alphas: vec![],
+        aabb_min: Vec3::ZERO,
+        aabb_max: Vec3::ZERO,
+    };
+
+    let solid = SolidBuilder {
+        solid,
+        center: Vec3::ZERO,
+        faces: Vec::new(),
+        vertices,
+        materials: Vec::new(),
+        is_displacement: false,
+        aabb_min: Vec3::ZERO,
+        aabb_max: Vec3::ZERO,
+    };
+
+    (solid, face)
+}
+
+#[test]
+fn face_collisions() {
+    let side = Side::default();
+    let solid = Solid::default();
+
+    let face_vertices = vec![
+        Vec3::new(-2.0, 1.0, 0.0),
+        Vec3::new(-2.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(-1.0, 1.0, 0.0),
+    ];
+
+    let (face_solid, face) = create_test_face(&solid, &side, face_vertices);
+
+    let coplanar_noncolliding_vertices = vec![
+        Vec3::new(1.0, -1.0, 0.0),
+        Vec3::new(1.0, -2.0, 0.0),
+        Vec3::new(2.0, -2.0, 0.0),
+    ];
+
+    let (coplanar_noncolliding_solid, coplanar_noncolliding) =
+        create_test_face(&solid, &side, coplanar_noncolliding_vertices);
+
+    assert!(!coplanar_noncolliding.collides_with(
+        &coplanar_noncolliding_solid,
+        &face,
+        &face_solid,
+        0.001
+    ));
+
+    let intersecting_vertices = vec![
+        Vec3::new(-2.0, 1.0, -1.0),
+        Vec3::new(-1.0, 1.0, -1.0),
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec3::new(-1.0, 0.0, 1.0),
+    ];
+
+    let (intersecting_solid, intersecting) = create_test_face(&solid, &side, intersecting_vertices);
+
+    assert!(intersecting.collides_with(&intersecting_solid, &face, &face_solid, 0.001));
+
+    let touching_vertices = vec![
+        Vec3::new(-3.0, 1.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.0, 1.0, 1.0),
+        Vec3::new(-3.0, 1.0, 1.0),
+    ];
+
+    let (touching_solid, touching) = create_test_face(&solid, &side, touching_vertices);
+
+    assert!(touching.collides_with(&touching_solid, &face, &face_solid, 0.001));
+}
+
+#[test]
+fn is_point_inside_face() {
+    let side = Side::default();
+    let solid = Solid::default();
+
+    let face_vertices = vec![
+        Vec3::new(-2.0, 1.0, 0.0),
+        Vec3::new(-2.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(-1.0, 1.0, 0.0),
+    ];
+
+    let (face_solid, face) = create_test_face(&solid, &side, face_vertices);
+
+    assert!(!face.point_is_inside(&face_solid, LocalSpace, Vec3::new(1.0, 1.0, 0.0), 0.001));
+
+    assert!(face.point_is_inside(&face_solid, LocalSpace, Vec3::new(-1.0, 0.0, 0.0), 0.001));
+}
+
+#[test]
+fn face_intersections() {
+    let side = Side::default();
+    let solid = Solid::default();
+
+    let face_vertices = vec![
+        Vec3::new(-2.0, 1.0, 0.0),
+        Vec3::new(-2.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(-1.0, 1.0, 0.0),
+    ];
+
+    let (face_solid, face) = create_test_face(&solid, &side, face_vertices);
+
+    let nonintersecting_vertices = vec![
+        Vec3::new(-2.0, 1.0, 1.0),
+        Vec3::new(-2.0, 0.0, 1.0),
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec3::new(-1.0, 1.0, 1.0),
+    ];
+
+    let (nonintersecting_solid, nonintersecting) =
+        create_test_face(&solid, &side, nonintersecting_vertices);
+
+    assert_eq!(
+        face.intersection(
+            &face_solid,
+            LocalSpace,
+            &nonintersecting,
+            &nonintersecting_solid,
+            LocalSpace,
+            0.001
+        ),
+        PolygonIntersection::None,
+    );
+
+    let point_vertices = vec![
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(-1.0, 1.0, 0.0),
+        Vec3::new(0.0, 1.0, 1.0),
+    ];
+
+    let (point_solid, point) = create_test_face(&solid, &side, point_vertices);
+
+    assert_eq!(
+        face.intersection(
+            &face_solid,
+            LocalSpace,
+            &point,
+            &point_solid,
+            LocalSpace,
+            0.001
+        ),
+        PolygonIntersection::Point(Vec3::new(-1.0, 1.0, 0.0)),
+    );
+
+    let edge_vertices = vec![
+        Vec3::new(-1.0, 0.0, -1.0),
+        Vec3::new(-2.0, 1.0, -1.0),
+        Vec3::new(-2.0, 1.0, 1.0),
+        Vec3::new(-1.0, 0.0, 1.0),
+    ];
+
+    let (edge_solid, edge) = create_test_face(&solid, &side, edge_vertices);
+
+    let edge_intersection = face.intersection(
+        &face_solid,
+        LocalSpace,
+        &edge,
+        &edge_solid,
+        LocalSpace,
+        0.001,
+    );
+
+    if let PolygonIntersection::Edge(edge) = edge_intersection {
+        assert!(edge
+            .iter()
+            .any(|&v| relative_eq!(v, Vec3::new(-1.0, 0.0, 0.0))));
+        assert!(edge
+            .iter()
+            .any(|&v| relative_eq!(v, Vec3::new(-2.0, 1.0, 0.0))));
+    } else {
+        panic!("Bad intersection: {:?}, expected edge", edge_intersection);
     }
 }

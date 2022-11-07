@@ -24,3 +24,4 @@ itertools = "0.10.0"
 glam = { version = "0.20.2", features = ["approx"] }
 approx = "0.5.0"
 ndarray = "0.15.1"
+rstar = "0.9.3"

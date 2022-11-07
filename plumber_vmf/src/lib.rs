@@ -1,6 +1,7 @@
 mod builder_utils;
 pub mod entities;
 mod overlay_builder;
+mod sky_detector;
 mod solid_builder;
 mod types;
 pub mod vmf;

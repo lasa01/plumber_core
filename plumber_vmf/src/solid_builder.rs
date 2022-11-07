@@ -12,12 +12,16 @@ use thiserror::Error;
 use plumber_fs::{GamePathBuf, PathBuf};
 use plumber_vmt::MaterialInfo;
 
-use super::{
+use crate::{
     builder_utils::{
-        polygon_center, polygon_normal, GeometrySettings, NdPlane, PointClassification,
-        PolygonClassification,
+        closest_point_on_edge_to_point, distance_point_to_edge, point_is_inside_polygon,
+        polygon_center, polygon_intersection, sort_polygon, CompatibleSpace, GeometrySettings,
+        LocalSpace, NdPlane, PointClassification, PolygonClassification, PolygonIntersection,
+        Space,
     },
+    entities::SkyCamera,
     overlay_builder::SideFacesMap,
+    sky_detector,
     vmf::{Entity, Side, Solid, World},
 };
 
@@ -61,13 +65,15 @@ pub struct SolidFace {
 }
 
 #[derive(Clone)]
-struct FaceBuilder<'a> {
+pub(crate) struct FaceBuilder<'a> {
     side: &'a Side,
     plane: NdPlane,
     vertice_indices: Vec<usize>,
     vertice_uvs: Vec<Vec2>,
     material_index: usize,
     vertice_alphas: Vec<f32>,
+    aabb_min: Vec3,
+    aabb_max: Vec3,
 }
 
 impl<'a> PartialEq for FaceBuilder<'a> {
@@ -102,6 +108,8 @@ impl<'a> FaceBuilder<'a> {
             vertice_uvs: Vec::new(),
             material_index: 0,
             vertice_alphas: Vec::new(),
+            aabb_min: Vec3::ZERO,
+            aabb_max: Vec3::ZERO,
         }
     }
 
@@ -113,6 +121,8 @@ impl<'a> FaceBuilder<'a> {
             vertice_uvs: Vec::new(),
             material_index: self.material_index,
             vertice_alphas: Vec::new(),
+            aabb_min: Vec3::ZERO,
+            aabb_max: Vec3::ZERO,
         }
     }
 
@@ -136,36 +146,28 @@ impl<'a> FaceBuilder<'a> {
             .map(|info| 2 * (info.dimension() - 1).pow(2))
     }
 
+    pub fn iter_vertices<'b>(
+        &'b self,
+        solid: &'b SolidBuilder,
+        space: impl Space + 'b,
+    ) -> impl Iterator<Item = Vec3> + ExactSizeIterator + Clone + 'b {
+        self.vertice_indices
+            .iter()
+            .map(move |&i| space.transform_into(solid, solid.vertices[i]))
+    }
+
+    pub fn plane(&self, solid: &SolidBuilder, space: impl Space) -> NdPlane {
+        self.plane.in_space(solid, space)
+    }
+
+    pub fn plane_normal(&self) -> Vec3 {
+        self.plane.normal
+    }
+
     fn sort_vertices(&mut self, vertices: &[Vec3]) {
-        let center = polygon_center(self.vertice_indices.iter().map(|&i| vertices[i]));
-
-        for i in 0..self.vertice_indices.len() - 2 {
-            let vertice = vertices[self.vertice_indices[i]];
-            let to_current = (vertice - center).normalize();
-            let filter_plane = NdPlane::from_points(vertice, center, center + self.plane.normal);
-
-            if let Some((next_idx, _)) = self.vertice_indices[i + 1..]
-                .iter()
-                .enumerate()
-                .filter(|(_, &vi)| filter_plane.distance_to_point(vertices[vi]) >= 0.0)
-                .map(|(i, &vi)| {
-                    let to_candidate = (vertices[vi] - center).normalize();
-                    let dot = to_current.dot(to_candidate);
-                    (i, dot)
-                })
-                // max because smaller angle -> bigger dot product
-                .max_by(|(_, a), (_, b)| a.total_cmp(b))
-            {
-                self.vertice_indices.swap(i + 1, i + 1 + next_idx);
-            }
-        }
-
-        // reverse if the normal is facing the wrong way
-        if polygon_normal(self.vertice_indices.iter().map(|i| vertices[*i])).dot(self.plane.normal)
-            < 0.0
-        {
-            self.vertice_indices.reverse();
-        }
+        sort_polygon(&mut self.vertice_indices, self.plane.normal, |&i| {
+            vertices[i]
+        });
     }
 
     fn build_uvs(
@@ -370,6 +372,8 @@ impl<'a> FaceBuilder<'a> {
                     vertice_uvs: Vec::with_capacity(3),
                     material_index: self.material_index,
                     vertice_alphas: Vec::new(),
+                    aabb_min: Vec3::ZERO,
+                    aabb_max: Vec3::ZERO,
                 },
             );
 
@@ -591,6 +595,258 @@ impl<'a> FaceBuilder<'a> {
         (front, back)
     }
 
+    /// The more oriented this face is towards a point, the larger a number is returned.
+    /// Point should be in the same space as the vertices.
+    fn angular_closeness_to_point(&self, vertices: &[Vec3], point: Vec3) -> f32 {
+        let face_vector = self.plane.normal;
+        let face_center = polygon_center(self.vertice_indices.iter().map(|&i| vertices[i]));
+
+        let ref_vector = (point - face_center).normalize();
+
+        // bigger dot product = smaller angle between vectors
+        ref_vector.dot(face_vector)
+    }
+
+    /// Calculates the AABB. Vertices should be in solid's local space.
+    fn calculate_aabb(&mut self, vertices: &[Vec3]) {
+        let mut min = Vec3::ZERO;
+        let mut max = Vec3::ZERO;
+
+        for &i in &self.vertice_indices {
+            let vertice = vertices[i];
+
+            min = min.min(vertice);
+            max = max.max(vertice);
+        }
+
+        self.aabb_min = min;
+        self.aabb_max = max;
+    }
+
+    /// Returns the AABB in global space.
+    /// The AABB must be calculated beforehand.
+    pub fn global_aabb(&self, solid: &SolidBuilder) -> (Vec3, Vec3) {
+        (self.aabb_min + solid.center, self.aabb_max + solid.center)
+    }
+
+    /// Returns whether self collides with another face.
+    pub fn collides_with(
+        &self,
+        self_solid: &SolidBuilder,
+        other: &Self,
+        other_solid: &SolidBuilder,
+        epsilon: f32,
+    ) -> bool {
+        if self.vertice_indices.len() < 2 || other.vertice_indices.len() < 2 {
+            return false;
+        }
+
+        let self_vertices = self.iter_vertices(self_solid, CompatibleSpace(other_solid));
+        let other_vertices = other.iter_vertices(other_solid, CompatibleSpace(self_solid));
+
+        // Not colliding if all points of the other face are in front or back of self,
+        // or the other way around.
+        if let PolygonClassification::Front | PolygonClassification::Back = self
+            .plane(self_solid, CompatibleSpace(other_solid))
+            .classify_polygon(other_vertices.clone(), epsilon)
+        {
+            return false;
+        }
+
+        if let PolygonClassification::Front | PolygonClassification::Back = other
+            .plane(other_solid, CompatibleSpace(self_solid))
+            .classify_polygon(self_vertices.clone(), epsilon)
+        {
+            return false;
+        }
+
+        // Otherwise, check all edge normals for SAT collision detection
+
+        let self_normals = self_vertices
+            .clone()
+            .circular_tuple_windows()
+            .map(|(a, b)| (b - a).cross(self.plane.normal));
+
+        let other_normals = other_vertices
+            .clone()
+            .circular_tuple_windows()
+            .map(|(a, b)| (b - a).cross(other.plane.normal));
+
+        for edge_normal in self_normals.chain(other_normals) {
+            if relative_eq!(edge_normal, Vec3::ZERO, epsilon = epsilon) {
+                continue;
+            }
+
+            let (self_min, self_max) = self_vertices
+                .clone()
+                .map(|v| v.dot(edge_normal))
+                .minmax_by(f32::total_cmp)
+                .into_option()
+                .expect("should have vertices, checked above");
+
+            let (other_min, other_max) = other_vertices
+                .clone()
+                .map(|v| v.dot(edge_normal))
+                .minmax_by(f32::total_cmp)
+                .into_option()
+                .expect("should have vertices, checked above");
+
+            // if ranges don't overlap, separating axis found => no collision
+            if self_min.max(other_min) > self_max.min(other_max) + epsilon {
+                return false;
+            }
+        }
+
+        // No separating axis found => must collide
+        true
+    }
+
+    /// Returns whether the point is inside self, assuming that it is on the same plane as self.
+    /// The space must be same as the space the point is in.
+    fn point_is_inside(
+        &self,
+        solid: &SolidBuilder,
+        space: impl Space,
+        point: Vec3,
+        epsilon: f32,
+    ) -> bool {
+        point_is_inside_polygon(
+            point,
+            self.iter_vertices(solid, space).circular_tuple_windows(),
+            self.plane.normal,
+            epsilon,
+        )
+    }
+
+    /// Returns whether a point collides with self.
+    /// The space must be same as the space the point is in.
+    pub fn collides_with_point(
+        &self,
+        solid: &SolidBuilder,
+        space: impl Space,
+        point: Vec3,
+        epsilon: f32,
+    ) -> bool {
+        if let PointClassification::OnPlane =
+            self.plane(solid, space).classify_point(point, epsilon)
+        {
+            self.point_is_inside(solid, space, point, epsilon)
+        } else {
+            false
+        }
+    }
+
+    /// Returns the intersection of a face and an edge.
+    /// The space must be same as the space the edge is in.
+    /// Returns the point of intersection, if it exists.
+    /// Returns None if the edge and the face do not intersect or intersect along the edge.
+    pub fn intersection_with_edge(
+        &self,
+        solid: &SolidBuilder,
+        space: impl Space,
+        edge: [Vec3; 2],
+        epsilon: f32,
+    ) -> Option<Vec3> {
+        let (point, factor) = self
+            .plane(solid, space)
+            .intersect_line_with_factor(edge[0], edge[1], epsilon)?;
+
+        if factor > -epsilon
+            && factor < 1.0 + epsilon
+            && self.point_is_inside(solid, space, point, epsilon)
+        {
+            Some(point)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the intersection of 2 faces.
+    ///
+    /// The space combinations must result in the vertices being in the same space in the end.
+    /// The returned intersection is in the specified space.
+    pub fn intersection(
+        &self,
+        self_solid: &SolidBuilder,
+        self_space: impl Space,
+        other: &Self,
+        other_solid: &SolidBuilder,
+        other_space: impl Space,
+        epsilon: f32,
+    ) -> PolygonIntersection {
+        polygon_intersection(
+            self.iter_vertices(self_solid, self_space),
+            self.plane(self_solid, self_space),
+            other.iter_vertices(other_solid, other_space),
+            other.plane(other_solid, other_space),
+            epsilon,
+        )
+    }
+
+    /// Returns the distance between self and a point.
+    /// The space must be same as the space the point is in.
+    pub fn distance_to_point(&self, solid: &SolidBuilder, space: impl Space, point: Vec3) -> f32 {
+        let mut edge_planes = self
+            .iter_vertices(solid, space)
+            .circular_tuple_windows()
+            .map(|(v1, v2)| {
+                let edge_vector = v2 - v1;
+                let edge_normal = edge_vector.cross(self.plane.normal);
+
+                NdPlane::from_point_normal(v1, edge_normal)
+            });
+
+        let is_closest_point_inside_face =
+            edge_planes.all(|plane| plane.distance_to_point(point) < 0.0);
+
+        if is_closest_point_inside_face {
+            self.plane(solid, space).distance_to_point(point)
+        } else {
+            self.iter_vertices(solid, space)
+                .circular_tuple_windows()
+                .map(|(a, b)| distance_point_to_edge(a, b, point))
+                .min_by(f32::total_cmp)
+                .unwrap_or(f32::INFINITY)
+        }
+    }
+
+    /// Returns the closest point on self to another point, and the distance between them.
+    /// The space must be same as the space the point is in.
+    pub fn closest_point_to_point(
+        &self,
+        solid: &SolidBuilder,
+        space: impl Space,
+        point: Vec3,
+    ) -> (Vec3, f32) {
+        let mut edge_planes = self
+            .iter_vertices(solid, space)
+            .clone()
+            .circular_tuple_windows()
+            .map(|(v1, v2)| {
+                let edge_vector = v2 - v1;
+                let edge_normal = edge_vector.cross(self.plane.normal);
+
+                NdPlane::from_point_normal(v1, edge_normal)
+            });
+
+        let is_closest_point_inside_face =
+            edge_planes.all(|plane| plane.distance_to_point(point) < 0.0);
+
+        if is_closest_point_inside_face {
+            let self_plane = self.plane(solid, space);
+            let distance = self_plane.distance_to_point(point);
+            let point_on_plane = point - distance * self_plane.normal;
+
+            (point_on_plane, distance)
+        } else {
+            self.iter_vertices(solid, space)
+                .circular_tuple_windows()
+                .map(|(a, b)| closest_point_on_edge_to_point(a, b, point))
+                .min_by(|(_, a_dist), (_, b_dist)| f32::total_cmp(a_dist, b_dist))
+                .unwrap_or((Vec3::NAN, f32::INFINITY))
+        }
+    }
+
     fn finish(self) -> SolidFace {
         SolidFace {
             vertice_indices: self.vertice_indices,
@@ -602,7 +858,7 @@ impl<'a> FaceBuilder<'a> {
 }
 
 #[derive(Clone, PartialEq)]
-struct SolidBuilder<'a> {
+pub(crate) struct SolidBuilder<'a> {
     solid: &'a Solid,
     center: Vec3,
     faces: Vec<FaceBuilder<'a>>,
@@ -788,12 +1044,8 @@ impl<'a> SolidBuilder<'a> {
     }
 
     fn calculate_aabb(&mut self) {
-        let mut min = self
-            .vertices
-            .first()
-            .copied()
-            .unwrap_or_else(|| Vec3::new(0.0, 0.0, 0.0));
-        let mut max = min;
+        let mut min = Vec3::ZERO;
+        let mut max = Vec3::ZERO;
 
         for &vertice in &self.vertices {
             min = min.min(vertice);
@@ -802,6 +1054,10 @@ impl<'a> SolidBuilder<'a> {
 
         self.aabb_min = min;
         self.aabb_max = max;
+
+        for face in &mut self.faces {
+            face.calculate_aabb(&self.vertices);
+        }
     }
 
     fn aabb_intersects(&self, other: &Self) -> bool {
@@ -868,6 +1124,61 @@ impl<'a> SolidBuilder<'a> {
 
     fn is_nodraw(&self) -> bool {
         self.materials.iter().all(|mat| mat.info.no_draw())
+    }
+
+    /// Returns the AABB in global space.
+    pub fn global_aabb(&self) -> (Vec3, Vec3) {
+        (self.aabb_min + self.center, self.aabb_max + self.center)
+    }
+
+    /// Get the closest face to a point, if there are faces. Point should be in global space.
+    pub fn closest_face_to_point(&self, mut point: Vec3) -> Option<&FaceBuilder> {
+        point -= self.center;
+
+        self.faces.iter().max_by(|&a, &b| {
+            a.angular_closeness_to_point(&self.vertices, point)
+                .total_cmp(&b.angular_closeness_to_point(&self.vertices, point))
+        })
+    }
+
+    /// Returns the shortest distance from self to a point in global space.
+    pub fn distance_to_point(&self, mut point: Vec3) -> f32 {
+        let closest_face = if let Some(f) = self.closest_face_to_point(point) {
+            f
+        } else {
+            return f32::INFINITY;
+        };
+
+        point -= self.center;
+
+        closest_face.distance_to_point(self, LocalSpace, point)
+    }
+
+    /// Returns whether a point in global space is inside the solid.
+    pub fn point_is_inside(&self, mut point: Vec3) -> bool {
+        point -= self.center;
+
+        self.faces
+            .iter()
+            .all(|f| f.plane.distance_to_point(point) <= 0.0)
+    }
+
+    pub fn is_displacement(&self) -> bool {
+        self.is_displacement
+    }
+
+    /// Returns the vertices in local space.
+    pub fn vertices(&self) -> &[Vec3] {
+        &self.vertices
+    }
+
+    pub fn faces(&self) -> &[FaceBuilder<'a>] {
+        &self.faces
+    }
+
+    /// Returns the solid's position in global space.
+    pub fn position(&self) -> Vec3 {
+        self.center
     }
 
     fn finish(self, scale: f32) -> BuiltSolid {
@@ -1065,29 +1376,39 @@ impl<'a> BuiltBrushEntity<'a> {
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
         scale: f32,
+        sky_camera: Option<SkyCamera>,
     ) -> Self {
-        if settings.merge_solids.merge() {
-            let mut mergable_solids = Vec::new();
+        let mut solid_builders = Vec::with_capacity(solids.len());
 
-            for solid in solids {
-                let mut builder = SolidBuilder::new(solid);
-                if let Err(err) = builder.build(&mut get_material_info, side_faces_map, settings) {
-                    warn!("brush `{}`: {}", id, err);
-                    continue;
-                }
+        for solid in solids {
+            let mut builder = SolidBuilder::new(solid);
 
-                if !settings.invisible_solids.import() && builder.is_nodraw() {
-                    continue;
-                }
-
-                mergable_solids.push(builder);
+            if let Err(err) = builder.build(&mut get_material_info, side_faces_map, settings) {
+                warn!("brush `{}`: {}", id, err);
+                continue;
             }
 
+            solid_builders.push(builder);
+        }
+
+        if let Some(sky_camera) = sky_camera {
+            for solid in &mut solid_builders {
+                solid.calculate_aabb();
+            }
+
+            sky_detector::detect(&solid_builders, sky_camera);
+        }
+
+        if !settings.invisible_solids.import() {
+            solid_builders.retain(|s| !s.is_nodraw());
+        }
+
+        if settings.merge_solids.merge() {
             BuiltBrushEntity {
                 id,
                 class_name,
                 merged_solids: MergedSolids::merge(
-                    mergable_solids,
+                    solid_builders,
                     settings.epsilon,
                     settings.merge_solids.optimize(),
                     scale,
@@ -1099,22 +1420,9 @@ impl<'a> BuiltBrushEntity<'a> {
                 id,
                 class_name,
                 merged_solids: None,
-                solids: solids
-                    .iter()
-                    .filter_map(|solid| {
-                        let mut builder = SolidBuilder::new(solid);
-                        if let Err(err) =
-                            builder.build(&mut get_material_info, side_faces_map, settings)
-                        {
-                            warn!("brush `{}`: {}", id, err);
-                            return None;
-                        }
-                        if settings.invisible_solids.import() || !builder.is_nodraw() {
-                            Some(builder.finish(scale))
-                        } else {
-                            None
-                        }
-                    })
+                solids: solid_builders
+                    .into_iter()
+                    .map(|s| s.finish(scale))
                     .collect(),
             }
         }
@@ -1140,6 +1448,7 @@ impl Entity {
             side_faces_map,
             settings,
             scale,
+            None,
         )
     }
 }
@@ -1163,6 +1472,7 @@ impl World {
             side_faces_map,
             settings,
             scale,
+            None,
         )
     }
 }
