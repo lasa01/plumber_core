@@ -2138,7 +2138,7 @@ mod tests {
     use serde::Deserialize;
 
     use crate::{
-        fs::{DirEntryType, GamePath, OpenFileSystem, ReadDir},
+        fs::{DirEntryType, GamePath, ReadDir},
         steam::Libraries,
         test_utils::{read_game_file, FileSpec},
     };
@@ -2488,7 +2488,6 @@ mod tests {
                     let mut version_counter = BTreeMap::new();
                     recurse(
                         filesystem.read_dir(GamePath::try_from_str("models").unwrap()),
-                        &filesystem,
                         &mut version_counter,
                     );
                     eprintln!("mdl versions: {:?}", version_counter);
@@ -2498,11 +2497,7 @@ mod tests {
         }
     }
 
-    fn recurse(
-        readdir: ReadDir,
-        file_system: &OpenFileSystem,
-        version_counter: &mut BTreeMap<i32, usize>,
-    ) {
+    fn recurse(readdir: ReadDir, version_counter: &mut BTreeMap<i32, usize>) {
         for entry in readdir.map(result::Result::unwrap) {
             let name = entry.name();
             match entry.entry_type() {
@@ -2515,7 +2510,7 @@ mod tests {
                         *version_counter.entry(version).or_default() += 1;
                     }
                 }
-                DirEntryType::Directory => recurse(entry.read_dir(), file_system, version_counter),
+                DirEntryType::Directory => recurse(entry.read_dir(), version_counter),
             }
         }
     }

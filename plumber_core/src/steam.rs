@@ -442,8 +442,8 @@ impl<'a> Iterator for SourceApps<'a> {
     type Item = Result<App, AppError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for result in &mut self.apps {
-            if result.as_ref().map_or(true, |app| {
+        self.apps.find(|result| {
+            result.as_ref().map_or(true, |app| {
                 if self.source_app_ids.contains(&app.app_id) {
                     debug!("app id `{}` is a source app", app.app_id);
                     true
@@ -451,11 +451,8 @@ impl<'a> Iterator for SourceApps<'a> {
                     debug!("skipped app id `{}`: is not a source app", app.app_id);
                     false
                 }
-            }) {
-                return Some(result);
-            }
-        }
-        None
+            })
+        })
     }
 }
 
