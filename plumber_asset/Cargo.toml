@@ -1,0 +1,30 @@
+[package]
+name = "plumber_asset"
+description = "Source engine asset importer"
+version = "0.1.0"
+repository = "https://github.com/lasa01/plumber_core"
+readme = "README.md"
+keywords = ["valve", "source"]
+authors = ["Lassi Säike"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+plumber_mdl = { version = "0.1.0", path = "../plumber_mdl" }
+plumber_vmt = { version = "0.1.0", path = "../plumber_vmt" }
+plumber_vmf = { version = "0.1.0", path = "../plumber_vmf" }
+plumber_vdf = { version = "0.1.0", path = "../plumber_vdf" }
+plumber_fs = { version = "0.1.0", path = "../plumber_fs" }
+plumber_uncased = { version = "0.1.0", path = "../plumber_uncased" }
+rayon = "1.5.1"
+crossbeam-channel = "0.5.1"
+crossbeam-utils = "0.8.5"
+log = "0.4.14"
+thiserror = "1.0.24"
+glam = { version = "0.20.2", features = ["approx"] }
+rgb = "0.8.27"
+vtflib = { version = "0.2.1", features = ["static"] }
+half = { version = "2.1.0", features = ["zerocopy"] }
+image = { version = "0.24.1", default-features = false }
+itertools = "0.10.0"
+zerocopy = { version = "0.6.1" }

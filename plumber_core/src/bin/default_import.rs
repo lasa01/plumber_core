@@ -7,10 +7,19 @@ use std::{
     time::Duration,
 };
 
+use plumber_asset::{
+    mdl::LoadedModel,
+    vmf::{LoadedProp, Settings},
+    vmt::{LoadedMaterial, LoadedTexture, LoadedVmt, MaterialLoadError, SkyBox},
+    Error,
+};
 use plumber_core::{
     asset::{Handler, Importer},
     fs::FileSystem,
-    vmf::loader::Settings,
+};
+use plumber_vmf::{
+    builder::{BuiltBrushEntity, BuiltOverlay},
+    entities::TypedEntity,
 };
 
 #[derive(Clone)]
@@ -21,61 +30,60 @@ struct AssetHandler {
 impl Handler for AssetHandler {
     type MaterialData = ();
 
-    fn handle_error(&mut self, error: plumber_core::asset::Error) {
+    fn handle_error(&mut self, error: Error) {
         writeln!(self.file.lock().unwrap(), "{:?}", &error).unwrap();
     }
 
-    fn build_material(
-        &mut self,
-        _vmt: plumber_core::vmt::loader::LoadedVmt,
-    ) -> Result<Self::MaterialData, plumber_core::vmt::loader::MaterialLoadError> {
+    fn build_material(&mut self, _vmt: LoadedVmt) -> Result<Self::MaterialData, MaterialLoadError> {
         Ok(())
     }
 
-    fn handle_material(
-        &mut self,
-        material: plumber_core::vmt::loader::LoadedMaterial<Self::MaterialData>,
-    ) {
+    fn handle_material(&mut self, material: LoadedMaterial<Self::MaterialData>) {
         writeln!(self.file.lock().unwrap(), "{:?}", &material).unwrap();
     }
 
-    fn handle_texture(&mut self, texture: plumber_core::vmt::loader::LoadedTexture) {
+    fn handle_texture(&mut self, texture: LoadedTexture) {
         writeln!(self.file.lock().unwrap(), "{:?}", &texture).unwrap();
     }
 
-    fn handle_skybox(&mut self, skybox: plumber_core::vmt::loader::SkyBox) {
+    fn handle_skybox(&mut self, skybox: SkyBox) {
         writeln!(self.file.lock().unwrap(), "{:?}", &skybox).unwrap();
     }
 
-    fn handle_model(&mut self, model: plumber_core::model::loader::LoadedModel) {
+    fn handle_model(&mut self, model: LoadedModel) {
         writeln!(self.file.lock().unwrap(), "{:?}", &model).unwrap();
     }
 
-    fn handle_entity(&mut self, entity: plumber_core::vmf::entities::TypedEntity) {
+    fn handle_entity(&mut self, entity: TypedEntity) {
         writeln!(self.file.lock().unwrap(), "{:?}", &entity).unwrap();
     }
 
-    fn handle_brush(&mut self, brush: plumber_core::vmf::loader::BuiltBrushEntity) {
+    fn handle_brush(&mut self, brush: BuiltBrushEntity) {
         writeln!(self.file.lock().unwrap(), "{:?}", &brush).unwrap();
     }
 
-    fn handle_overlay(&mut self, overlay: plumber_core::vmf::loader::BuiltOverlay) {
+    fn handle_overlay(&mut self, overlay: BuiltOverlay) {
         writeln!(self.file.lock().unwrap(), "{:?}", &overlay).unwrap();
     }
 
-    fn handle_prop(&mut self, prop: plumber_core::vmf::loader::LoadedProp) {
+    fn handle_prop(&mut self, prop: LoadedProp) {
         writeln!(self.file.lock().unwrap(), "{:?}", &prop).unwrap();
     }
 }
 
 fn main() {
     let vmf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("plumber_asset")
         .join("tests")
-        .join("vmf")
         .join("build_scene_test.vmf");
     let vmf_bytes = read(vmf_path).unwrap();
 
     let root_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("plumber_fs")
         .join("tests")
         .join("test_filesystem");
     let game_info_path = root_path.join("game").join("gameinfo.txt");

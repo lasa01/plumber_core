@@ -2,7 +2,7 @@ use clap::Parser;
 
 use plumber_core::{
     fs::{FileSystem, GamePathBuf},
-    model::Model,
+    mdl::Model,
 };
 
 #[derive(Parser)]

@@ -1,4 +1,4 @@
-#![deny(clippy::all, clippy::pedantic)]
+#![warn(clippy::all, clippy::pedantic)]
 
 mod dump_animation;
 

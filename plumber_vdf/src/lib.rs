@@ -1,10 +1,11 @@
-#![deny(clippy::all, clippy::pedantic, clippy::cargo)]
+#![warn(clippy::all, clippy::pedantic, clippy::multiple_crate_versions)]
 // conflicts with serde's convention of to_string etc. methods
 #![allow(clippy::should_implement_trait)]
 
 mod de;
 mod error;
 mod escape;
+pub mod nom_utils;
 mod parsers;
 mod ser;
 mod value;

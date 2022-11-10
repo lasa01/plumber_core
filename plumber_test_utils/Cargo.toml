@@ -1,0 +1,18 @@
+[package]
+name = "plumber_test_utils"
+description = "Test utils"
+version = "0.1.0"
+repository = "https://github.com/lasa01/plumber_core"
+readme = "README.md"
+keywords = ["valve", "source"]
+authors = ["Lassi Säike"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+plumber_steam = { version = "0.1.0", path = "../plumber_steam" }
+plumber_fs = { version = "0.1.0", path = "../plumber_fs" }
+serde = { version = "= 1.0.125", features = ["derive"] }
+serde_derive = "= 1.0.125"
+serde_json = "1.0.79"
+walkdir = "2.3.2"

@@ -1,4 +1,4 @@
-#![deny(clippy::all, clippy::pedantic, clippy::cargo)]
+#![warn(clippy::all, clippy::pedantic, clippy::multiple_crate_versions)]
 // this is intentional
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_possible_wrap)]

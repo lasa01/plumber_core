@@ -1,0 +1,26 @@
+[package]
+name = "plumber_steam"
+description = "Steam game detection library"
+version = "0.1.0"
+repository = "https://github.com/lasa01/plumber_core"
+readme = "README.md"
+keywords = ["valve", "source", "steam"]
+categories = []
+authors = ["Lassi Säike"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+plumber_vdf = { version = "0.1.0", path = "../plumber_vdf" }
+plumber_uncased = { version = "0.1.0", path = "../plumber_uncased" }
+serde = { version = "= 1.0.125", features = ["derive"] }
+serde_derive = "= 1.0.125"
+thiserror = "1.0.24"
+itertools = "0.10.0"
+log = "0.4.14"
+
+[target.'cfg(windows)'.dependencies]
+winreg = { version = "0.8" }
+
+[target.'cfg(not(windows))'.dependencies]
+home = { version = "0.5.3" }

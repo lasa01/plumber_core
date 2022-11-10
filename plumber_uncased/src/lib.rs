@@ -1,4 +1,4 @@
-#![deny(clippy::all, clippy::pedantic, clippy::cargo)]
+#![warn(clippy::all, clippy::pedantic, clippy::multiple_crate_versions)]
 
 //! Case-preserving, ascii case-insensitive string wrapper.
 

@@ -5,8 +5,6 @@ edition = "2021"
 description = "CLI utilities for debugging plumber_core"
 repository = "https://github.com/lasa01/plumber_core"
 readme = "../README.md"
-keywords = ["plumber_core"]
-categories = ["command-line-utilities"]
 authors = ["Lassi Säike"]
 license = "MIT OR Apache-2.0"
 
