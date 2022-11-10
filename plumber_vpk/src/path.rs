@@ -25,13 +25,17 @@ impl Path {
 
     /// Checks that the str is lowercase and doesn't contain backslashes.
     #[must_use]
-    pub fn try_from_str(str: &str) -> Option<&Self> {
+    pub fn try_from_str(mut str: &str) -> Option<&Self> {
         if str.chars().any(|c| c.is_ascii_uppercase()) {
             return None;
         }
+
+        str = str.trim_matches('/').trim_matches('\\');
+
         if str.contains('\\') {
             return None;
         }
+
         Some(Self::new(str))
     }
 
@@ -285,21 +289,14 @@ impl AsRef<Path> for PathBuf {
 }
 
 impl From<String> for PathBuf {
-    fn from(mut s: String) -> Self {
-        s.make_ascii_lowercase();
-        let mut s = s.into_bytes();
-        for byte in &mut s {
-            if *byte == b'\\' {
-                *byte = b'/';
-            }
-        }
-        Self(String::from_utf8(s).expect("should still be valid utf8"))
+    fn from(s: String) -> Self {
+        PathBuf::from(s.as_str())
     }
 }
 
 impl From<&str> for PathBuf {
     fn from(s: &str) -> Self {
-        let s = s.to_ascii_lowercase();
+        let s = s.trim_matches('/').trim_matches('\\').to_ascii_lowercase();
         let mut s = s.into_bytes();
         for byte in &mut s {
             if *byte == b'\\' {
