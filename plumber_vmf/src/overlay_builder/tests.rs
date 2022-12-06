@@ -4,7 +4,7 @@ use plumber_vdf as vdf;
 use plumber_vmt::MaterialInfo;
 
 use super::*;
-use crate::{entities::TypedEntity, Entity, Solid};
+use crate::{entities::TypedEntity, vmf::Entity, vmf::Solid};
 
 fn get_test_solids() -> Vec<Solid> {
     let input = include_str!("test_solids.txt");

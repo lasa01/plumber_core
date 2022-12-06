@@ -8,7 +8,7 @@ use plumber_fs::{GamePathBuf, OpenFileSystem, PathBuf};
 use plumber_vmf::{
     builder::{BuiltBrushEntity, BuiltOverlay, GeometrySettings, OverlayError},
     entities::{AngledEntity, BaseEntity, EntityParseError, PointEntity, Prop, TypedEntity},
-    Vmf,
+    vmf::Vmf,
 };
 
 use crate::{mdl, Error, Handler, Importer, LoadedModel, MaterialLoader, ModelInfo, ModelLoader};

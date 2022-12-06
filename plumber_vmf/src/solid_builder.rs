@@ -18,7 +18,7 @@ use super::{
         PolygonClassification,
     },
     overlay_builder::SideFacesMap,
-    Entity, Side, Solid, World,
+    vmf::{Entity, Side, Solid, World},
 };
 
 #[cfg(test)]

@@ -14,7 +14,7 @@ use plumber_vdf as vdf;
 use plumber_vmf::{
     builder::{BuiltBrushEntity, BuiltOverlay, OverlayError},
     entities::{EntityParseError, TypedEntity},
-    Vmf,
+    vmf::Vmf,
 };
 use plumber_vmt::MaterialInfo;
 

@@ -1,4 +1,4 @@
-use plumber_vmf::Vmf;
+use plumber_vmf::vmf::Vmf;
 
 #[test]
 fn test_vmf_roundtrip() {

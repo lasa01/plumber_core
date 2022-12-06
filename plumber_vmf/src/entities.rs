@@ -7,7 +7,7 @@ use plumber_uncased::AsUncased;
 use rgb::RGB8;
 use thiserror::Error;
 
-use super::Entity;
+use crate::vmf::Entity;
 
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]

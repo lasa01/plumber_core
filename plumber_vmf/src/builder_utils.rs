@@ -1,10 +1,10 @@
 use std::fmt::Debug;
 
-use super::Plane;
-
 use approx::abs_diff_eq;
 use glam::{Affine2, Mat3, Vec2, Vec3};
 use itertools::Itertools;
+
+use crate::types::Plane;
 
 #[derive(Debug, Clone, Copy)]
 pub enum MergeSolids {
