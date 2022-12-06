@@ -1,0 +1,61 @@
+"id" "13354"
+side
+{
+    "id" "13355"
+    "plane" "(0 -24 112) (0 -24 104) (0 152 104)"
+    "smoothing_groups" "0"
+    "material" "tools/toolsnodraw"
+    "uaxis" "[0 -1 0 0] 0.25"
+    "vaxis" "[0 0 -1 0] 0.25"
+    "lightmapscale" "16"
+}
+side
+{
+    "id" "13356"
+    "plane" "(88 152 112) (88 152 104) (88 -24 104)"
+    "smoothing_groups" "0"
+    "material" "tools/toolsnodraw"
+    "uaxis" "[0 1 -0 0] 0.25"
+    "vaxis" "[0 -0 -1 0] 0.25"
+    "lightmapscale" "16"
+}
+side
+{
+    "id" "13357"
+    "plane" "(88 -24 112) (88 -24 104) (0 -24 104)"
+    "smoothing_groups" "0"
+    "material" "tools/toolsnodraw"
+    "uaxis" "[1 0 0 0] 0.25"
+    "vaxis" "[0 0 -1 0] 0.25"
+    "lightmapscale" "16"
+}
+side
+{
+    "id" "13358"
+    "plane" "(0 152 112) (0 152 104) (88 152 104)"
+    "smoothing_groups" "0"
+    "material" "tools/toolsnodraw"
+    "uaxis" "[-1 0 0 0] 0.25"
+    "vaxis" "[-0 -0 -1 0] 0.25"
+    "lightmapscale" "16"
+}
+side
+{
+    "id" "13359"
+    "plane" "(0 152 104) (0 -24 104) (88 -24 104)"
+    "smoothing_groups" "0"
+    "material" "tools/toolsnodraw"
+    "uaxis" "[-1 0 0 0] 0.25"
+    "vaxis" "[0 -1 0 0] 0.25"
+    "lightmapscale" "16"
+}
+side
+{
+    "id" "13360"
+    "plane" "(0 -24 112) (0 152 112) (88 152 112)"
+    "smoothing_groups" "0"
+    "material" "de_mirage/base/de_mirage_mid_ver1_diffuse"
+    "uaxis" "[1 0 0 0] 5"
+    "vaxis" "[0 -1 0 0] 5"
+    "lightmapscale" "16"
+}
