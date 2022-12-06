@@ -8,19 +8,19 @@ Mainly designed for a Blender importer, but can be also used for other purposes.
 
 Feature                   | Status                 | Source
 ------------------------- | ---------------------- | ------
-Installed games detection | Ready                  | [plumber_core/src/steam.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/steam.rs)
-Game asset opening        | Ready                  | [plumber_core/src/fs.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/fs.rs)
-VMF reading               | Ready                  | [plumber_core/src/vmf/mod.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/mod.rs)
-VMF brushes to geometry   | Ready                  | [plumber_core/src/vmf/solid_builder.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/solid_builder.rs)
-VMF overlays to geometry  | Ready                  | [plumber_core/src/vmf/overlay_builder.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/overlay_builder.rs)
+Installed games detection | Ready                  | [plumber_steam/src/lib.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_steam/src/lib.rs)
+Game asset opening        | Ready                  | [plumber_fs/src/lib.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_fs/src/lib.rs)
+VMF reading               | Ready                  | [plumber_vmf/src/vmf.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_vmf/src/vmf.rs)
+VMF brushes to geometry   | Ready                  | [plumber_vmf/src/solid_builder.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_vmf/src/solid_builder.rs)
+VMF overlays to geometry  | Ready                  | [plumber_vmf/src/overlay_builder.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_vmf/src/overlay_builder.rs)
 VMF decals to geometry    | Not started            |
-VMF entity handling       | Ready                  | [plumber_core/src/vmf/entities.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmf/entities.rs)
-VMF skybox reading        | Ready                  |
-VMT (material) reading    | Ready                  | [plumber_core/src/vmt/mod.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmt/mod.rs)
-VTF (texture) reading     | Ready                  | [plumber_core/src/vmt/loader.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_core/src/vmt/loader.rs)
-MDL (model) mesh reading  | Ready                  | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
-MDL skeleton reading      | Ready                  | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
-MDL animation reading     | Ready                  | [plumber_core/src/model](https://github.com/lasa01/plumber_core/tree/master/plumber_core/src/model)
+VMF entity handling       | Ready                  | [plumber_vmf/src/entities.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_vmf/src/vmf/entities.rs)
+VMT (material) reading    | Ready                  | [plumber_vmt/src/lib.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_vmt/src/lib.rs)
+Skybox VMT reading        | Ready                  |
+VTF (texture) reading     | Ready                  | [plumber_asset/src/vmt.rs](https://github.com/lasa01/plumber_core/blob/master/plumber_asset/src/vmt.rs)
+MDL (model) mesh reading  | Ready                  | [plumber_mdl/src/lib.rs](https://github.com/lasa01/plumber_core/tree/master/plumber_mdl/src/lib.rs)
+MDL skeleton reading      | Ready                  | [plumber_mdl/src/mdl.rs](https://github.com/lasa01/plumber_core/tree/master/plumber_mdl/src/mdl.rs)
+MDL animation reading     | Ready                  | [plumber_mdl/src/mdl.rs](https://github.com/lasa01/plumber_core/tree/master/plumber_mdl/src/mdl.rs)
 MDL external ANI animation| Not started            |
 MDL animation movements   | Not started            |
 MDL skins                 | Not started            |
@@ -31,15 +31,27 @@ MDL other features        | Currently not planned  |
 
 ## Code structure
 
-The library is currently split into three main crates.
+The library is split into small crates.
 
 `plumber_vdf` is a VDF (also known as Valve KeyValues) file format implementation for the Serde framework.
 
 `plumber_vpk` is a VPK (packaged game content) file reader.
 
-These could also be used independently of other crates, if needed.
+`plumber_uncased` is a case-insensitive string wrapper.
 
-`plumber_core` contains most of the logic and depends on the VDF and VPK crates.
+`plumber_steam` detects installed Steam games.
+
+`plumber_fs` reads files in a Source game's file system.
+
+`plumber_vmt` is a VMT (material) reader.
+
+`plumber_vmf` is a VMF (uncompiled map file) reader and converter into 3D geometry.
+
+`plumber_mdl` is a MDL (3d model) reader.
+
+`plumber_asset` contains an interface for creating a multithreaded importer using the other crates.
+
+`plumber_core` re-exports all the other crates for convenience.
 
 
 ## Notes
