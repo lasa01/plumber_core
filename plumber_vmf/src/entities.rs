@@ -18,6 +18,7 @@ pub enum TypedEntity<'a> {
     SkyCamera(SkyCamera<'a>),
     Overlay(Overlay<'a>),
     Prop(Prop<'a>),
+    Instance(Instance<'a>),
     Unknown(Unknown<'a>),
 }
 
@@ -40,6 +41,7 @@ impl Entity {
             | "prop_physics"
             | "prop_physics_multiplayer"
             | "prop_physics_override" => TypedEntity::Prop(Prop::new(self)),
+            "func_instance" => TypedEntity::Instance(Instance::new(self)),
             _ => TypedEntity::Unknown(Unknown::new(self)),
         }
     }
@@ -855,4 +857,33 @@ pub struct OverlayUvInfo {
     pub basis_v: Vec3,
     pub basis_normal: Vec3,
     pub uvs: [Vec3; 4],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Instance<'a> {
+    entity: &'a Entity,
+}
+
+impl<'a> BaseEntity for Instance<'a> {
+    fn entity(&self) -> &Entity {
+        self.entity
+    }
+}
+
+impl<'a> PointEntity for Instance<'a> {}
+
+impl<'a> AngledEntity for Instance<'a> {}
+
+impl<'a> Instance<'a> {
+    #[must_use]
+    pub fn new(entity: &'a Entity) -> Self {
+        Self { entity }
+    }
+
+    /// # Errors
+    /// Returns `Err` if the parameter "file" is missing.
+    pub fn file(&self) -> Result<&str, EntityParseError> {
+        self.get_parameter("file")
+            .ok_or(EntityParseError::MissingParameter("file"))
+    }
 }
