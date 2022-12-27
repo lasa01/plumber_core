@@ -54,6 +54,22 @@ impl<'a> Path<'a> {
             Path::Os(p) => PathBuf::Os(p.to_path_buf()),
         }
     }
+
+    #[must_use]
+    pub fn parent(self) -> Option<Self> {
+        match self {
+            Path::Game(p) => p.parent().map(Path::Game),
+            Path::Os(p) => p.parent().map(Path::Os),
+        }
+    }
+
+    #[must_use]
+    pub fn join(self, other: impl AsRef<GamePath>) -> PathBuf {
+        match self {
+            Path::Game(p) => PathBuf::Game(p.join(other)),
+            Path::Os(p) => PathBuf::Os(p.join(other.as_ref().as_str())),
+        }
+    }
 }
 
 impl PartialEq<str> for Path<'_> {
@@ -229,6 +245,8 @@ struct GameInfo {
     game: String,
     #[serde(rename = "filesystem")]
     file_system: GameInfoFileSystem,
+    #[serde(default, rename = "instancepath")]
+    instance_path: String,
 }
 
 #[derive(Debug, PartialEq, Deserialize, Default)]
@@ -522,6 +540,7 @@ fn open_wildcard_dir(
 pub struct FileSystem {
     pub name: String,
     pub search_paths: Vec<SearchPath>,
+    pub instance_path: String,
 }
 
 impl FileSystem {
@@ -679,6 +698,7 @@ impl FileSystem {
         Self {
             name: game_info.game,
             search_paths,
+            instance_path: game_info.instance_path,
         }
     }
 
@@ -699,6 +719,7 @@ impl FileSystem {
 
         Ok(OpenFileSystem {
             search_paths: open_search_paths,
+            instance_path: self.instance_path.clone(),
         })
     }
 
@@ -711,6 +732,7 @@ impl FileSystem {
         Self {
             name: self.name.clone(),
             search_paths,
+            instance_path: self.instance_path.clone(),
         }
     }
 }
@@ -987,6 +1009,7 @@ impl<'a> ReadDirPart<'a> {
 #[derive(Debug)]
 pub struct OpenFileSystem {
     search_paths: Vec<OpenSearchPath>,
+    instance_path: String,
 }
 
 fn initial_buffer_size(file: &GameFile) -> usize {
@@ -1087,6 +1110,39 @@ impl OpenFileSystem {
     /// This directly adds the path as is, without support for handling wildcard directories, `pak01_dir.vpk`, etc.
     pub fn add_open_search_path(&mut self, search_path: OpenSearchPath) {
         self.search_paths.insert(0, search_path);
+    }
+
+    /// Reads an instance vmf file, taking into account the game's instance path if it is defined.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the instance file can't be found or read.
+    pub fn read_instance_vmf<'a>(
+        &self,
+        vmf_path: impl Into<Path<'a>>,
+        instance_path: &str,
+    ) -> io::Result<Vec<u8>> {
+        let vmf_path: Path = vmf_path.into();
+
+        if let Some(vmf_parent) = vmf_path.parent() {
+            let instance_game_path = GamePath::try_from_str(instance_path).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Other, "instance vmf path is invalid")
+            })?;
+            let path_candidate = vmf_parent.join(instance_game_path);
+
+            match self.read(&path_candidate) {
+                Ok(s) => return Ok(s),
+                Err(e) => {
+                    if e.kind() != io::ErrorKind::NotFound {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        let path_candidate = StdPath::new(&self.instance_path).join(instance_path);
+
+        fs::read(path_candidate)
     }
 }
 
@@ -1384,7 +1440,8 @@ mod tests {
                             "tf/download".into(),
                         ],
                     }
-                }
+                },
+                instance_path: String::default(),
             }
         );
     }
@@ -1410,7 +1467,8 @@ mod tests {
                     SearchPath::Directory("root_path/tf".into()),
                     SearchPath::Directory("root_path/hl2".into()),
                     SearchPath::Directory("root_path/tf/download".into())
-                ]
+                ],
+                instance_path: String::default(),
             }
         );
     }
