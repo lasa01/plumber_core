@@ -527,7 +527,7 @@ impl<'a> Seek for File<'a> {
         } else {
             self.cursor = preload_len;
         }
-        Ok(self.cursor as u64)
+        Ok(self.cursor)
     }
 }
 

@@ -47,7 +47,7 @@ where
         for file in files {
             let spec_path = file.path.with_extension("json");
 
-            let spec_file = match File::open(&spec_path) {
+            let spec_file = match File::open(spec_path) {
                 Ok(f) => f,
                 Err(e) => {
                     if e.kind() == ErrorKind::NotFound {

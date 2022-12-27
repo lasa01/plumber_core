@@ -66,7 +66,7 @@ pub struct Error {
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.position {
-            Some(position) => write!(f, "{} at {}", self.reason, position),
+            Some(position) => write!(f, "{} at {position}", self.reason),
             None => self.reason.fmt(f),
         }
     }

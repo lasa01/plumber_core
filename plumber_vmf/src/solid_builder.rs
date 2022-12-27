@@ -210,10 +210,10 @@ impl<'a> FaceBuilder<'a> {
         for &vi in &self.vertice_indices {
             let u = (vertices[vi] + center).dot(u_axis.axis)
                 / (texture_width * u_axis.scale as f32)
-                + u_axis.translation as f32 / texture_width as f32;
+                + u_axis.translation as f32 / texture_width;
             let v = (vertices[vi] + center).dot(v_axis.axis)
                 / (texture_height * v_axis.scale as f32)
-                + v_axis.translation as f32 / texture_height as f32;
+                + v_axis.translation as f32 / texture_height;
             self.vertice_uvs.push(Vec2::new(u, v));
         }
 

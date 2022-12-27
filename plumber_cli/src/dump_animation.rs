@@ -25,7 +25,7 @@ pub fn dump_animation(opts: DumpAnimation, file_system: &FileSystem) {
 
     if opts.bones {
         for bone in verified.bones().unwrap() {
-            eprintln!("{:#?}", bone);
+            eprintln!("{bone:#?}");
         }
     }
 
@@ -33,7 +33,7 @@ pub fn dump_animation(opts: DumpAnimation, file_system: &FileSystem) {
         let animation = match res {
             Ok(a) => a,
             Err(err) => {
-                eprintln!("Error reading animation: {}", err);
+                eprintln!("Error reading animation: {err}");
                 continue;
             }
         };
@@ -47,7 +47,7 @@ pub fn dump_animation(opts: DumpAnimation, file_system: &FileSystem) {
         if opts.names_only {
             eprintln!("{}", animation.name);
         } else {
-            eprintln!("{:#?}", animation);
+            eprintln!("{animation:#?}");
         }
     }
 }

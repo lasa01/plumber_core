@@ -803,7 +803,7 @@ impl Debug for OpenSearchPath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             OpenSearchPath::Vpk(dir) => write!(f, "OpenSearchPath::Vpk({:?})", dir.path()),
-            OpenSearchPath::Directory(path) => write!(f, "OpenSearchPath::Directory({:?})", path),
+            OpenSearchPath::Directory(path) => write!(f, "OpenSearchPath::Directory({path:?})"),
         }
     }
 }

@@ -123,7 +123,7 @@ impl FileSpec for MdlSpec {
         eprintln!("  Flags ok");
 
         for (i, bone) in header.iter_bones().unwrap().enumerate() {
-            eprintln!("  Verifying bone {}", i);
+            eprintln!("  Verifying bone {i}");
             self.bones[i].verify(bone);
         }
 
@@ -131,12 +131,12 @@ impl FileSpec for MdlSpec {
         eprintln!("  Texture paths ok");
 
         for (i, body_part) in header.iter_body_parts().unwrap().enumerate() {
-            eprintln!("  Verifying body part {}", i);
+            eprintln!("  Verifying body part {i}");
             self.body_parts[i].verify(body_part);
         }
 
         for (i, animation) in header.iter_animation_descs().unwrap().enumerate() {
-            eprintln!("  Verifying animation {}", i);
+            eprintln!("  Verifying animation {i}");
             self.animations[i].verify(animation);
         }
 
@@ -179,7 +179,7 @@ impl BodyPartSpec {
         assert_eq!(body_part.name().unwrap(), self.name);
 
         for (i, model) in body_part.iter_models().unwrap().enumerate() {
-            eprintln!("    Verifying model {}", i);
+            eprintln!("    Verifying model {i}");
             self.models[i].verify(model);
         }
         eprintln!("    Body part ok");
@@ -227,7 +227,7 @@ impl AnimationSpec {
             match self.sections.get(i) {
                 None => continue,
                 Some(spec) => {
-                    eprintln!("    Verifying section {}", i);
+                    eprintln!("    Verifying section {i}");
                     spec.verify(section);
                 }
             };
@@ -239,7 +239,7 @@ impl AnimationSpec {
 
         for (&bone, spec) in &self.data_final {
             let bone = bone as usize;
-            eprintln!("    Verifying final data for bone {}", bone);
+            eprintln!("    Verifying final data for bone {bone}");
             spec.verify(
                 data.get(&bone).unwrap(),
                 animation.bones[bone].parent_bone_index < 0,
@@ -261,7 +261,7 @@ impl SectionSpec {
             let bone_anim = bone_anim.unwrap();
             let bone = bone_anim.animation.bone_index;
 
-            eprintln!("      Verifying post-calc data for bone {}", bone);
+            eprintln!("      Verifying post-calc data for bone {bone}");
             let spec = self.data_post_calc.get(&bone).unwrap();
             let data = bone_anim.animation_data().unwrap();
             spec.verify(&data, false);
@@ -356,9 +356,9 @@ fn count_mdl_versions() {
                     filesystem.read_dir(GamePath::try_from_str("models").unwrap()),
                     &mut version_counter,
                 );
-                eprintln!("mdl versions: {:?}", version_counter);
+                eprintln!("mdl versions: {version_counter:?}");
             }
-            Err(err) => eprintln!("warning: failed filesystem discovery: {}", err),
+            Err(err) => eprintln!("warning: failed filesystem discovery: {err}"),
         }
     }
 }
