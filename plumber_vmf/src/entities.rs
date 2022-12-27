@@ -60,6 +60,21 @@ pub trait BaseEntity {
     #[must_use]
     fn entity(&self) -> &Entity;
 
+    fn get_parameter(&self, parameter: &'static str) -> Option<&str> {
+        self.entity()
+            .properties
+            .get(parameter.as_uncased())
+            .map(String::as_str)
+    }
+
+    /// # Errors
+    ///
+    /// Returns `Err` if the parameter is missing.
+    fn get_required_parameter(&self, parameter: &'static str) -> Result<&str, EntityParseError> {
+        self.get_parameter(parameter)
+            .ok_or(EntityParseError::MissingParameter(parameter))
+    }
+
     /// # Errors
     ///
     /// Returns `Err` if the parameter can't be parsed.
@@ -71,7 +86,7 @@ pub trait BaseEntity {
     where
         P: FromStr,
     {
-        let value = self.entity().properties.get(parameter.as_uncased());
+        let value = self.get_parameter(parameter);
 
         match value {
             Some(value) => value
@@ -97,6 +112,17 @@ pub trait BaseEntity {
 
     /// # Errors
     ///
+    /// Returns `Err` if the parameter can't be parsed or found.
+    fn parse_required_float_parameter(
+        &self,
+        parameter: &'static str,
+    ) -> Result<f32, EntityParseError> {
+        self.parse_float_parameter(parameter)
+            .and_then(|o| o.ok_or(EntityParseError::MissingParameter(parameter)))
+    }
+
+    /// # Errors
+    ///
     /// Returns `Err` if the parameter can't be parsed.
     fn parse_int_parameter(
         &self,
@@ -107,15 +133,26 @@ pub trait BaseEntity {
 
     /// # Errors
     ///
+    /// Returns `Err` if the parameter can't be parsed or found.
+    fn parse_required_int_parameter(
+        &self,
+        parameter: &'static str,
+    ) -> Result<i32, EntityParseError> {
+        self.parse_int_parameter(parameter)
+            .and_then(|o| o.ok_or(EntityParseError::MissingParameter(parameter)))
+    }
+
+    /// # Errors
+    ///
     /// Returns `Err` if the parameter can't be parsed.
     fn parse_bool_parameter(
         &self,
         parameter: &'static str,
     ) -> Result<Option<bool>, EntityParseError> {
-        let value = self.entity().properties.get(parameter.as_uncased());
+        let value = self.get_parameter(parameter);
 
         match value {
-            Some(value) => match value.as_str() {
+            Some(value) => match value {
                 "0" => Ok(Some(false)),
                 "1" => Ok(Some(true)),
                 _ => Err(EntityParseError::InvalidParameterValue {
@@ -134,7 +171,7 @@ pub trait BaseEntity {
         &self,
         parameter: &'static str,
     ) -> Result<Option<RGB8>, EntityParseError> {
-        if let Some(value) = self.entity().properties.get(parameter.as_uncased()) {
+        if let Some(value) = self.get_parameter(parameter) {
             let (r, g, b) = value
                 .split_ascii_whitespace()
                 .map(|s| {
@@ -167,7 +204,7 @@ pub trait BaseEntity {
         &self,
         parameter: &'static str,
     ) -> Result<Option<[f32; 3]>, EntityParseError> {
-        if let Some(value) = self.entity().properties.get(parameter.as_uncased()) {
+        if let Some(value) = self.get_parameter(parameter) {
             let (x, y, z) = value
                 .split_ascii_whitespace()
                 .map(|s| {
@@ -187,6 +224,17 @@ pub trait BaseEntity {
         } else {
             Ok(None)
         }
+    }
+
+    /// # Errors
+    ///
+    /// Returns `Err` if the parameter can't be parsed or found.
+    fn parse_required_vector3_parameter(
+        &self,
+        parameter: &'static str,
+    ) -> Result<[f32; 3], EntityParseError> {
+        self.parse_vector3_parameter(parameter)
+            .and_then(|o| o.ok_or(EntityParseError::MissingParameter(parameter)))
     }
 }
 
@@ -241,11 +289,7 @@ pub trait LightEntity: PointEntity {
         &self,
         parameter: &'static str,
     ) -> Result<(RGB8, f32), EntityParseError> {
-        let light = self
-            .entity()
-            .properties
-            .get(parameter.as_uncased())
-            .ok_or(EntityParseError::MissingParameter(parameter))?;
+        let light = self.get_required_parameter(parameter)?;
 
         let mut split = light.split_ascii_whitespace();
 
@@ -288,7 +332,7 @@ pub trait LightEntity: PointEntity {
         &self,
         parameter: &'static str,
     ) -> Result<Option<(RGB8, f32)>, EntityParseError> {
-        if let Some(light) = self.entity().properties.get(parameter.as_uncased()) {
+        if let Some(light) = self.get_parameter(parameter) {
             let mut split = light.split_ascii_whitespace();
 
             let mut next_color = || {
@@ -360,10 +404,7 @@ pub trait LightEntity: PointEntity {
     }
 
     fn pattern(&self) -> Option<&str> {
-        self.entity()
-            .properties
-            .get("pattern".as_uncased())
-            .map(String::as_str)
+        self.get_parameter("pattern")
     }
 
     /// # Errors
@@ -446,42 +487,35 @@ impl<'a> SpotLight<'a> {
 
     #[must_use]
     pub fn target(&self) -> Option<&str> {
-        self.entity
-            .properties
-            .get("target".as_uncased())
-            .map(String::as_str)
+        self.get_parameter("target")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_inner_cone` is missing or can't be parsed.
     pub fn inner_cone(&self) -> Result<f32, EntityParseError> {
-        self.parse_float_parameter("_inner_cone")
-            .and_then(|o| o.ok_or(EntityParseError::MissingParameter("_inner_cone")))
+        self.parse_required_float_parameter("_inner_cone")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_cone` is missing or can't be parsed.
     pub fn outer_cone(&self) -> Result<f32, EntityParseError> {
-        self.parse_float_parameter("_cone")
-            .and_then(|o| o.ok_or(EntityParseError::MissingParameter("_cone")))
+        self.parse_required_float_parameter("_cone")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_exponent` is missing or can't be parsed.
     pub fn exponent(&self) -> Result<f32, EntityParseError> {
-        self.parse_float_parameter("_exponent")
-            .and_then(|o| o.ok_or(EntityParseError::MissingParameter("_exponent")))
+        self.parse_required_float_parameter("_exponent")
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `_distance` is missing or can't be parsed.
     pub fn distance(&self) -> Result<f32, EntityParseError> {
-        self.parse_float_parameter("_distance")
-            .and_then(|o| o.ok_or(EntityParseError::MissingParameter("_distance")))
+        self.parse_required_float_parameter("_distance")
     }
 
     /// Returns the entity rotation in pitch, yaw, roll order (YZX), in degrees.
@@ -684,11 +718,7 @@ impl<'a> Prop<'a> {
     ///
     /// Returns `Err` if the parameter `model` doesn't exist.
     pub fn model(&self) -> Result<&str, EntityParseError> {
-        self.entity
-            .properties
-            .get("model".as_uncased())
-            .map(String::as_str)
-            .ok_or(EntityParseError::MissingParameter("model"))
+        self.get_required_parameter("model")
     }
 
     /// # Errors
@@ -751,32 +781,26 @@ impl<'a> Overlay<'a> {
     ///
     /// Returns `Err` if the parameter `material` doesn't exist.
     pub fn material(&self) -> Result<GamePathBuf, EntityParseError> {
-        self.entity
-            .properties
-            .get("material".as_uncased())
-            .map(|s| GamePathBuf::from(s.clone()))
-            .ok_or(EntityParseError::MissingParameter("material"))
+        self.get_required_parameter("material")
+            .map(GamePathBuf::from)
     }
 
     /// # Errors
     ///
     /// Returns `Err` if the parameter `sides` can't be parsed.
     pub fn sides(&self) -> Result<Vec<i32>, EntityParseError> {
-        self.entity
-            .properties
-            .get("sides".as_uncased())
-            .map_or_else(
-                || Ok(Vec::new()),
-                |s| {
-                    s.split_ascii_whitespace()
-                        .map(str::parse)
-                        .try_collect()
-                        .map_err(|_| EntityParseError::InvalidParameterValue {
-                            parameter: "sides",
-                            reason: "contains an invalid int",
-                        })
-                },
-            )
+        self.get_parameter("sides").map_or_else(
+            || Ok(Vec::new()),
+            |s| {
+                s.split_ascii_whitespace()
+                    .map(str::parse)
+                    .try_collect()
+                    .map_err(|_| EntityParseError::InvalidParameterValue {
+                        parameter: "sides",
+                        reason: "contains an invalid int",
+                    })
+            },
+        )
     }
 
     /// # Errors
@@ -791,52 +815,20 @@ impl<'a> Overlay<'a> {
     ///
     /// Returns `Err` if a parameter can't be parsed or is missing.
     pub fn uv_info(&self) -> Result<OverlayUvInfo, EntityParseError> {
-        let start_u = self
-            .parse_float_parameter("StartU")?
-            .ok_or(EntityParseError::MissingParameter("StartU"))?;
-        let start_v = self
-            .parse_float_parameter("StartV")?
-            .ok_or(EntityParseError::MissingParameter("StartV"))?;
-        let end_u = self
-            .parse_float_parameter("EndU")?
-            .ok_or(EntityParseError::MissingParameter("EndU"))?;
-        let end_v = self
-            .parse_float_parameter("EndV")?
-            .ok_or(EntityParseError::MissingParameter("EndV"))?;
+        let start_u = self.parse_required_float_parameter("StartU")?;
+        let start_v = self.parse_required_float_parameter("StartV")?;
+        let end_u = self.parse_required_float_parameter("EndU")?;
+        let end_v = self.parse_required_float_parameter("EndV")?;
 
-        let basis_origin = self
-            .parse_vector3_parameter("BasisOrigin")?
-            .ok_or(EntityParseError::MissingParameter("BasisOrigin"))?
-            .into();
-        let basis_u = self
-            .parse_vector3_parameter("BasisU")?
-            .ok_or(EntityParseError::MissingParameter("BasisU"))?
-            .into();
-        let basis_v = self
-            .parse_vector3_parameter("BasisV")?
-            .ok_or(EntityParseError::MissingParameter("BasisV"))?
-            .into();
-        let basis_normal = self
-            .parse_vector3_parameter("BasisNormal")?
-            .ok_or(EntityParseError::MissingParameter("BasisNormal"))?
-            .into();
+        let basis_origin = self.parse_required_vector3_parameter("BasisOrigin")?.into();
+        let basis_u = self.parse_required_vector3_parameter("BasisU")?.into();
+        let basis_v = self.parse_required_vector3_parameter("BasisV")?.into();
+        let basis_normal = self.parse_required_vector3_parameter("BasisNormal")?.into();
 
-        let uv_0 = self
-            .parse_vector3_parameter("uv0")?
-            .ok_or(EntityParseError::MissingParameter("uv0"))?
-            .into();
-        let uv_1 = self
-            .parse_vector3_parameter("uv1")?
-            .ok_or(EntityParseError::MissingParameter("uv1"))?
-            .into();
-        let uv_2 = self
-            .parse_vector3_parameter("uv2")?
-            .ok_or(EntityParseError::MissingParameter("uv2"))?
-            .into();
-        let uv_3 = self
-            .parse_vector3_parameter("uv3")?
-            .ok_or(EntityParseError::MissingParameter("uv3"))?
-            .into();
+        let uv_0 = self.parse_required_vector3_parameter("uv0")?.into();
+        let uv_1 = self.parse_required_vector3_parameter("uv1")?.into();
+        let uv_2 = self.parse_required_vector3_parameter("uv2")?.into();
+        let uv_3 = self.parse_required_vector3_parameter("uv3")?.into();
 
         Ok(OverlayUvInfo {
             start_u,
