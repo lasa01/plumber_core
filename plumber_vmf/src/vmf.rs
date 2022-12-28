@@ -20,18 +20,127 @@ use plumber_vdf as vdf;
 
 use crate::types::{bracketed_vector2, bracketed_vector3, color, BracketedVector3, Plane, UvAxis};
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
-#[serde(expecting = "a vmf file")]
+#[derive(Debug, PartialEq)]
 pub struct Vmf {
-    #[serde(default, rename = "versioninfo")]
     pub version_info: VersionInfo,
-    #[serde(default, rename = "visgroups")]
     pub vis_groups: VisGroups,
-    #[serde(default, rename = "viewsettings")]
     pub view_settings: ViewSettings,
     pub world: World,
-    #[serde(default, rename = "entity", skip_serializing_if = "Vec::is_empty")]
     pub entities: Vec<Entity>,
+}
+
+impl Serialize for Vmf {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("versioninfo", &self.version_info)?;
+        map.serialize_entry("visgroups", &self.vis_groups)?;
+        map.serialize_entry("viewsettings", &self.view_settings)?;
+        map.serialize_entry("world", &self.world)?;
+
+        for entity in &self.entities {
+            if entity.hidden {
+                map.serialize_entry("hidden", &HiddenEntitySerializer { entity })?;
+            } else {
+                map.serialize_entry("entity", entity)?;
+            }
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Vmf {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct VmfVisitor;
+
+        impl<'de> Visitor<'de> for VmfVisitor {
+            type Value = Vmf;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a vmf file")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut version_info = None;
+                let mut vis_groups = None;
+                let mut view_settings = None;
+                let mut world = None;
+                let mut entities = Vec::new();
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        "versioninfo" => {
+                            if version_info.is_some() {
+                                return Err(de::Error::duplicate_field("versioninfo"));
+                            }
+                            let value = map.next_value()?;
+                            version_info = Some(value);
+                        }
+                        "visgroups" => {
+                            if vis_groups.is_some() {
+                                return Err(de::Error::duplicate_field("visgroups"));
+                            }
+                            let value = map.next_value()?;
+                            vis_groups = Some(value);
+                        }
+                        "viewsettings" => {
+                            if view_settings.is_some() {
+                                return Err(de::Error::duplicate_field("viewsettings"));
+                            }
+                            let value = map.next_value()?;
+                            view_settings = Some(value);
+                        }
+                        "world" => {
+                            if world.is_some() {
+                                return Err(de::Error::duplicate_field("world"));
+                            }
+                            let value = map.next_value()?;
+                            world = Some(value);
+                        }
+                        "entity" => {
+                            let value = map.next_value()?;
+                            entities.push(value);
+                        }
+                        "hidden" => {
+                            let res = map.next_value::<HiddenEntityDeserializer>()?;
+                            let mut entity = res.entity;
+                            entity.hidden = true;
+
+                            entities.push(entity);
+                        }
+                        _ => {
+                            map.next_value::<de::IgnoredAny>()?;
+                        }
+                    }
+                }
+
+                let version_info = version_info.unwrap_or_default();
+                let vis_groups = vis_groups.unwrap_or_default();
+                let view_settings = view_settings.unwrap_or_default();
+                let world = world.ok_or_else(|| de::Error::missing_field("world"))?;
+
+                Ok(Vmf {
+                    version_info,
+                    vis_groups,
+                    view_settings,
+                    world,
+                    entities,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(VmfVisitor)
+    }
 }
 
 impl Vmf {
@@ -121,22 +230,146 @@ impl Default for ViewSettings {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-#[serde(expecting = "class world")]
+#[derive(Debug, Clone, PartialEq)]
 pub struct World {
     pub id: i32,
-    #[serde(rename = "mapversion")]
     pub map_version: i32,
-    #[serde(rename = "classname")]
     pub class_name: String,
-    #[serde(rename = "skyname")]
     pub sky_name: GamePathBuf,
-    #[serde(flatten)]
     pub properties: BTreeMap<UncasedString, String>,
-    #[serde(default, rename = "solid", skip_serializing_if = "Vec::is_empty")]
     pub solids: Vec<Solid>,
-    #[serde(default, rename = "group", skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<Group>,
+}
+
+impl Serialize for World {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("id", &self.id)?;
+        map.serialize_entry("mapversion", &self.map_version)?;
+        map.serialize_entry("classname", &self.class_name)?;
+        map.serialize_entry("skyname", &self.sky_name)?;
+
+        for (key, value) in &self.properties {
+            map.serialize_entry(key, value)?;
+        }
+
+        for solid in &self.solids {
+            if solid.hidden {
+                map.serialize_entry("hidden", &HiddenSolidSerializer { solid })?;
+            } else {
+                map.serialize_entry("solid", solid)?;
+            }
+        }
+
+        for group in &self.groups {
+            map.serialize_entry("group", group)?;
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for World {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct WorldVisitor;
+
+        impl<'de> Visitor<'de> for WorldVisitor {
+            type Value = World;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("class world")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut id = None;
+                let mut map_version = None;
+                let mut class_name = None;
+                let mut sky_name = None;
+                let mut solids = Vec::new();
+                let mut groups = Vec::new();
+                let mut properties = BTreeMap::new();
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        "id" => {
+                            if id.is_some() {
+                                return Err(de::Error::duplicate_field("id"));
+                            }
+                            let value = map.next_value()?;
+                            id = Some(value);
+                        }
+                        "mapversion" => {
+                            if map_version.is_some() {
+                                return Err(de::Error::duplicate_field("mapversion"));
+                            }
+                            let value = map.next_value()?;
+                            map_version = Some(value);
+                        }
+                        "classname" => {
+                            if class_name.is_some() {
+                                return Err(de::Error::duplicate_field("classname"));
+                            }
+                            let value = map.next_value()?;
+                            class_name = Some(value);
+                        }
+                        "skyname" => {
+                            if sky_name.is_some() {
+                                return Err(de::Error::duplicate_field("skyname"));
+                            }
+                            let value = map.next_value()?;
+                            sky_name = Some(value);
+                        }
+                        "solid" => {
+                            let value = map.next_value()?;
+                            solids.push(value);
+                        }
+                        "hidden" => {
+                            let res = map.next_value::<HiddenSolidDeserializer>()?;
+                            let mut solid = res.solid;
+                            solid.hidden = true;
+
+                            solids.push(solid);
+                        }
+                        "group" => {
+                            let value = map.next_value()?;
+                            groups.push(value);
+                        }
+                        other => {
+                            properties.insert(other.to_owned().into(), map.next_value()?);
+                        }
+                    }
+                }
+
+                let id = id.ok_or_else(|| de::Error::missing_field("id"))?;
+                let map_version =
+                    map_version.ok_or_else(|| de::Error::missing_field("mapversion"))?;
+                let class_name = class_name.ok_or_else(|| de::Error::missing_field("classname"))?;
+                let sky_name = sky_name.ok_or_else(|| de::Error::missing_field("skyname"))?;
+
+                Ok(World {
+                    id,
+                    map_version,
+                    class_name,
+                    sky_name,
+                    properties,
+                    solids,
+                    groups,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(WorldVisitor)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
@@ -147,6 +380,19 @@ pub struct Solid {
     pub sides: Vec<Side>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub editor: Option<Editor>,
+    #[serde(skip)]
+    pub hidden: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(expecting = "class hidden")]
+struct HiddenSolidDeserializer {
+    solid: Solid,
+}
+
+#[derive(Debug, Serialize)]
+struct HiddenSolidSerializer<'a> {
+    solid: &'a Solid,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
@@ -757,20 +1003,49 @@ pub struct Editor {
     pub logical_pos: Option<Vec2>,
 }
 
-#[derive(Debug, Serialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Entity {
     pub id: i32,
-    #[serde(rename = "classname")]
     pub class_name: String,
-    #[serde(rename = "spawnflags")]
     pub spawn_flags: i32,
-    #[serde(flatten)]
     pub properties: BTreeMap<UncasedString, String>,
     pub connections: BTreeMap<UncasedString, String>,
-    #[serde(rename = "solid", skip_serializing_if = "Vec::is_empty")]
     pub solids: Vec<Solid>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub editor: Option<Editor>,
+    pub hidden: bool,
+}
+
+impl Serialize for Entity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("id", &self.id)?;
+        map.serialize_entry("classname", &self.class_name)?;
+        map.serialize_entry("spawnflags", &self.spawn_flags)?;
+
+        for (key, value) in &self.properties {
+            map.serialize_entry(key, value)?;
+        }
+
+        map.serialize_entry("connections", &self.connections)?;
+
+        for solid in &self.solids {
+            if solid.hidden {
+                map.serialize_entry("hidden", &HiddenSolidSerializer { solid })?;
+            } else {
+                map.serialize_entry("solid", solid)?;
+            }
+        }
+
+        if let Some(editor) = &self.editor {
+            map.serialize_entry("editor", editor)?;
+        }
+
+        map.end()
+    }
 }
 
 impl<'de> Deserialize<'de> for Entity {
@@ -796,7 +1071,7 @@ impl<'de> Deserialize<'de> for Entity {
                 let mut spawn_flags = None;
                 let mut properties = BTreeMap::new();
                 let mut connections = None;
-                let mut solids = None;
+                let mut solids = Vec::new();
                 let mut editor = None;
 
                 while let Some(key) = map.next_key()? {
@@ -832,14 +1107,18 @@ impl<'de> Deserialize<'de> for Entity {
                             editor = Some(map.next_value()?);
                         }
                         "solid" => {
-                            if solids.is_some() {
-                                return Err(de::Error::duplicate_field("solids"));
-                            }
                             if let Ok(res) = map.next_value() {
-                                solids = Some(res);
+                                solids.push(res);
                             } else {
                                 properties.insert("solid".into(), map.next_value()?);
                             }
+                        }
+                        "hidden" => {
+                            let res = map.next_value::<HiddenSolidDeserializer>()?;
+                            let mut solid = res.solid;
+                            solid.hidden = true;
+
+                            solids.push(solid);
                         }
                         other => {
                             properties.insert(other.to_owned().into(), map.next_value()?);
@@ -851,7 +1130,7 @@ impl<'de> Deserialize<'de> for Entity {
                 let class_name = class_name.ok_or_else(|| de::Error::missing_field("classname"))?;
                 let spawn_flags = spawn_flags.unwrap_or_default();
                 let connections = connections.unwrap_or_default();
-                let solids = solids.unwrap_or_default();
+
                 Ok(Entity {
                     id,
                     class_name,
@@ -860,10 +1139,22 @@ impl<'de> Deserialize<'de> for Entity {
                     connections,
                     solids,
                     editor,
+                    hidden: false,
                 })
             }
         }
 
         deserializer.deserialize_map(EntityVisitor)
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(expecting = "class hidden")]
+struct HiddenEntityDeserializer {
+    entity: Entity,
+}
+
+#[derive(Debug, Serialize)]
+struct HiddenEntitySerializer<'a> {
+    entity: &'a Entity,
 }
