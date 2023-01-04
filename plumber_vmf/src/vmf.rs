@@ -437,6 +437,8 @@ pub struct DispInfo {
     pub alphas: NumDispData<f64>,
     pub triangle_tags: NumDispData<u8>,
     pub allowed_verts: AllowedVerts,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multiblend: Option<F4DispData>,
 }
 
 impl DispInfo {
@@ -473,6 +475,7 @@ impl<'de> Deserialize<'de> for DispInfo {
             TriangleTags,
             #[serde(rename = "allowed_verts")]
             AllowedVerts,
+            MultiBlend,
             #[serde(other)]
             Other,
         }
@@ -502,6 +505,8 @@ impl<'de> Deserialize<'de> for DispInfo {
                 let mut alphas = None;
                 let mut triangle_tags = None;
                 let mut allowed_verts = None;
+                let mut multiblend = None;
+
                 while let Some(key) = map.next_key()? {
                     match key {
                         Field::Power => {
@@ -612,11 +617,24 @@ impl<'de> Deserialize<'de> for DispInfo {
                             }
                             allowed_verts = Some(map.next_value()?);
                         }
+                        Field::MultiBlend => {
+                            if multiblend.is_some() {
+                                return Err(de::Error::duplicate_field("allowed_verts"));
+                            }
+                            match dimension {
+                                Some(dimension) => {
+                                    multiblend =
+                                        Some(map.next_value_seed(F4DispData::new(dimension))?);
+                                }
+                                None => return Err(de::Error::missing_field("power")),
+                            }
+                        }
                         Field::Other => {
                             map.next_value::<de::IgnoredAny>()?;
                         }
                     }
                 }
+
                 let power = power.ok_or_else(|| de::Error::missing_field("power"))?;
                 let dimension = dimension.unwrap();
                 let start_position =
@@ -635,6 +653,7 @@ impl<'de> Deserialize<'de> for DispInfo {
                     NumDispData::new((dimension, 2 * dimension))
                 });
                 let allowed_verts = allowed_verts.unwrap_or_default();
+
                 Ok(DispInfo {
                     power,
                     start_position,
@@ -647,6 +666,7 @@ impl<'de> Deserialize<'de> for DispInfo {
                     alphas,
                     triangle_tags,
                     allowed_verts,
+                    multiblend,
                 })
             }
         }
@@ -664,6 +684,7 @@ impl<'de> Deserialize<'de> for DispInfo {
                 "offset_normals",
                 "alphas",
                 "triangle_tags",
+                "multiblend",
             ],
             DispInfoVisitor,
         )
@@ -873,6 +894,119 @@ where
             }
             map.serialize_entry(&RowKey(index), &value)?;
         }
+        map.end()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct F4DispData {
+    pub data: Array2<[f32; 4]>,
+}
+
+impl F4DispData {
+    #[must_use]
+    pub fn new(dimension: usize) -> Self {
+        Self {
+            data: Array2::default((dimension, dimension)),
+        }
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for F4DispData {
+    type Value = F4DispData;
+
+    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct DispDataVisitor<'a>(&'a mut F4DispData);
+
+        impl<'de, 'a> Visitor<'de> for DispDataVisitor<'a> {
+            type Value = ();
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a dispinfo data class")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let dimension = self.0.data.dim();
+
+                while let Some(key) = map.next_key::<&str>()? {
+                    if !key.starts_with("row") {
+                        return Err(de::Error::unknown_field(key, &["row[n]"]));
+                    }
+
+                    let row_index: usize = key[3..]
+                        .parse()
+                        .map_err(|_| de::Error::unknown_field(key, &["row[n]"]))?;
+
+                    if row_index >= dimension.0 {
+                        return Err(de::Error::custom("row out of bounds"));
+                    }
+
+                    let value: &str = map.next_value()?;
+
+                    for (column_index, (a, b, c, d)) in
+                        value.split_ascii_whitespace().tuples().enumerate()
+                    {
+                        if column_index >= dimension.1 {
+                            return Err(de::Error::custom("column out of bounds"));
+                        }
+
+                        let item = &mut self.0.data[(row_index, column_index)];
+
+                        item[0] = a.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(a), &"a float")
+                        })?;
+
+                        item[1] = b.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(b), &"a float")
+                        })?;
+
+                        item[2] = c.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(c), &"a float")
+                        })?;
+
+                        item[3] = d.parse().map_err(|_| {
+                            de::Error::invalid_value(de::Unexpected::Str(d), &"a float")
+                        })?;
+                    }
+                }
+
+                Ok(())
+            }
+        }
+
+        deserializer.deserialize_map(DispDataVisitor(&mut self))?;
+
+        Ok(self)
+    }
+}
+
+impl Serialize for F4DispData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let dimension = self.data.dim();
+
+        let mut map = serializer.serialize_map(Some(dimension.0))?;
+
+        for (index, row) in self.data.outer_iter().enumerate() {
+            let mut value = String::new();
+
+            for floats in row.iter() {
+                for f in floats {
+                    write!(value, "{} ", f).unwrap();
+                }
+            }
+
+            map.serialize_entry(&RowKey(index), &value)?;
+        }
+
         map.end()
     }
 }
