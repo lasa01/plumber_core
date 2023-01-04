@@ -58,6 +58,7 @@ pub struct SolidFace {
     pub vertice_uvs: Vec<Vec2>,
     pub material_index: usize,
     pub vertice_alphas: Vec<f32>,
+    pub vertice_multiblends: Option<Vec<[f32; 4]>>,
 }
 
 #[derive(Clone)]
@@ -68,6 +69,7 @@ struct FaceBuilder<'a> {
     vertice_uvs: Vec<Vec2>,
     material_index: usize,
     vertice_alphas: Vec<f32>,
+    vertice_multiblends: Option<Vec<[f32; 4]>>,
 }
 
 impl<'a> PartialEq for FaceBuilder<'a> {
@@ -102,6 +104,7 @@ impl<'a> FaceBuilder<'a> {
             vertice_uvs: Vec::new(),
             material_index: 0,
             vertice_alphas: Vec::new(),
+            vertice_multiblends: None,
         }
     }
 
@@ -113,6 +116,7 @@ impl<'a> FaceBuilder<'a> {
             vertice_uvs: Vec::new(),
             material_index: self.material_index,
             vertice_alphas: Vec::new(),
+            vertice_multiblends: None,
         }
     }
 
@@ -370,6 +374,7 @@ impl<'a> FaceBuilder<'a> {
                     vertice_uvs: Vec::with_capacity(3),
                     material_index: self.material_index,
                     vertice_alphas: Vec::new(),
+                    vertice_multiblends: None,
                 },
             );
 
@@ -391,6 +396,11 @@ impl<'a> FaceBuilder<'a> {
                     .iter()
                     .map(|&i| info.alphas.data[i] as f32)
                     .collect();
+
+                if let Some(multiblends) = &info.multiblend {
+                    face.vertice_multiblends =
+                        Some(face_vert_is.iter().map(|&i| multiblends.data[i]).collect());
+                }
             }
 
             faces.append(&mut disp_faces.into_raw_vec());
@@ -597,6 +607,7 @@ impl<'a> FaceBuilder<'a> {
             vertice_uvs: self.vertice_uvs,
             material_index: self.material_index,
             vertice_alphas: self.vertice_alphas,
+            vertice_multiblends: self.vertice_multiblends,
         }
     }
 }

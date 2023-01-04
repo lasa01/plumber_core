@@ -257,6 +257,18 @@ fn displacement_building() {
     }
 }
 
+fn create_test_face(side: &Side, plane: NdPlane) -> FaceBuilder {
+    FaceBuilder {
+        side,
+        plane,
+        vertice_indices: Vec::new(),
+        vertice_uvs: Vec::new(),
+        material_index: 0,
+        vertice_alphas: Vec::new(),
+        vertice_multiblends: None,
+    }
+}
+
 #[test]
 #[allow(clippy::too_many_lines)]
 fn side_clipping() {
@@ -272,38 +284,22 @@ fn side_clipping() {
     let dummy_side = Side::default();
 
     let clipping_sides = vec![
-        FaceBuilder {
-            side: &dummy_side,
-            plane: NdPlane::from_point_normal(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(-1.0, 0.0, 0.0)),
-            vertice_indices: Vec::new(),
-            vertice_uvs: Vec::new(),
-            material_index: 0,
-            vertice_alphas: Vec::new(),
-        },
-        FaceBuilder {
-            side: &dummy_side,
-            plane: NdPlane::from_point_normal(Vec3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0)),
-            vertice_indices: Vec::new(),
-            vertice_uvs: Vec::new(),
-            material_index: 0,
-            vertice_alphas: Vec::new(),
-        },
-        FaceBuilder {
-            side: &dummy_side,
-            plane: NdPlane::from_point_normal(Vec3::new(0.0, -2.0, 0.0), Vec3::new(0.0, -1.0, 0.0)),
-            vertice_indices: Vec::new(),
-            vertice_uvs: Vec::new(),
-            material_index: 0,
-            vertice_alphas: Vec::new(),
-        },
-        FaceBuilder {
-            side: &dummy_side,
-            plane: NdPlane::from_point_normal(Vec3::new(0.0, 2.0, 0.0), Vec3::new(0.0, 1.0, 0.0)),
-            vertice_indices: Vec::new(),
-            vertice_uvs: Vec::new(),
-            material_index: 0,
-            vertice_alphas: Vec::new(),
-        },
+        create_test_face(
+            &dummy_side,
+            NdPlane::from_point_normal(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(-1.0, 0.0, 0.0)),
+        ),
+        create_test_face(
+            &dummy_side,
+            NdPlane::from_point_normal(Vec3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0)),
+        ),
+        create_test_face(
+            &dummy_side,
+            NdPlane::from_point_normal(Vec3::new(0.0, -2.0, 0.0), Vec3::new(0.0, -1.0, 0.0)),
+        ),
+        create_test_face(
+            &dummy_side,
+            NdPlane::from_point_normal(Vec3::new(0.0, 2.0, 0.0), Vec3::new(0.0, 1.0, 0.0)),
+        ),
     ];
 
     let clipped_side = FaceBuilder {
@@ -313,6 +309,7 @@ fn side_clipping() {
         vertice_uvs: vec![Vec2::ZERO; 4],
         material_index: 0,
         vertice_alphas: Vec::new(),
+        vertice_multiblends: None,
     };
 
     let mut clipped = Vec::new();
@@ -351,6 +348,7 @@ fn side_clipping() {
             vertice_uvs: vec![Vec2::ZERO; 5],
             material_index: 0,
             vertice_alphas: Vec::new(),
+            vertice_multiblends: None,
         }]
     );
 
@@ -361,6 +359,7 @@ fn side_clipping() {
         vertice_uvs: vec![Vec2::ZERO; 4],
         material_index: 0,
         vertice_alphas: Vec::new(),
+        vertice_multiblends: None,
     };
 
     let mut clipped = Vec::new();
@@ -384,6 +383,7 @@ fn side_clipping() {
         vertice_uvs: vec![Vec2::ZERO; 2],
         material_index: 0,
         vertice_alphas: Vec::new(),
+        vertice_multiblends: None,
     };
 
     let mut clipped = Vec::new();
@@ -411,72 +411,30 @@ fn solid_clipping() {
         solid: &dummy_solid,
         center: Vec3::new(5.0, 2.0, 0.0),
         faces: vec![
-            FaceBuilder {
-                side: &dummy_side,
-                plane: NdPlane::from_point_normal(
-                    Vec3::new(-1.0, 0.0, 0.0),
-                    Vec3::new(-1.0, 0.0, 0.0),
-                ),
-                vertice_indices: Vec::new(),
-                vertice_uvs: Vec::new(),
-                material_index: 0,
-                vertice_alphas: Vec::new(),
-            },
-            FaceBuilder {
-                side: &dummy_side,
-                plane: NdPlane::from_point_normal(
-                    Vec3::new(1.0, 0.0, 0.0),
-                    Vec3::new(1.0, 0.0, 0.0),
-                ),
-                vertice_indices: Vec::new(),
-                vertice_uvs: Vec::new(),
-                material_index: 0,
-                vertice_alphas: Vec::new(),
-            },
-            FaceBuilder {
-                side: &dummy_side,
-                plane: NdPlane::from_point_normal(
-                    Vec3::new(0.0, -2.0, 0.0),
-                    Vec3::new(0.0, -1.0, 0.0),
-                ),
-                vertice_indices: Vec::new(),
-                vertice_uvs: Vec::new(),
-                material_index: 0,
-                vertice_alphas: Vec::new(),
-            },
-            FaceBuilder {
-                side: &dummy_side,
-                plane: NdPlane::from_point_normal(
-                    Vec3::new(0.0, 2.0, 0.0),
-                    Vec3::new(0.0, 1.0, 0.0),
-                ),
-                vertice_indices: Vec::new(),
-                vertice_uvs: Vec::new(),
-                material_index: 0,
-                vertice_alphas: Vec::new(),
-            },
-            FaceBuilder {
-                side: &dummy_side,
-                plane: NdPlane::from_point_normal(
-                    Vec3::new(0.0, 0.0, -1.0),
-                    Vec3::new(0.0, 0.0, -1.0),
-                ),
-                vertice_indices: Vec::new(),
-                vertice_uvs: Vec::new(),
-                material_index: 0,
-                vertice_alphas: Vec::new(),
-            },
-            FaceBuilder {
-                side: &dummy_side,
-                plane: NdPlane::from_point_normal(
-                    Vec3::new(0.0, 0.0, 1.0),
-                    Vec3::new(0.0, 0.0, 1.0),
-                ),
-                vertice_indices: Vec::new(),
-                vertice_uvs: Vec::new(),
-                material_index: 0,
-                vertice_alphas: Vec::new(),
-            },
+            create_test_face(
+                &dummy_side,
+                NdPlane::from_point_normal(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(-1.0, 0.0, 0.0)),
+            ),
+            create_test_face(
+                &dummy_side,
+                NdPlane::from_point_normal(Vec3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0)),
+            ),
+            create_test_face(
+                &dummy_side,
+                NdPlane::from_point_normal(Vec3::new(0.0, -2.0, 0.0), Vec3::new(0.0, -1.0, 0.0)),
+            ),
+            create_test_face(
+                &dummy_side,
+                NdPlane::from_point_normal(Vec3::new(0.0, 2.0, 0.0), Vec3::new(0.0, 1.0, 0.0)),
+            ),
+            create_test_face(
+                &dummy_side,
+                NdPlane::from_point_normal(Vec3::new(0.0, 0.0, -1.0), Vec3::new(0.0, 0.0, -1.0)),
+            ),
+            create_test_face(
+                &dummy_side,
+                NdPlane::from_point_normal(Vec3::new(0.0, 0.0, 1.0), Vec3::new(0.0, 0.0, 1.0)),
+            ),
         ],
         vertices: Vec::new(),
         materials: Vec::new(),
@@ -499,6 +457,7 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                vertice_multiblends: None,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -510,6 +469,7 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                vertice_multiblends: None,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -521,6 +481,7 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                vertice_multiblends: None,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -532,6 +493,7 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                vertice_multiblends: None,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -543,6 +505,7 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                vertice_multiblends: None,
             },
             FaceBuilder {
                 side: &dummy_side,
@@ -554,6 +517,7 @@ fn solid_clipping() {
                 vertice_uvs: vec![Vec2::ZERO; 4],
                 material_index: 0,
                 vertice_alphas: Vec::new(),
+                vertice_multiblends: None,
             },
         ],
         vertices: vec![
