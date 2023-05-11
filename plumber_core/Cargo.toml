@@ -20,4 +20,8 @@ plumber_steam = { version = "0.1.0", path = "../plumber_steam" }
 plumber_fs = { version = "0.1.0", path = "../plumber_fs" }
 plumber_vmt = { version = "0.1.0", path = "../plumber_vmt" }
 plumber_vmf = { version = "0.1.0", path = "../plumber_vmf" }
-plumber_asset = { version = "0.1.0", path = "../plumber_asset" }
+plumber_asset_core = { version = "0.1.0", path = "../plumber_asset_core" }
+plumber_asset_mdl = { version = "0.1.0", path = "../plumber_asset_mdl" }
+plumber_asset_vmf = { version = "0.1.0", path = "../plumber_asset_vmf" }
+plumber_asset_vmt = { version = "0.1.0", path = "../plumber_asset_vmt" }
+plumber_asset_vtf = { version = "0.1.0", path = "../plumber_asset_vtf" }

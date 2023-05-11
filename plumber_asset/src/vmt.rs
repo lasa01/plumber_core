@@ -704,7 +704,7 @@ fn get_material_info(
     };
     let no_draw = is_nodraw(material_path, shader);
 
-    Ok(MaterialInfo::new(width, height, no_draw))
+    Ok(MaterialInfo::new(width as u16, height as u16, no_draw))
 }
 
 #[derive(Debug)]

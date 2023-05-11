@@ -337,10 +337,10 @@ impl<'a> Verified<'a> {
     }
 }
 
-fn find_material<'a>(
+fn find_material(
     texture: mdl::TextureRef,
     texture_paths: &[&str],
-    file_system: &'a OpenFileSystem,
+    file_system: &OpenFileSystem,
 ) -> Result<GamePathBuf> {
     let name = GamePathBuf::from(texture.name()?);
 

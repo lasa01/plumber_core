@@ -204,7 +204,7 @@ pub(crate) fn load(
                     handler.handle_brush(brush);
                 });
 
-                if geometry_settings.overlays {
+                if true {
                     let side_faces_map = side_faces_map
                         .into_inner()
                         .expect("mutex shouldn't be poisoned");
@@ -364,7 +364,7 @@ fn load_overlays<'a>(
         })
         .map(move |o| {
             o.build_mesh(side_faces_map, &geometry_settings, scale)
-                .map_err(|(overlay, e)| (overlay.entity().id, e))
+                .map_err(|e| (o.entity().id, e))
         })
 }
 

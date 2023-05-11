@@ -67,10 +67,7 @@ fn assert_quats_equal(other: Quat, mut crowbar: Quat, i: usize, uncrowbarify: bo
     assert!(
         relative_eq!(other, crowbar, epsilon = 0.001)
             || relative_eq!(other, -crowbar, epsilon = 0.001),
-        "rotation at frame {}: got {}, expected {}",
-        i,
-        other,
-        crowbar
+        "rotation at frame {i}: got {other}, expected {crowbar}"
     );
 }
 
@@ -81,10 +78,7 @@ fn assert_vecs_equal(other: Vec3, mut crowbar: Vec3, i: usize, uncrowbarify: boo
 
     assert!(
         relative_eq!(other, crowbar, epsilon = 0.001,),
-        "position at frame {}: got {}, expected {}",
-        i,
-        other,
-        crowbar
+        "position at frame {i}: got {other}, expected {crowbar}"
     );
 }
 

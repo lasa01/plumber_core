@@ -1,0 +1,15 @@
+[package]
+name = "plumber_asset_mdl"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+plumber_asset_core = { version = "0.1.0", path = "../plumber_asset_core" }
+plumber_asset_vmt = { version = "0.1.0", path = "../plumber_asset_vmt" }
+plumber_fs = { version = "0.1.0", path = "../plumber_fs" }
+plumber_mdl = { version = "0.1.0", path = "../plumber_mdl" }
+thiserror = "1.0.24"
+log = "0.4.14"
+rayon = "1.7.0"
