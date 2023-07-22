@@ -16,7 +16,7 @@ plumber_uncased = { version = "0.1.0", path = "../plumber_uncased" }
 plumber_vmt = { version = "0.1.0", path = "../plumber_vmt" }
 serde = { version = "= 1.0.125", features = ["derive"] }
 serde_derive = "= 1.0.125"
-log = "0.4.14"
+tracing = "0.1.37"
 nom = "7.1.0"
 rgb = "0.8.27"
 thiserror = "1.0.24"

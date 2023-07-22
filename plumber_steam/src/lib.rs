@@ -8,12 +8,12 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::{debug, warn};
 use serde::{
     de::{IgnoredAny, MapAccess, Visitor},
     Deserialize,
 };
 use thiserror::Error;
+use tracing::{debug, warn};
 
 use plumber_vdf as vdf;
 

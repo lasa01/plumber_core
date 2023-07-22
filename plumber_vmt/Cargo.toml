@@ -15,11 +15,11 @@ plumber_fs = { version = "0.1.0", path = "../plumber_fs" }
 plumber_uncased = { version = "0.1.0", path = "../plumber_uncased" }
 serde = { version = "= 1.0.125", features = ["derive"] }
 serde_derive = "= 1.0.125"
-log = "0.4.14"
+tracing = "0.1.37"
 nom = "7.1.0"
 rgb = "0.8.27"
 thiserror = "1.0.24"
-glam = { version = "0.20.2"}
+glam = { version = "0.20.2" }
 
 [dev-dependencies]
 plumber_steam = { version = "0.1.0", path = "../plumber_steam" }

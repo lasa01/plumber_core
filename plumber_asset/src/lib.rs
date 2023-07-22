@@ -4,9 +4,9 @@ pub mod vmt;
 
 use std::sync::Arc;
 
-use log::error;
 use rayon::ThreadPoolBuilder;
 use thiserror::Error;
+use tracing::error;
 
 use plumber_fs::{OpenFileSystem, PathBuf};
 use plumber_mdl::Error as ModelError;

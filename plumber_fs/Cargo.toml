@@ -11,10 +11,12 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 plumber_vdf = { version = "0.1.0", path = "../plumber_vdf" }
-plumber_vpk = { version = "0.1.0", path = "../plumber_vpk", features = ["serde"] }
+plumber_vpk = { version = "0.1.0", path = "../plumber_vpk", features = [
+    "serde",
+] }
 plumber_uncased = { version = "0.1.0", path = "../plumber_uncased" }
 plumber_steam = { version = "0.1.0", path = "../plumber_steam" }
 serde = { version = "= 1.0.125", features = ["derive"] }
 serde_derive = "= 1.0.125"
 thiserror = "1.0.24"
-log = "0.4.14"
+tracing = "0.1.37"

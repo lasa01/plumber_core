@@ -5,9 +5,9 @@ use std::{fmt::Debug, mem, ptr, sync::Mutex};
 use approx::relative_eq;
 use glam::{Vec2, Vec3};
 use itertools::{izip, Itertools};
-use log::warn;
 use ndarray::{Array2, Array3, Zip};
 use thiserror::Error;
+use tracing::warn;
 
 use plumber_fs::{GamePathBuf, PathBuf};
 use plumber_vmt::MaterialInfo;

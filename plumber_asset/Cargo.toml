@@ -19,7 +19,7 @@ plumber_uncased = { version = "0.1.0", path = "../plumber_uncased" }
 rayon = "1.5.1"
 crossbeam-channel = "0.5.1"
 crossbeam-utils = "0.8.5"
-log = "0.4.14"
+tracing = "0.1.37"
 thiserror = "1.0.24"
 glam = { version = "0.20.2", features = ["approx"] }
 rgb = "0.8.27"

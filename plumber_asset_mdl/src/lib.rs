@@ -10,8 +10,8 @@ use plumber_mdl::{
     Animation, AnimationDescFlags, Bone, BoneAnimationData, Face, Mesh, Model, Vertex,
 };
 
-use log::{error, warn};
 use thiserror::Error;
+use tracing::{error, warn};
 
 #[derive(Clone, Copy)]
 pub struct MdlConfig<M> {

@@ -11,12 +11,12 @@ use std::{
 };
 
 use crossbeam_utils::sync::WaitGroup;
-use log::debug;
 use plumber_fs::OpenFileSystem;
 use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     Yield,
 };
+use tracing::debug;
 
 type CachedResult<C, H> =
     Result<<C as CachedAssetConfig<H>>::CachedOutput, <C as CachedAssetConfig<H>>::Error>;

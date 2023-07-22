@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, fmt, io};
 
-use log::warn;
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -15,6 +14,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use thiserror::Error;
+use tracing::warn;
 
 use plumber_fs::{self, GamePath, GamePathBuf, Path, PathBuf};
 use plumber_uncased::{AsUncased, UncasedString};

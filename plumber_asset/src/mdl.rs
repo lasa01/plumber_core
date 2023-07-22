@@ -3,7 +3,7 @@ use std::{
     sync::{Condvar, Mutex},
 };
 
-use log::{error, warn};
+use tracing::{error, warn};
 
 use plumber_fs::{GamePathBuf, OpenFileSystem, PathBuf};
 use plumber_mdl::{

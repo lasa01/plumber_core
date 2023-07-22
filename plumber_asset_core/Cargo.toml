@@ -9,4 +9,4 @@ edition = "2021"
 plumber_fs = { version = "0.1.0", path = "../plumber_fs" }
 rayon = "1.7.0"
 crossbeam-utils = "0.8.14"
-log = "0.4.14"
+tracing = "0.1.37"

@@ -11,5 +11,5 @@ plumber_asset_vmt = { version = "0.1.0", path = "../plumber_asset_vmt" }
 plumber_fs = { version = "0.1.0", path = "../plumber_fs" }
 plumber_mdl = { version = "0.1.0", path = "../plumber_mdl" }
 thiserror = "1.0.24"
-log = "0.4.14"
+tracing = "0.1.37"
 rayon = "1.7.0"
