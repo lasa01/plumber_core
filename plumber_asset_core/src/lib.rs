@@ -16,7 +16,7 @@ use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     Yield,
 };
-use tracing::debug;
+use tracing::{debug, debug_span};
 
 type CachedResult<C, H> =
     Result<<C as CachedAssetConfig<H>>::CachedOutput, <C as CachedAssetConfig<H>>::Error>;
@@ -290,7 +290,7 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
         C: AssetConfig<H>,
         H: Handler<Asset<C>>,
     {
-        debug!("starts processing {config:?}");
+        let _span = debug_span!("process", ?config).entered();
 
         self.shared
             .in_progress_assets
@@ -308,8 +308,6 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
             .in_progress_assets
             .fetch_sub(1, Ordering::Relaxed);
         self.shared.imported_assets.fetch_add(1, Ordering::Relaxed);
-
-        debug!("finished processing {config:?}");
     }
 
     fn process_cached_internal<C>(&mut self, config: &C, input: C::Input<'_>)
@@ -327,7 +325,7 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
             return;
         }
 
-        debug!("starts processing {config:?} ({id})");
+        let _span = debug_span!("process", ?config, %id).entered();
 
         self.shared
             .in_progress_assets
@@ -365,8 +363,6 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
             .in_progress_assets
             .fetch_sub(1, Ordering::Relaxed);
         self.shared.imported_assets.fetch_add(1, Ordering::Relaxed);
-
-        debug!("finished processing {config:?} ({id})");
     }
 
     fn wait_for_asset<C>(&self, config: &C, id: &C::Id) -> CachedResult<C, H>
@@ -374,7 +370,7 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
         C: CachedAssetConfig<H>,
         H: Handler<Cached<C>>,
     {
-        debug!("waits for {config:?} ({id})");
+        let _span = debug_span!("wait", ?config, %id).entered();
 
         // If the currently imported asset is cached, cannot execute other work while waiting,
         // since the other work might depend on the currently importing asset, leading to a deadlock
@@ -393,13 +389,10 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
                 let cache_state = cache_manager_guard.get_cache_state::<C, H>(id);
 
                 if let CacheState::Cached(c) = cache_state {
-                    debug!("stops waiting for {config:?} ({id})");
                     return c.clone();
                 };
 
                 drop(cache_manager_guard);
-
-                debug!("still waiting for {config:?} ({id})");
             }
         }
     }
@@ -419,9 +412,9 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
 
                 drop(cache_manager_guard);
 
-                debug!("blocking for {config:?} ({id})");
-
+                let span = debug_span!("block", ?config, %id).entered();
                 wg.wait();
+                span.exit();
 
                 let cache_manager_guard = self.read_cache_manager();
                 let cache_state = cache_manager_guard.get_cache_state::<C, H>(id);
@@ -430,13 +423,9 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
                     panic!("Asset was not cached after waiting for it");
                 };
 
-                debug!("stops waiting for {config:?} ({id})");
                 cached.clone()
             }
-            CacheState::Cached(c) => {
-                debug!("stops waiting for {config:?} ({id})");
-                c.clone()
-            }
+            CacheState::Cached(c) => c.clone(),
         }
     }
 
@@ -559,7 +548,7 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
                 return self.wait_for_asset::<C>(&config, &id);
             }
 
-            debug!("starts processing {config:?} ({id})");
+            let _span = debug_span!("process", ?config, %id).entered();
 
             self.shared
                 .in_progress_assets
@@ -598,8 +587,6 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
                 .fetch_sub(1, Ordering::Relaxed);
             self.shared.imported_assets.fetch_add(1, Ordering::Relaxed);
 
-            debug!("finished processing {config:?} ({id})");
-
             cached
         }
     }
@@ -637,6 +624,8 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
     }
 
     fn read_cache_manager(&self) -> RwLockReadGuard<CacheManager> {
+        let _span = debug_span!("read_cache").entered();
+
         self.shared
             .asset_cache_manager
             .read()
@@ -644,6 +633,8 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
     }
 
     fn write_cache_manager(&self) -> RwLockWriteGuard<CacheManager> {
+        let _span = debug_span!("write_cache").entered();
+
         self.shared
             .asset_cache_manager
             .write()
