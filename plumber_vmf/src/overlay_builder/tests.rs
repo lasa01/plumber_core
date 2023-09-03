@@ -95,6 +95,7 @@ fn overlay_building() {
 
     builder.cut_faces(1e-3, 1e-3).unwrap();
     builder.remove_vertices_outside(1e-3);
+    builder.cleanup_faces();
     builder.ensure_not_empty().unwrap();
     builder.create_uvs();
     builder.recenter();

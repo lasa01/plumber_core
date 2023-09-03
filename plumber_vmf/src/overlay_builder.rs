@@ -312,6 +312,28 @@ impl<'a> OverlayBuilder<'a> {
         });
     }
 
+    fn cleanup_faces(&mut self) {
+        self.faces.retain_mut(|face| {
+            // Make sure there are no sequential duplicate vertice indices in a face (which would be an invalid face)
+
+            let Some(previous_vertice_index) = face.vertice_indices.last() else {
+                return false;
+            };
+            let mut previous_vertice_index = *previous_vertice_index;
+
+            face.vertice_indices.retain(|&i| {
+                let retain = i != previous_vertice_index;
+
+                previous_vertice_index = i;
+
+                retain
+            });
+
+            // And also remove the whole face if there are less than 3 vertices after the cleanup
+            face.vertice_indices.len() >= 3
+        });
+    }
+
     fn ensure_not_empty(&self) -> Result<(), OverlayError> {
         if self.faces.is_empty() {
             return Err(OverlayError::InvalidUvData);
@@ -414,19 +436,26 @@ impl<'a> Overlay<'a> {
         scale: f32,
     ) -> Result<BuiltOverlay<'a>, (Self, OverlayError)> {
         let mut builder = OverlayBuilder::new(self)?;
+
         if let Err(e) = builder.create_vertices(side_faces_map, settings.epsilon) {
             return Err((builder.overlay, e));
         }
+
         if let Err(e) = builder.offset_vertices() {
             return Err((builder.overlay, e));
         }
+
         if let Err(e) = builder.cut_faces(settings.epsilon, settings.cut_threshold) {
             return Err((builder.overlay, e));
         }
+
         builder.remove_vertices_outside(settings.cut_threshold);
+        builder.cleanup_faces();
+
         if let Err(e) = builder.ensure_not_empty() {
             return Err((builder.overlay, e));
         }
+
         builder.create_uvs();
         builder.recenter();
         builder.finish(scale)
