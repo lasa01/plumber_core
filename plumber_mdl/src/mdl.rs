@@ -873,6 +873,7 @@ impl<'a> HeaderRef<'a> {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct HeaderFlags: i32 {
         const AUTO_GENERATED_HITBOX = 1 << 0;
         const USES_ENV_CUBEMAP = 1 << 1;
@@ -1047,6 +1048,7 @@ impl<'a> Deref for ModelRef<'a> {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct AnimationDescFlags: i32 {
         const LOOPING = 0x0001;
         const SNAP = 0x0002;
@@ -1838,6 +1840,7 @@ impl<'a> FrameAnimationRef<'a> {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     struct AnimationFlags: u8 {
         const RAWPOS = 0x01;
         const RAWROT = 0x02;

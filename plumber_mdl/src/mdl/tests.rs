@@ -113,7 +113,7 @@ impl FileSpec for MdlSpec {
 
         assert_eq!(header.name().unwrap(), self.name);
         eprintln!("  Name ok");
-        assert_eq!(header.flags().bits, self.flags);
+        assert_eq!(header.flags().bits(), self.flags);
         eprintln!("  Flags ok");
 
         for (i, bone) in header.iter_bones().unwrap().enumerate() {
@@ -207,7 +207,7 @@ pub struct AnimationSpec {
 impl AnimationSpec {
     fn verify(&self, animation: AnimationDescRef) {
         assert_eq!(animation.name().unwrap(), self.name);
-        assert_eq!(animation.flags().bits, self.flags);
+        assert_eq!(animation.flags().bits(), self.flags);
 
         let result = animation.iter_animation_sections();
 
