@@ -16,7 +16,7 @@ use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     Yield,
 };
-use tracing::{debug, debug_span};
+use tracing::debug_span;
 
 type CachedResult<C, H> =
     Result<<C as CachedAssetConfig<H>>::CachedOutput, <C as CachedAssetConfig<H>>::Error>;
