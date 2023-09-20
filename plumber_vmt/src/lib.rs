@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, fmt, io};
 
-use log::warn;
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -15,8 +14,9 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use thiserror::Error;
+use tracing::warn;
 
-use plumber_fs::{self, GamePath, GamePathBuf, PathBuf};
+use plumber_fs::{self, GamePath, GamePathBuf, Path, PathBuf};
 use plumber_uncased::{AsUncased, UncasedString};
 use plumber_vdf::{
     self as vdf,
@@ -459,7 +459,7 @@ impl Shader {
     pub fn extract_param<T: ParameterType>(
         &self,
         parameter: &'static str,
-        material_name: &PathBuf,
+        material_name: Path,
     ) -> Option<T> {
         match self.try_extract_param(parameter) {
             Ok(res) => res,

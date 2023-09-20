@@ -1,5 +1,22 @@
 [workspace]
-members = ["plumber_core", "plumber_vdf", "plumber_vpk", "plumber_cli", "plumber_uncased", "plumber_mdl", "plumber_fs", "plumber_steam", "plumber_test_utils", "plumber_vmt", "plumber_vmf", "plumber_asset"]
+members = [
+    "plumber_core",
+    "plumber_vdf",
+    "plumber_vpk",
+    "plumber_cli",
+    "plumber_uncased",
+    "plumber_mdl",
+    "plumber_fs",
+    "plumber_steam",
+    "plumber_test_utils",
+    "plumber_vmt",
+    "plumber_vmf",
+    "plumber_asset_core",
+    "plumber_asset_vtf",
+    "plumber_asset_vmt",
+    "plumber_asset_mdl",
+    "plumber_asset_vmf",
+]
 
 [patch.crates-io]
 serde = { git = "https://github.com/lasa01/serde", branch = "case-insensitive-attr" }

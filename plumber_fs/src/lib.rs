@@ -14,19 +14,19 @@ use std::{
     slice,
 };
 
-use log::{debug, warn};
+use serde::{
+    de::{MapAccess, Visitor},
+    Deserialize,
+};
+use thiserror::Error;
+use tracing::{debug, warn};
+
 use plumber_steam as steam;
 use plumber_uncased::{AsUncased, UncasedString};
 use plumber_vdf as vdf;
 use plumber_vpk as vpk;
 use vpk::DirectoryReadError;
 pub use vpk::{Path as GamePath, PathBuf as GamePathBuf};
-
-use serde::{
-    de::{MapAccess, Visitor},
-    Deserialize,
-};
-use thiserror::Error;
 
 /// A borrowed path to import an asset from.
 /// Can be either a `Game` path to import assets from the game file system,

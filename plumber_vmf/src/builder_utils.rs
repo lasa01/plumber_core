@@ -50,7 +50,6 @@ pub struct GeometrySettings {
     pub cut_threshold: f32,
     pub merge_solids: MergeSolids,
     pub invisible_solids: InvisibleSolids,
-    pub overlays: bool,
 }
 
 impl GeometrySettings {
@@ -74,10 +73,6 @@ impl GeometrySettings {
     pub fn invisible_solids(&mut self, invisible: InvisibleSolids) {
         self.invisible_solids = invisible;
     }
-
-    pub fn overlays(&mut self, overlays: bool) {
-        self.overlays = overlays;
-    }
 }
 
 impl Default for GeometrySettings {
@@ -87,7 +82,6 @@ impl Default for GeometrySettings {
             cut_threshold: 1e-3,
             merge_solids: MergeSolids::Merge,
             invisible_solids: InvisibleSolids::Skip,
-            overlays: true,
         }
     }
 }

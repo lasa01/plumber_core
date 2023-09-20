@@ -1,0 +1,19 @@
+[package]
+name = "plumber_asset_vmf"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+plumber_asset_core = { version = "0.1.0", path = "../plumber_asset_core" }
+plumber_asset_vmt = { version = "0.1.0", path = "../plumber_asset_vmt" }
+plumber_asset_mdl = { version = "0.1.0", path = "../plumber_asset_mdl" }
+plumber_mdl = { version = "0.1.0", path = "../plumber_mdl" }
+plumber_vmf = { version = "0.1.0", path = "../plumber_vmf" }
+plumber_fs = { version = "0.1.0", path = "../plumber_fs" }
+thiserror = "1.0.24"
+tracing = "0.1.37"
+rayon = "1.7.0"
+rgb = "0.8.27"
+glam = { version = "0.20.2", features = ["approx"] }

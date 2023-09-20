@@ -67,10 +67,7 @@ fn assert_quats_equal(other: Quat, mut crowbar: Quat, i: usize, uncrowbarify: bo
     assert!(
         relative_eq!(other, crowbar, epsilon = 0.001)
             || relative_eq!(other, -crowbar, epsilon = 0.001),
-        "rotation at frame {}: got {}, expected {}",
-        i,
-        other,
-        crowbar
+        "rotation at frame {i}: got {other}, expected {crowbar}"
     );
 }
 
@@ -81,10 +78,7 @@ fn assert_vecs_equal(other: Vec3, mut crowbar: Vec3, i: usize, uncrowbarify: boo
 
     assert!(
         relative_eq!(other, crowbar, epsilon = 0.001,),
-        "position at frame {}: got {}, expected {}",
-        i,
-        other,
-        crowbar
+        "position at frame {i}: got {other}, expected {crowbar}"
     );
 }
 
@@ -119,7 +113,7 @@ impl FileSpec for MdlSpec {
 
         assert_eq!(header.name().unwrap(), self.name);
         eprintln!("  Name ok");
-        assert_eq!(header.flags().bits, self.flags);
+        assert_eq!(header.flags().bits(), self.flags);
         eprintln!("  Flags ok");
 
         for (i, bone) in header.iter_bones().unwrap().enumerate() {
@@ -213,7 +207,7 @@ pub struct AnimationSpec {
 impl AnimationSpec {
     fn verify(&self, animation: AnimationDescRef) {
         assert_eq!(animation.name().unwrap(), self.name);
-        assert_eq!(animation.flags().bits, self.flags);
+        assert_eq!(animation.flags().bits(), self.flags);
 
         let result = animation.iter_animation_sections();
 

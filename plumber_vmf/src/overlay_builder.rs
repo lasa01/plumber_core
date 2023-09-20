@@ -18,7 +18,7 @@ use super::{
 #[cfg(test)]
 mod tests;
 
-pub(crate) type SideFacesMap = BTreeMap<i32, Vec<Vec<Vec3>>>;
+pub type SideFacesMap = BTreeMap<i32, Vec<Vec<Vec3>>>;
 
 #[derive(Debug, Error, Clone, Hash, PartialEq, Eq)]
 pub enum OverlayError {
@@ -75,11 +75,8 @@ struct OverlayBuilder<'a> {
 }
 
 impl<'a> OverlayBuilder<'a> {
-    fn new(overlay: Overlay<'a>) -> Result<Self, (Overlay<'a>, OverlayError)> {
-        let uv_info = match overlay.uv_info() {
-            Ok(r) => r,
-            Err(e) => return Err((overlay, e.into())),
-        };
+    fn new(overlay: Overlay<'a>) -> Result<Self, OverlayError> {
+        let uv_info = overlay.uv_info()?;
 
         let u_axis = uv_info.basis_u;
         let v_axis = uv_info.basis_v;
@@ -402,12 +399,9 @@ impl<'a> OverlayBuilder<'a> {
         self.origin = center;
     }
 
-    fn finish(self, scale: f32) -> Result<BuiltOverlay<'a>, (Overlay<'a>, OverlayError)> {
+    fn finish(self, scale: f32) -> Result<BuiltOverlay<'a>, OverlayError> {
         let mut material = GamePathBuf::from("materials");
-        let overlay_material = match self.overlay.material() {
-            Ok(r) => r,
-            Err(e) => return Err((self.overlay, e.into())),
-        };
+        let overlay_material = self.overlay.material()?;
         material.push(&overlay_material);
 
         Ok(BuiltOverlay {
@@ -434,27 +428,14 @@ impl<'a> Overlay<'a> {
         side_faces_map: &SideFacesMap,
         settings: &GeometrySettings,
         scale: f32,
-    ) -> Result<BuiltOverlay<'a>, (Self, OverlayError)> {
+    ) -> Result<BuiltOverlay<'a>, OverlayError> {
         let mut builder = OverlayBuilder::new(self)?;
-
-        if let Err(e) = builder.create_vertices(side_faces_map, settings.epsilon) {
-            return Err((builder.overlay, e));
-        }
-
-        if let Err(e) = builder.offset_vertices() {
-            return Err((builder.overlay, e));
-        }
-
-        if let Err(e) = builder.cut_faces(settings.epsilon, settings.cut_threshold) {
-            return Err((builder.overlay, e));
-        }
-
+        builder.create_vertices(side_faces_map, settings.epsilon)?;
+        builder.offset_vertices()?;
+        builder.cut_faces(settings.epsilon, settings.cut_threshold)?;
         builder.remove_vertices_outside(settings.cut_threshold);
         builder.cleanup_faces();
-
-        if let Err(e) = builder.ensure_not_empty() {
-            return Err((builder.overlay, e));
-        }
+        builder.ensure_not_empty()?;
 
         builder.create_uvs();
         builder.recenter();
