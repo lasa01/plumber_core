@@ -1121,6 +1121,8 @@ impl<'a> BuiltBrushEntity<'a> {
                             return None;
                         }
                         if settings.invisible_solids.import() || !builder.is_nodraw() {
+                            builder.recenter();
+
                             Some(builder.finish(scale))
                         } else {
                             None
