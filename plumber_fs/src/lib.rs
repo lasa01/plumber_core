@@ -428,11 +428,19 @@ fn open_directory(
                     .file_type()
                     .map_err(|err| OpenError::new(path, err.into()))?
                     .is_file()
-                    && entry.file_name().to_str() == Some("pak01_dir.vpk")
                 {
+                    let file_name = entry.file_name();
+                    let Some(file_name_str) = file_name.to_str() else {
+                        continue;
+                    };
+
+                    if !is_pak_dir_filename(file_name_str) {
+                        continue;
+                    }
+
                     let path = entry.path();
 
-                    debug!("found pak01_dir.vpk at `{}`, opening", path.display());
+                    debug!("found {} at `{}`, opening", file_name_str, path.display());
 
                     open_search_paths.push(OpenSearchPath::Vpk(
                         vpk::Directory::read(&path)
@@ -456,6 +464,15 @@ fn open_directory(
     }
 
     Ok(())
+}
+
+fn is_pak_dir_filename(filename: &str) -> bool {
+    filename.len() == "pak00_dir.vpk".len()
+        && filename.starts_with("pak")
+        && filename.ends_with("_dir.vpk")
+        && filename["pak".len()..filename.len() - "_dir.vpk".len()]
+            .chars()
+            .all(|c| c.is_ascii_digit())
 }
 
 fn open_wildcard_dir(
@@ -1411,5 +1428,22 @@ mod tests {
                 ]
             }
         );
+    }
+
+    #[test]
+    fn test_is_pak_dir_filename() {
+        assert!(is_pak_dir_filename("pak00_dir.vpk"));
+        assert!(is_pak_dir_filename("pak01_dir.vpk"));
+        assert!(is_pak_dir_filename("pak99_dir.vpk"));
+
+        assert!(!is_pak_dir_filename("pak0_dir.vpk"));
+        assert!(!is_pak_dir_filename("pak000_dir.vpk"));
+        assert!(!is_pak_dir_filename("pakab_dir.vpk"));
+        assert!(!is_pak_dir_filename("pak01_dir.VPK"));
+        assert!(!is_pak_dir_filename("pak01_dir.vpk2"));
+        assert!(!is_pak_dir_filename("dir.vpk"));
+        assert!(!is_pak_dir_filename("pak01_dir"));
+        assert!(!is_pak_dir_filename("something_pak01_dir.vpk"));
+        assert!(!is_pak_dir_filename("pak01_dir.vpk_something"));
     }
 }
