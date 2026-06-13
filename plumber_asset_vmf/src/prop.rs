@@ -59,7 +59,7 @@ impl<M> PropConfig<M> {
         let position = input.origin()? * self.scale;
         let scale = input.scale()?.map(|s| s * self.scale);
         let rotation = input.angles()?;
-        let color = input.render_color()?.alpha(input.render_amt()?);
+        let color = input.render_color()?.with_alpha(input.render_amt()?);
 
         Ok(LoadedProp {
             prop: input,
