@@ -5,13 +5,15 @@ use maligned::A4;
 use zerocopy::FromBytes;
 
 use plumber_fs::GameFile;
+use zerocopy::Immutable;
+use zerocopy::KnownLayout;
 
 use super::{
     binary_utils::{parse, parse_slice, read_file_aligned},
     Error, FileType, Result,
 };
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Header {
     id: [u8; 4],
@@ -25,7 +27,7 @@ struct Header {
     tangent_data_offset: i32,
 }
 
-#[derive(Debug, Clone, Copy, FromBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct BoneWeight {
     pub weights: [f32; 3],
@@ -33,7 +35,7 @@ pub struct BoneWeight {
     pub bone_count: u8,
 }
 
-#[derive(Debug, Clone, Copy, FromBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct Vertex {
     pub bone_weight: BoneWeight,
@@ -42,7 +44,7 @@ pub struct Vertex {
     pub tex_coord: [f32; 2],
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Fixup {
     lod_index: i32,

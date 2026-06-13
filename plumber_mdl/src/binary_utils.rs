@@ -1,7 +1,7 @@
 use std::io::{self, Read};
 use std::mem::align_of;
 
-use zerocopy::{FromBytes, LayoutVerified};
+use zerocopy::{FromBytes, Immutable, KnownLayout, Ref};
 
 use plumber_fs::GameFile;
 
@@ -30,38 +30,38 @@ pub fn read_file_aligned<A: maligned::Alignment>(mut file: GameFile) -> io::Resu
     Ok(bytes)
 }
 
-pub fn parse<T: FromBytes>(bytes: &[u8], offset: usize) -> Option<&T> {
+pub fn parse<T: KnownLayout + Immutable + FromBytes>(bytes: &[u8], offset: usize) -> Option<&T> {
     bytes
         .get(offset..)
-        .and_then(LayoutVerified::<_, T>::new_from_prefix)
-        .map(|(res, _)| res.into_ref())
+        .and_then(|bytes| Ref::<_, T>::from_prefix(bytes).ok())
+        .map(|(res, _)| Ref::into_ref(res))
 }
 
-pub fn parse_slice<T: FromBytes>(bytes: &[u8], offset: usize, count: usize) -> Option<&[T]> {
+pub fn parse_slice<T: KnownLayout + Immutable + FromBytes>(bytes: &[u8], offset: usize, count: usize) -> Option<&[T]> {
     if count == 0 {
         return Some(&[]);
     }
 
     bytes
         .get(offset..)
-        .and_then(|bytes| LayoutVerified::new_slice_from_prefix(bytes, count))
-        .map(|(res, _)| res.into_slice())
+        .and_then(|bytes| Ref::<_, [T]>::from_prefix_with_elems(bytes, count).ok())
+        .map(|(res, _)| Ref::into_ref(res))
 }
 
-pub fn parse_mut<'a, T: FromBytes>(bytes: &mut &'a [u8]) -> Option<&'a T> {
-    LayoutVerified::<_, T>::new_from_prefix(*bytes).map(|(res, remaining)| {
+pub fn parse_mut<'a, T: KnownLayout + Immutable + FromBytes>(bytes: &mut &'a [u8]) -> Option<&'a T> {
+    Ref::<_, T>::from_prefix(*bytes).ok().map(|(res, remaining)| {
         *bytes = remaining;
-        res.into_ref()
+       Ref::into_ref(res)
     })
 }
 
-pub fn parse_slice_mut<'a, T: FromBytes>(bytes: &mut &'a [u8], count: usize) -> Option<&'a [T]> {
+pub fn parse_slice_mut<'a, T: KnownLayout + Immutable + FromBytes>(bytes: &mut &'a [u8], count: usize) -> Option<&'a [T]> {
     if count == 0 {
         return Some(&[]);
     }
 
-    LayoutVerified::new_slice_from_prefix(*bytes, count).map(|(res, remaining)| {
+    Ref::<_, [T]>::from_prefix_with_elems(*bytes, count).ok().map(|(res, remaining)| {
         *bytes = remaining;
-        res.into_slice()
+        Ref::into_ref(res)
     })
 }

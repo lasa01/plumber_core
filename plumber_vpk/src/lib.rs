@@ -17,16 +17,14 @@ use std::{
     str,
 };
 
-use byteorder::LE;
 use crc::crc32;
 use encoding::{all::ISO_8859_1, DecoderTrap, Encoding};
 use thiserror::Error;
 use zerocopy::{
-    byteorder::{U16, U32},
-    FromBytes, LayoutVerified, Unaligned,
+    FromBytes, Immutable, KnownLayout, Ref, Unaligned, byteorder::{LE, U16, U32}
 };
 
-#[derive(Debug, PartialEq, FromBytes, Unaligned)]
+#[derive(Debug, PartialEq, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct HeaderV1 {
     signature: U32<LE>,
@@ -35,7 +33,7 @@ struct HeaderV1 {
 }
 
 #[allow(clippy::struct_field_names)]
-#[derive(Debug, PartialEq, FromBytes, Unaligned)]
+#[derive(Debug, PartialEq, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct HeaderV2Ext {
     file_data_section_size: U32<LE>,
@@ -44,7 +42,7 @@ struct HeaderV2Ext {
     signature_section_size: U32<LE>,
 }
 
-#[derive(Debug, PartialEq, FromBytes, Unaligned)]
+#[derive(Debug, PartialEq, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct DirectoryEntry {
     crc: U32<LE>,
@@ -55,7 +53,7 @@ struct DirectoryEntry {
     terminator: U16<LE>,
 }
 
-#[derive(Debug, PartialEq, FromBytes, Unaligned)]
+#[derive(Debug, PartialEq, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct ArchiveMd5SectionEntry {
     archive_index: U32<LE>,
@@ -64,7 +62,7 @@ struct ArchiveMd5SectionEntry {
     md5_checksum: [u8; 16],
 }
 
-#[derive(Debug, PartialEq, FromBytes, Unaligned)]
+#[derive(Debug, PartialEq, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct OtherMd5Section {
     tree_checksum: [u8; 16],
@@ -95,8 +93,8 @@ fn parse_nul_str<'a>(bytes: &mut &'a [u8]) -> Option<&'a [u8]> {
     Some(str_bytes)
 }
 
-fn parse<'a, T: Unaligned>(bytes: &mut &'a [u8]) -> Option<LayoutVerified<&'a [u8], T>> {
-    let (verified, remaining) = LayoutVerified::new_unaligned_from_prefix(*bytes)?;
+fn parse<'a, T: Unaligned + Immutable + KnownLayout>(bytes: &mut &'a [u8]) -> Option<Ref<&'a [u8], T>> {
+    let (verified, remaining) = Ref::from_prefix(*bytes).ok()?;
     *bytes = remaining;
     Some(verified)
 }
@@ -114,7 +112,7 @@ struct Entry {
 
 impl Entry {
     fn parse(bytes: &mut &[u8], base_offset: u64) -> Result<Self, DirectoryReadError> {
-        let entry: LayoutVerified<_, DirectoryEntry> =
+        let entry: Ref<_, DirectoryEntry> =
             parse(bytes).ok_or(DirectoryReadError::Corrupted("eof reading directory entry"))?;
         let preload = entry.preload_bytes.get().into();
         if preload > bytes.len() {
@@ -191,12 +189,12 @@ impl Directory {
     /// Returns `Err` if `vpk_path` doesn't have an utf8 filename or `bytes` is not a valid vpk directory file.
     pub fn parse(vpk_path: StdPathBuf, mut bytes: &[u8]) -> Result<Self, DirectoryReadError> {
         let vpk_base = Self::get_vpk_base(&vpk_path)?;
-        let header: LayoutVerified<_, HeaderV1> =
+        let header: Ref<_, HeaderV1> =
             parse(&mut bytes).ok_or(DirectoryReadError::Corrupted("eof reading header"))?;
         if header.signature.get() != 0x55aa_1234 {
             return Err(DirectoryReadError::InvalidSignature);
         }
-        let header_v2: Option<LayoutVerified<_, HeaderV2Ext>> = match header.version.get() {
+        let header_v2: Option<Ref<_, HeaderV2Ext>> = match header.version.get() {
             1 => None,
             2 => Some(
                 parse(&mut bytes).ok_or(DirectoryReadError::Corrupted("eof reading header v2"))?,
@@ -227,7 +225,7 @@ impl Directory {
                 bytes = remaining;
                 data
             };
-            let other_md5: LayoutVerified<_, OtherMd5Section> =
+            let other_md5: Ref<_, OtherMd5Section> =
                 parse(&mut bytes).ok_or(DirectoryReadError::Corrupted("eof reading checksums"))?;
 
             let tree_bytes = &before_tree[..tree_len];
@@ -571,9 +569,9 @@ mod tests {
             other_md5_section_size: 48.into(),
             signature_section_size: 0.into(),
         };
-        assert_eq!(parse::<HeaderV1>(&mut header).unwrap().into_ref(), &parsed,);
+        assert_eq!(Ref::into_ref(parse::<HeaderV1>(&mut header).unwrap()), &parsed,);
         assert_eq!(
-            parse::<HeaderV2Ext>(&mut header).unwrap().into_ref(),
+            Ref::into_ref(parse::<HeaderV2Ext>(&mut header).unwrap()),
             &parsed_ext,
         );
     }
@@ -600,7 +598,7 @@ mod tests {
         );
         assert_eq!(parse_nul_str(&mut tree), Some(b"b17".as_ref()),);
         assert_eq!(
-            parse::<DirectoryEntry>(&mut tree).unwrap().into_ref(),
+            Ref::into_ref(parse::<DirectoryEntry>(&mut tree).unwrap()),
             &DirectoryEntry {
                 crc: 2_500_738_789.into(),
                 preload_bytes: 0.into(),

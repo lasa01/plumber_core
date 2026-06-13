@@ -15,8 +15,8 @@ plumber_uncased = { version = "0.1.0", path = "../plumber_uncased" }
 thiserror = "1.0.24"
 image = { version = "0.24.1", default-features = false }
 itertools = "0.10.0"
-zerocopy = { version = "0.6.1" }
-half = { version = "2.1.0", features = ["zerocopy"] }
+zerocopy = { version = "0.8.52" }
+half = { version = "2.7.1", features = ["zerocopy"] }
 vtflib2 = { git = "https://github.com/lasa01/vtflib2-rs", rev = "683e7fffe7fd011fb8ce08ed48e2e88573e0743e", features = [
     "static",
 ] }

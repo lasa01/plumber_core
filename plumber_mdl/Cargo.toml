@@ -14,13 +14,12 @@ plumber_fs = { version = "0.1.0", path = "../plumber_fs" }
 approx = "0.5.0"
 itertools = "0.10.0"
 thiserror = "1.0.24"
-zerocopy = { version = "0.6.1" }
-byteorder = { version = "1.4.3" }
+zerocopy = { version = "0.8.52" }
 maligned = { version = "0.2.1" }
 bitflags = { version = "2.4.0" }
 glam = { version = "0.20.2", features = ["approx"] }
 tracing = "0.1.37"
-half = { version = "2.1.0", features = ["zerocopy"] }
+half = { version = "2.7.1", features = ["zerocopy"] }
 
 [dev-dependencies]
 plumber_steam = { version = "0.1.0", path = "../plumber_steam" }

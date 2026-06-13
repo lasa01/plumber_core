@@ -13,10 +13,9 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-byteorder = { version = "1.4.3" }
 crc = { version = "1.8.1" }
 md5 = { version = "0.7.0" }
 thiserror = "1.0.24"
-zerocopy = { version = "0.6.1"}
+zerocopy = { version = "0.8.52"}
 encoding = { version = "0.2.33"}
 serde = { version = "= 1.0.125", optional = true }

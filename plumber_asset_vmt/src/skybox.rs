@@ -11,7 +11,7 @@ use image::{Rgba32FImage, RgbaImage};
 use itertools::Itertools;
 use thiserror::Error;
 use vtflib2::VtfFile;
-use zerocopy::LayoutVerified;
+use zerocopy::Ref;
 
 use crate::{get_shader, VmtErrorInner};
 
@@ -144,9 +144,8 @@ fn load_skybox(sky_path: &GamePathBuf, fs: &OpenFileSystem) -> Result<SkyBox, Vm
                 let height = vtf.height();
 
                 let f32_data = match format {
-                    vtflib2::ImageFormat::Rgba32323232F => LayoutVerified::new_slice(data)
-                        .expect("vtflib should return properly aligned images")
-                        .into_slice()
+                    vtflib2::ImageFormat::Rgba32323232F => Ref::<_, [f32]>::into_ref(Ref::from_bytes(data)
+                        .expect("vtflib should return properly aligned images"))
                         .to_vec(),
                     vtflib2::ImageFormat::Rgba16161616F => f16s_to_f32s(data),
                     vtflib2::ImageFormat::Bgra8888 => decompress_hdr(data),
@@ -196,9 +195,8 @@ fn load_skybox(sky_path: &GamePathBuf, fs: &OpenFileSystem) -> Result<SkyBox, Vm
 }
 
 fn f16s_to_f32s(data: &[u8]) -> Vec<f32> {
-    let floats: &[f16] = LayoutVerified::new_slice(data)
-        .expect("vtf should return properly aligned images")
-        .into_slice();
+    let floats: &[f16] = Ref::into_ref(Ref::from_bytes(data)
+        .expect("vtf should return properly aligned images"));
     floats.iter().copied().map(f32::from).collect()
 }
 

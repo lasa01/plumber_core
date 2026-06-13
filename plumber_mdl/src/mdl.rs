@@ -7,7 +7,7 @@ use bitflags::bitflags;
 use glam::{EulerRot, Quat, Vec3};
 use itertools::Itertools;
 use maligned::A4;
-use zerocopy::FromBytes;
+use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use plumber_fs::GameFile;
 
@@ -21,7 +21,7 @@ use super::{
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Header1 {
     id: [u8; 4],
@@ -137,7 +137,7 @@ struct Header1 {
     unused_2: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Header2 {
     src_bone_transform_count: i32,
@@ -154,7 +154,7 @@ struct Header2 {
     bone_flex_driver_offset: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct Bone {
     name_offset: i32,
@@ -182,7 +182,7 @@ pub struct Bone {
     unused: [i32; 8],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct BoneController {
     bone_index: i32,
@@ -194,7 +194,7 @@ pub struct BoneController {
     unused: [i32; 8],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Attachment {
     name_offset: i32,
@@ -204,7 +204,7 @@ struct Attachment {
     unused: [i32; 8],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct HitBoxSet {
     name_offset: i32,
@@ -212,7 +212,7 @@ struct HitBoxSet {
     hit_box_offset: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct HitBox {
     bone_index: i32,
@@ -225,7 +225,7 @@ struct HitBox {
     unused: [i32; 4],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct AnimationDesc {
     base_header_offset: i32,
@@ -255,7 +255,7 @@ pub struct AnimationDesc {
     span_stall_time: f32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Movement {
     end_frame_index: i32,
@@ -267,21 +267,21 @@ struct Movement {
     position: [f32; 3],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct AnimationBlock {
     data_start: i32,
     data_end: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct AnimationSection {
     anim_block: i32,
     anim_offset: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct FrameAnimation {
     constants_offset: i32,
@@ -290,7 +290,7 @@ struct FrameAnimation {
     unused: [i32; 3],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Animation {
     bone_index: u8,
@@ -298,7 +298,7 @@ struct Animation {
     next_offset: i16,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct IkRule {
     index: i32,
@@ -338,7 +338,7 @@ struct IkRule {
     unused: [i32; 7],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct LocalHierarchy {
     bone_index: i32,
@@ -354,7 +354,7 @@ struct LocalHierarchy {
     unused: [i32; 4],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct SequenceDesc {
     base_header_offset: i32,
@@ -410,13 +410,13 @@ struct SequenceDesc {
     unused: [i32; 5],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct FlexDesc {
     name_offset: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct BodyPart {
     name_offset: i32,
@@ -425,7 +425,7 @@ struct BodyPart {
     model_offset: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct Model {
     name: [u8; 64],
@@ -451,7 +451,7 @@ pub struct Model {
     unused: [i32; 8],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct Mesh {
     pub material_index: i32,
@@ -476,7 +476,7 @@ pub struct Mesh {
     unused: [i32; 8],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct FlexController {
     type_offset: i32,
@@ -486,7 +486,7 @@ struct FlexController {
     max: f32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct FlexRule {
     flex_index: i32,
@@ -494,14 +494,14 @@ struct FlexRule {
     op_offset: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct FlexOp {
     op: i32,
     value: u32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct IkChain {
     name_offset: i32,
@@ -510,7 +510,7 @@ struct IkChain {
     link_offset: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct IkLink {
     bone_index: i32,
@@ -518,7 +518,7 @@ struct IkLink {
     unused: [f32; 3],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct IkLock {
     chain_index: i32,
@@ -528,7 +528,7 @@ struct IkLock {
     unused: [i32; 4],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Mouth {
     bone_index: i32,
@@ -536,7 +536,7 @@ struct Mouth {
     flex_desc_index: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct PoseParamDesc {
     name_offset: i32,
@@ -546,14 +546,14 @@ struct PoseParamDesc {
     looping_range: f32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct ModelGroup {
     label_offset: i32,
     file_name_offset: i32,
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Texture {
     name_offset: i32,
@@ -565,7 +565,7 @@ struct Texture {
     unused: [i32; 10],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct BoneTransform {
     name_offset: i32,
@@ -573,7 +573,7 @@ struct BoneTransform {
     post_transform: [f32; 12],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct LinearBone {
     bone_count: i32,
@@ -589,7 +589,7 @@ struct LinearBone {
     unused: [i32; 6],
 }
 
-#[derive(Debug, PartialEq, FromBytes)]
+#[derive(Debug, PartialEq, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct FlexControllerUi {
     name_offset: i32,

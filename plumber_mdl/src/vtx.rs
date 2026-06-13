@@ -2,11 +2,12 @@ use std::fmt;
 use std::io;
 use std::mem::size_of;
 
-use byteorder::NativeEndian;
 use itertools::Itertools;
 use maligned::A4;
+use zerocopy::Immutable;
+use zerocopy::KnownLayout;
 use zerocopy::{
-    byteorder::{I16, I32, U16},
+    byteorder::{I16, I32, U16, NativeEndian},
     FromBytes, Unaligned,
 };
 
@@ -17,7 +18,7 @@ use super::{
     mdl, Error, FileType, Result,
 };
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Header {
     version: i32,
@@ -37,21 +38,21 @@ struct Header {
     body_part_offset: i32,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct BodyPart {
     model_count: i32,
     model_offset: i32,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct Model {
     lod_count: i32,
     lod_offset: i32,
 }
 
-#[derive(Debug, Clone, FromBytes)]
+#[derive(Debug, Clone, FromBytes, Immutable, KnownLayout)]
 #[repr(C)]
 struct ModelLod {
     mesh_count: i32,
@@ -59,14 +60,14 @@ struct ModelLod {
     switch_point: f32,
 }
 
-#[derive(Debug, Clone, FromBytes, Unaligned)]
+#[derive(Debug, Clone, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct Mesh {
     strip_group_count: I32<NativeEndian>,
     strip_group_offset: I32<NativeEndian>,
     flags: u8,
 }
-pub trait StripGroup: FromBytes + Unaligned + Sized {
+pub trait StripGroup: FromBytes + Unaligned + Immutable + KnownLayout + Sized {
     type Strip: Strip;
 
     fn vertex_offset(&self) -> i32;
@@ -103,11 +104,11 @@ pub trait StripGroup: FromBytes + Unaligned + Sized {
     }
 }
 
-pub trait Strip: FromBytes + Unaligned {
+pub trait Strip: FromBytes + Unaligned + Immutable + KnownLayout {
     fn vertex_count(&self) -> i32;
 }
 
-#[derive(Debug, Clone, FromBytes, Unaligned)]
+#[derive(Debug, Clone, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct StripGroupNormal {
     vertex_count: I32<NativeEndian>,
@@ -147,7 +148,7 @@ impl StripGroup for StripGroupNormal {
     }
 }
 
-#[derive(Debug, Clone, FromBytes, Unaligned)]
+#[derive(Debug, Clone, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct StripGroupAlternate {
     vertex_count: I32<NativeEndian>,
@@ -189,7 +190,7 @@ impl StripGroup for StripGroupAlternate {
     }
 }
 
-#[derive(Debug, Clone, FromBytes, Unaligned)]
+#[derive(Debug, Clone, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct Vertex {
     bone_weight_indices: [u8; 3],
@@ -198,7 +199,7 @@ pub struct Vertex {
     bone_ids: [u8; 3],
 }
 
-#[derive(Debug, Clone, FromBytes, Unaligned)]
+#[derive(Debug, Clone, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct StripNormal {
     index_count: I32<NativeEndian>,
@@ -220,7 +221,7 @@ impl Strip for StripNormal {
     }
 }
 
-#[derive(Debug, Clone, FromBytes, Unaligned)]
+#[derive(Debug, Clone, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct StripAlternate {
     index_count: I32<NativeEndian>,
@@ -245,21 +246,21 @@ impl Strip for StripAlternate {
     }
 }
 
-#[derive(Debug, Clone, FromBytes, Unaligned)]
+#[derive(Debug, Clone, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct BoneStateChange {
     hardware_id: I32<NativeEndian>,
     new_bone_id: I32<NativeEndian>,
 }
 
-#[derive(Debug, Clone, FromBytes, Unaligned)]
+#[derive(Debug, Clone, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct MaterialReplacementList {
     replacement_count: I32<NativeEndian>,
     replacement_offset: I32<NativeEndian>,
 }
 
-#[derive(Debug, Clone, FromBytes, Unaligned)]
+#[derive(Debug, Clone, FromBytes, Unaligned, Immutable, KnownLayout)]
 #[repr(C)]
 struct MaterialReplacement {
     material_index: I16<NativeEndian>,
