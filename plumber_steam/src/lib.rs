@@ -31,9 +31,7 @@ static SOURCE_APPS: [u32; 90] = [
 fn is_acf_file(filename: &str) -> bool {
     filename
         .rsplit('.')
-        .next()
-        .map(|ext| ext.eq_ignore_ascii_case("acf"))
-        == Some(true)
+        .next().is_some_and(|ext| ext.eq_ignore_ascii_case("acf"))
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -90,7 +88,7 @@ impl<'de> Deserialize<'de> for LibraryFolders {
             {
                 struct LibraryFoldersKeyVisitor;
 
-                impl<'de> Visitor<'de> for LibraryFoldersKeyVisitor {
+                impl Visitor<'_> for LibraryFoldersKeyVisitor {
                     type Value = LibraryFoldersKey;
 
                     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -334,7 +332,7 @@ impl Libraries {
 
     /// Returns an iterator over apps in all libraries.
     #[must_use]
-    pub fn apps(&self) -> Apps {
+    pub fn apps(&self) -> Apps<'_> {
         Apps {
             paths: self.paths.iter(),
             current_path: None,
@@ -374,7 +372,7 @@ impl<'a> Apps<'a> {
     }
 }
 
-impl<'a> Iterator for Apps<'a> {
+impl Iterator for Apps<'_> {
     type Item = Result<App, AppError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -386,7 +384,7 @@ impl<'a> Iterator for Apps<'a> {
                         Err(err) => return Some(Err(AppError::from_io(err, current_path))),
                     };
 
-                    if !entry.file_type().map_or(false, |t| t.is_file()) {
+                    if !entry.file_type().is_ok_and(|t| t.is_file()) {
                         continue;
                     }
 
@@ -439,7 +437,7 @@ pub struct SourceApps<'a> {
     source_app_ids: BTreeSet<u32>,
 }
 
-impl<'a> Iterator for SourceApps<'a> {
+impl Iterator for SourceApps<'_> {
     type Item = Result<App, AppError>;
 
     fn next(&mut self) -> Option<Self::Item> {

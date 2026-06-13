@@ -349,7 +349,7 @@ impl ParameterType for Transform {
             (&'a str, &'a str),
         );
 
-        fn transform_parser(input: &str) -> IResult<&str, TransformResult> {
+        fn transform_parser(input: &str) -> IResult<&str, TransformResult<'_>> {
             tuple((
                 preceded(
                     tuple((tag("center"), multispace0)),

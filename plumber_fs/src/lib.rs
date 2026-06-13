@@ -37,7 +37,7 @@ pub enum Path<'a> {
     Os(&'a StdPath),
 }
 
-impl<'a> Path<'a> {
+impl Path<'_> {
     pub fn with_extension(self, extension: impl AsRef<str>) -> PathBuf {
         match self {
             Path::Game(p) => PathBuf::Game(p.with_extension(extension)),
@@ -286,9 +286,7 @@ impl<'de> Deserialize<'de> for GameInfoSearchPaths {
 fn is_vpk_file(filename: &str) -> bool {
     filename
         .rsplit('.')
-        .next()
-        .map(|ext| ext.eq_ignore_ascii_case("vpk"))
-        == Some(true)
+        .next().is_some_and(|ext| ext.eq_ignore_ascii_case("vpk"))
 }
 
 #[derive(Debug, Error)]
@@ -476,7 +474,7 @@ fn open_wildcard_dir(
                     .map_err(|err| OpenError::new(path, err.into()))?;
 
                 if file_type.is_file() {
-                    if entry.file_name().to_str().map_or(false, is_vpk_file) {
+                    if entry.file_name().to_str().is_some_and(is_vpk_file) {
                         let path = entry.path();
                         debug!(
                             "found vpk `{}` in wildcard directory, opening",
@@ -540,7 +538,7 @@ impl FileSystem {
         for entry in entries {
             let entry = entry.map_err(|err| ParseError::from_io(err, &app.install_dir))?;
 
-            if !entry.file_type().as_ref().map_or(false, FileType::is_dir) {
+            if !entry.file_type().as_ref().is_ok_and(FileType::is_dir) {
                 continue;
             }
 
@@ -816,7 +814,7 @@ impl OpenSearchPath {
         }
     }
 
-    fn try_open_file(&self, file_path: &GamePath) -> io::Result<Option<GameFile>> {
+    fn try_open_file(&self, file_path: &GamePath) -> io::Result<Option<GameFile<'_>>> {
         match self {
             OpenSearchPath::Vpk(vpk) => vpk.open_file(file_path).map_or_else(
                 |e| {
@@ -1005,7 +1003,7 @@ impl OpenFileSystem {
     pub fn open_file_with_info<'a>(
         &self,
         file_path: impl Into<Path<'a>>,
-    ) -> io::Result<GameFileInfo> {
+    ) -> io::Result<GameFileInfo<'_>> {
         let file_path = file_path.into();
 
         match file_path {
@@ -1048,7 +1046,7 @@ impl OpenFileSystem {
     /// # Errors
     ///
     /// Returns `Err` if `file_path` doesn't exist or if the file can't be opened.
-    pub fn open_file<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<GameFile> {
+    pub fn open_file<'a>(&self, file_path: impl Into<Path<'a>>) -> io::Result<GameFile<'_>> {
         Ok(self.open_file_with_info(file_path)?.file)
     }
 
@@ -1207,7 +1205,7 @@ impl<'a> DirEntry<'a> {
     /// # Errors
     ///
     /// Returns `Err` if `self` is not a file or if the file can't be opened.
-    pub fn open(&self) -> io::Result<GameFile> {
+    pub fn open(&self) -> io::Result<GameFile<'_>> {
         self.search_path
             .try_open_file(self.path())
             .and_then(|maybe_file| {
@@ -1236,7 +1234,7 @@ impl<'a> DirEntry<'a> {
     }
 
     /// Returns an iterator over the entries within this entry.
-    pub fn read_dir(&self) -> ReadDir {
+    pub fn read_dir(&self) -> ReadDir<'_> {
         ReadDir {
             search_paths: slice::from_ref(self.search_path).iter(),
             path: &self.path,
@@ -1251,7 +1249,7 @@ pub enum GameFile<'a> {
     Vpk(vpk::File<'a>),
 }
 
-impl<'a> GameFile<'a> {
+impl GameFile<'_> {
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     pub fn size(&self) -> Option<usize> {
@@ -1288,7 +1286,7 @@ impl<'a> GameFile<'a> {
     }
 }
 
-impl<'a> Read for GameFile<'a> {
+impl Read for GameFile<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             GameFile::Fs(f) => f.read(buf),
@@ -1297,7 +1295,7 @@ impl<'a> Read for GameFile<'a> {
     }
 }
 
-impl<'a> Seek for GameFile<'a> {
+impl Seek for GameFile<'_> {
     fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
         match self {
             GameFile::Fs(f) => f.seek(pos),

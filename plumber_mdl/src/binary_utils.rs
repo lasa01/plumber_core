@@ -18,14 +18,14 @@ pub fn read_file_aligned<A: maligned::Alignment>(mut file: GameFile) -> io::Resu
     let mut bytes = maligned::align_first::<u8, A>(size);
     file.read_to_end(&mut bytes)?;
 
-    if bytes.as_ptr() as usize % align_of::<A>() != 0 {
+    if !(bytes.as_ptr() as usize).is_multiple_of(align_of::<A>()) {
         // vector reallocated, no longer aligned
         let mut new_bytes = maligned::align_first::<u8, A>(bytes.len());
         new_bytes.append(&mut bytes);
         bytes = new_bytes;
     }
 
-    assert!(bytes.as_ptr() as usize % align_of::<A>() == 0);
+    assert!((bytes.as_ptr() as usize).is_multiple_of(align_of::<A>()));
 
     Ok(bytes)
 }

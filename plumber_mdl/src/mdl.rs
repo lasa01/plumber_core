@@ -159,7 +159,7 @@ struct Header2 {
 pub struct Bone {
     name_offset: i32,
     pub parent_bone_index: i32,
-    bone_controller_indexes: [i32; 6],
+    controller_indexes: [i32; 6],
 
     pub position: [f32; 3],
     pub quat: [f32; 4],
@@ -167,7 +167,7 @@ pub struct Bone {
     pub position_scale: [f32; 3],
     pub rotation_scale: [f32; 3],
 
-    pub pose_to_bone: [f32; 12],
+    pub pose_to_self: [f32; 12],
 
     pub q_alignment: [f32; 4],
 
@@ -645,7 +645,7 @@ impl Mdl {
     pub fn check_version(&self) -> Result<i32> {
         let version = self.version()?;
 
-        if let 44 | 45 | 46 | 47 | 48 | 49 = version {
+        if let 44..=49 = version {
             Ok(version)
         } else {
             Err(Error::UnsupportedVersion {
@@ -655,7 +655,7 @@ impl Mdl {
         }
     }
 
-    pub fn header(&self) -> Result<HeaderRef> {
+    pub fn header(&self) -> Result<HeaderRef<'_>> {
         let header_1: &Header1 =
             parse(&self.bytes, 0).ok_or_else(|| corrupted("eof reading header"))?;
 
@@ -816,7 +816,7 @@ impl<'a> HeaderRef<'a> {
 
     pub fn iter_body_parts(
         &self,
-    ) -> Result<impl Iterator<Item = BodyPartRef<'a>> + ExactSizeIterator> {
+    ) -> Result<impl ExactSizeIterator<Item = BodyPartRef<'a>>> {
         let offset = self
             .header_1
             .body_part_offset
@@ -936,7 +936,7 @@ impl<'a> BoneRef<'a> {
     }
 }
 
-impl<'a> Deref for BoneRef<'a> {
+impl Deref for BoneRef<'_> {
     type Target = Bone;
 
     fn deref(&self) -> &Self::Target {
@@ -974,7 +974,7 @@ pub struct BodyPartRef<'a> {
 }
 
 impl<'a> BodyPartRef<'a> {
-    pub fn iter_models(&self) -> Result<impl Iterator<Item = ModelRef<'a>> + ExactSizeIterator> {
+    pub fn iter_models(&self) -> Result<impl ExactSizeIterator<Item = ModelRef<'a>>> {
         let offset = (self.offset as isize + self.body_part.model_offset as isize) as usize;
         let count = self
             .body_part
@@ -1017,7 +1017,7 @@ pub struct ModelRef<'a> {
 }
 
 impl<'a> ModelRef<'a> {
-    pub fn iter_meshes(&self) -> Result<impl Iterator<Item = &Mesh> + ExactSizeIterator> {
+    pub fn iter_meshes(&self) -> Result<impl ExactSizeIterator<Item = &Mesh>> {
         let offset = (self.offset as isize + self.model.mesh_offset as isize) as usize;
         let count = self
             .model
@@ -1039,7 +1039,7 @@ impl<'a> ModelRef<'a> {
     }
 }
 
-impl<'a> Deref for ModelRef<'a> {
+impl Deref for ModelRef<'_> {
     type Target = Model;
 
     fn deref(&self) -> &Self::Target {
@@ -1165,7 +1165,7 @@ impl<'a> AnimationDescRef<'a> {
             });
         }
 
-        let first_section_anim_offset = match animation_sections.get(0) {
+        let first_section_anim_offset = match animation_sections.first() {
             None => 0,
             Some(section) => section.anim_offset as isize,
         };
@@ -1640,20 +1640,17 @@ use serde::Deserialize;
 // Generic animation data of a bone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(Deserialize))]
+#[derive(Default)]
 pub enum AnimationData<T> {
     /// The data of the bone stays constant during the animation.
     Constant(T),
     /// The data of the bone is animated. Contains one value for each frame.
     Animated(Vec<T>),
     /// The animation has no data for the bone.
+    #[default]
     None,
 }
 
-impl<T> Default for AnimationData<T> {
-    fn default() -> Self {
-        Self::None
-    }
-}
 
 /// Rotation and position animation data of a bone.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1878,7 +1875,7 @@ struct AnimationRef<'a> {
     bytes: &'a [u8],
 }
 
-impl<'a> AnimationRef<'a> {
+impl AnimationRef<'_> {
     fn animation_data(&self) -> Result<BoneAnimationData> {
         let mut bytes = self
             .bytes
@@ -1927,7 +1924,7 @@ impl<'a> AnimationRef<'a> {
             data.position = AnimationData::Constant(vec3_from_u16s(
                 u16s.try_into().expect("slice must have correct length"),
             ));
-        };
+        }
 
         Ok(())
     }
@@ -2056,7 +2053,7 @@ impl<'a> AnimationRef<'a> {
             }
 
             data.position = AnimationData::Animated(frames);
-        };
+        }
 
         Ok(())
     }

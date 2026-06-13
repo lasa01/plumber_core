@@ -191,7 +191,7 @@ fn is_nodraw(material_path: &PathBuf, shader: &Shader) -> bool {
             shader
                 .parameters
                 .get(p.as_uncased())
-                .map_or(false, |v| v == "1")
+                .is_some_and(|v| v == "1")
         })
 }
 

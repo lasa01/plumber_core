@@ -53,7 +53,7 @@ where
                     if e.kind() == ErrorKind::NotFound {
                         continue;
                     }
-                    Err(e).unwrap()
+                    panic!("{:?}", e)
                 }
             };
 

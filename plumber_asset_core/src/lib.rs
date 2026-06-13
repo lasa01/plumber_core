@@ -623,7 +623,7 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
         });
     }
 
-    fn read_cache_manager(&self) -> RwLockReadGuard<CacheManager> {
+    fn read_cache_manager(&self) -> RwLockReadGuard<'_, CacheManager> {
         let _span = debug_span!("read_cache").entered();
 
         self.shared
@@ -632,7 +632,7 @@ impl<'scope, 'scope_ref, H> Context<'scope, 'scope_ref, H> {
             .expect("rwlock shouldn't be poisoned")
     }
 
-    fn write_cache_manager(&self) -> RwLockWriteGuard<CacheManager> {
+    fn write_cache_manager(&self) -> RwLockWriteGuard<'_, CacheManager> {
         let _span = debug_span!("write_cache").entered();
 
         self.shared
@@ -696,9 +696,7 @@ impl<T> Debug for Passtrough<T> {
 }
 
 impl<T> Clone for Passtrough<T> {
-    fn clone(&self) -> Self {
-        Self(PhantomData)
-    }
+    fn clone(&self) -> Self { *self }
 }
 
 impl<T> Copy for Passtrough<T> {}

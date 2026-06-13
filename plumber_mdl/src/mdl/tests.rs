@@ -219,12 +219,12 @@ impl AnimationSpec {
 
         for (i, section) in result.unwrap().unwrap().enumerate() {
             match self.sections.get(i) {
-                None => continue,
+                None => {},
                 Some(spec) => {
                     eprintln!("    Verifying section {i}");
                     spec.verify(section);
                 }
-            };
+            }
         }
 
         let data = animation.data().unwrap();
@@ -337,7 +337,7 @@ impl BoneAnimationDataSpec {
 
 /// Fails if steam is not installed
 #[test]
-#[ignore]
+#[ignore = "fails if steam is not installed"]
 fn count_mdl_versions() {
     let libraries = Libraries::discover().unwrap();
     for result in libraries.apps().source().filesystems() {
@@ -378,14 +378,12 @@ fn recurse(readdir: ReadDir, version_counter: &mut BTreeMap<i32, usize>) {
 fn is_mdl_file(filename: &str) -> bool {
     filename
         .rsplit('.')
-        .next()
-        .map(|ext| ext.eq_ignore_ascii_case("mdl"))
-        == Some(true)
+        .next().is_some_and(|ext| ext.eq_ignore_ascii_case("mdl"))
 }
 
 /// Fails if CSGO is not installed on Steam
 #[test]
-#[ignore]
+#[ignore = "fails if steam and CSGO is not installed"]
 fn read_animated() {
     let data = read_game_file(
         730,
@@ -397,7 +395,7 @@ fn read_animated() {
 
 // Fails if L4D2 is not installed on Steam
 #[test]
-#[ignore]
+#[ignore = "fails if steam and L4D2 is not installed"]
 fn read_frame_animated() {
     let data = read_game_file(550, "models/v_models/v_huntingrifle.mdl");
     read_mdl_bytes(&data);

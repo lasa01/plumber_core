@@ -212,7 +212,7 @@ impl<'de> Deserializer<'de> {
     }
 }
 
-impl<'de_ref, 'de> de::Deserializer<'de> for &'de_ref mut Deserializer<'de> {
+impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
@@ -349,7 +349,7 @@ impl<'de_ref, 'de> de::Deserializer<'de> for &'de_ref mut Deserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
-        if let Ok(..) = self.parse_empty_token() {
+        if self.parse_empty_token().is_ok() {
             visitor.visit_none()
         } else {
             visitor.visit_some(self)
@@ -464,7 +464,7 @@ impl<'de_ref, 'de> RootAccess<'de_ref, 'de> {
     }
 }
 
-impl<'de_ref, 'de> SeqAccess<'de> for RootAccess<'de_ref, 'de> {
+impl<'de> SeqAccess<'de> for RootAccess<'_, 'de> {
     type Error = Error;
 
     fn next_element_seed<S>(&mut self, seed: S) -> Result<Option<S::Value>>
@@ -488,7 +488,7 @@ impl<'de_ref, 'de> SeqAccess<'de> for RootAccess<'de_ref, 'de> {
     }
 }
 
-impl<'de_ref, 'de> MapAccess<'de> for RootAccess<'de_ref, 'de> {
+impl<'de> MapAccess<'de> for RootAccess<'_, 'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -527,7 +527,7 @@ impl<'de_ref, 'de> MapAccess<'de> for RootAccess<'de_ref, 'de> {
     }
 }
 
-impl<'de_ref, 'de> EnumAccess<'de> for RootAccess<'de_ref, 'de> {
+impl<'de> EnumAccess<'de> for RootAccess<'_, 'de> {
     type Error = Error;
     type Variant = Self;
 
@@ -553,7 +553,7 @@ impl<'de_ref, 'de> EnumAccess<'de> for RootAccess<'de_ref, 'de> {
     }
 }
 
-impl<'de_ref, 'de> VariantAccess<'de> for RootAccess<'de_ref, 'de> {
+impl<'de> VariantAccess<'de> for RootAccess<'_, 'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
@@ -592,7 +592,7 @@ impl<'de_ref, 'de> ValueDeserializer<'de_ref, 'de> {
     }
 }
 
-impl<'de_ref, 'de> de::Deserializer<'de> for ValueDeserializer<'de_ref, 'de> {
+impl<'de> de::Deserializer<'de> for ValueDeserializer<'_, 'de> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
@@ -721,7 +721,7 @@ impl<'de_ref, 'de> de::Deserializer<'de> for ValueDeserializer<'de_ref, 'de> {
     where
         V: de::Visitor<'de>,
     {
-        if let Ok(..) = self.deserializer.parse_empty_token() {
+        if self.deserializer.parse_empty_token().is_ok() {
             visitor.visit_none()
         } else {
             visitor.visit_some(self)
@@ -882,7 +882,7 @@ impl<'de_ref, 'de> ValueAccess<'de_ref, 'de> {
     }
 }
 
-impl<'de_ref, 'de> MapAccess<'de> for ValueAccess<'de_ref, 'de> {
+impl<'de> MapAccess<'de> for ValueAccess<'_, 'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -923,7 +923,7 @@ impl<'de_ref, 'de> MapAccess<'de> for ValueAccess<'de_ref, 'de> {
     }
 }
 
-impl<'de_ref, 'de> EnumAccess<'de> for ValueAccess<'de_ref, 'de> {
+impl<'de> EnumAccess<'de> for ValueAccess<'_, 'de> {
     type Error = Error;
     type Variant = Self;
 
@@ -949,7 +949,7 @@ impl<'de_ref, 'de> EnumAccess<'de> for ValueAccess<'de_ref, 'de> {
     }
 }
 
-impl<'de_ref, 'de> VariantAccess<'de> for ValueAccess<'de_ref, 'de> {
+impl<'de> VariantAccess<'de> for ValueAccess<'_, 'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
@@ -994,7 +994,7 @@ impl<'de_ref, 'de> SeqValueAccess<'de_ref, 'de> {
     }
 }
 
-impl<'de_ref, 'de> SeqAccess<'de> for SeqValueAccess<'de_ref, 'de> {
+impl<'de> SeqAccess<'de> for SeqValueAccess<'_, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>

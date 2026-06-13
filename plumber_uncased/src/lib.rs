@@ -3,12 +3,7 @@
 //! Case-preserving, ascii case-insensitive string wrapper.
 
 use std::{
-    borrow::Borrow,
-    cmp::Ordering,
-    fmt::{self, Display},
-    hash::{Hash, Hasher},
-    ops::{Deref, Index},
-    slice::SliceIndex,
+    borrow::Borrow, cmp::Ordering, fmt::{self, Display}, hash::{Hash, Hasher}, ops::{Deref, Index}, ptr, slice::SliceIndex
 };
 
 use serde::{Deserialize, Serialize};
@@ -19,7 +14,7 @@ pub struct UncasedStr(str);
 
 impl UncasedStr {
     pub fn new<S: AsRef<str> + ?Sized>(s: &S) -> &Self {
-        unsafe { &*(s.as_ref() as *const str as *const Self) }
+        unsafe { &*(ptr::from_ref::<str>(s.as_ref()) as *const Self) }
     }
 
     #[must_use]
@@ -227,7 +222,7 @@ impl PartialEq<str> for UncasedString {
 
 impl PartialOrd for UncasedString {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        UncasedStr::partial_cmp(self, other)
+        Some(self.cmp(other))
     }
 }
 

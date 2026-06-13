@@ -1144,7 +1144,7 @@ impl Entity {
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
         scale: f32,
-    ) -> BuiltBrushEntity {
+    ) -> BuiltBrushEntity<'_> {
         BuiltBrushEntity::new(
             &self.solids,
             self.id,
@@ -1167,7 +1167,7 @@ impl World {
         side_faces_map: &Mutex<SideFacesMap>,
         settings: &GeometrySettings,
         scale: f32,
-    ) -> BuiltBrushEntity {
+    ) -> BuiltBrushEntity<'_> {
         BuiltBrushEntity::new(
             &self.solids,
             self.id,

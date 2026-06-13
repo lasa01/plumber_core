@@ -34,6 +34,7 @@ struct HeaderV1 {
     tree_size: U32<LE>,
 }
 
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, PartialEq, FromBytes, Unaligned)]
 #[repr(C)]
 struct HeaderV2Ext {
@@ -107,7 +108,7 @@ struct Entry {
     crc: u32,
     archive_index: u16,
     total_offset: u64,
-    entry_length: u32,
+    length: u32,
     preload_bytes: Vec<u8>,
 }
 
@@ -137,7 +138,7 @@ impl Entry {
             crc: entry.crc.get(),
             archive_index,
             total_offset,
-            entry_length: entry.entry_length.get(),
+            length: entry.entry_length.get(),
             preload_bytes: preload_data.to_vec(),
         })
     }
@@ -166,7 +167,7 @@ pub struct Directory {
     path: StdPathBuf,
     file_base: String,
     files: HashMap<PathBuf, Entry>,
-    directory_contents: HashMap<PathBuf, Vec<DirectoryContent>>,
+    contents: HashMap<PathBuf, Vec<DirectoryContent>>,
 }
 
 impl Directory {
@@ -245,7 +246,7 @@ impl Directory {
             path: vpk_path,
             file_base: vpk_base,
             files,
-            directory_contents,
+            contents: directory_contents,
         })
     }
 
@@ -364,11 +365,11 @@ impl Directory {
     /// # Errors
     ///
     /// Returns `Err` if `file_path` is not in the directory or if the file can't be opened.
-    pub fn open_file(&self, file_path: &Path) -> io::Result<File> {
+    pub fn open_file(&self, file_path: &Path) -> io::Result<File<'_>> {
         let entry = self.files.get(file_path).ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, file_path.as_str().to_string())
         })?;
-        let file = if entry.entry_length == 0 {
+        let file = if entry.length == 0 {
             None
         } else {
             let mut file =
@@ -386,14 +387,14 @@ impl Directory {
 
         Ok(File {
             entry,
-            file,
+            fs_handle: file,
             cursor: 0,
         })
     }
 
     /// Returns an iterator over files in the archive.
     #[must_use]
-    pub fn files(&self) -> Files {
+    pub fn files(&self) -> Files<'_> {
         Files {
             files: self.files.keys(),
         }
@@ -401,8 +402,8 @@ impl Directory {
 
     /// Returns an iterator over contents of the specified directory if the directory exists.
     #[must_use]
-    pub fn directory_contents(&self, directory: &Path) -> Option<DirectoryContents> {
-        self.directory_contents
+    pub fn directory_contents(&self, directory: &Path) -> Option<DirectoryContents<'_>> {
+        self.contents
             .get(directory)
             .map(|c| DirectoryContents {
                 contents: c.as_slice().iter(),
@@ -442,15 +443,15 @@ impl<'a> Iterator for DirectoryContents<'a> {
 #[derive(Debug)]
 pub struct File<'a> {
     entry: &'a Entry,
-    file: Option<fs::File>,
+    fs_handle: Option<fs::File>,
     cursor: u64,
 }
 
-impl<'a> File<'a> {
+impl File<'_> {
     /// Returns the size of the file in bytes.
     #[must_use]
     pub fn size(&self) -> usize {
-        self.entry.preload_bytes.len() + self.entry.entry_length as usize
+        self.entry.preload_bytes.len() + self.entry.length as usize
     }
 
     /// Returns the CRC cheksum of the file.
@@ -478,7 +479,7 @@ impl<'a> File<'a> {
     }
 }
 
-impl<'a> Read for File<'a> {
+impl Read for File<'_> {
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
         let cursor = self.cursor as usize;
         let preload_len = self.entry.preload_bytes.len();
@@ -488,10 +489,10 @@ impl<'a> Read for File<'a> {
             self.cursor += read_amount as u64;
             return Ok(read_amount);
         }
-        if let Some(file) = &mut self.file {
+        if let Some(file) = &mut self.fs_handle {
             let remaining = buf
                 .len()
-                .min((self.entry.entry_length as usize).saturating_sub(cursor - preload_len));
+                .min((self.entry.length as usize).saturating_sub(cursor - preload_len));
             let read_amount = file.read(&mut buf[..remaining])?;
             self.cursor += read_amount as u64;
             return Ok(read_amount);
@@ -500,7 +501,7 @@ impl<'a> Read for File<'a> {
     }
 }
 
-impl<'a> Seek for File<'a> {
+impl Seek for File<'_> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let preload_len = self.entry.preload_bytes.len() as u64;
         let new_cursor = match pos {
@@ -514,12 +515,12 @@ impl<'a> Seek for File<'a> {
         };
         if new_cursor <= preload_len {
             if self.cursor > preload_len {
-                if let Some(file) = &mut self.file {
+                if let Some(file) = &mut self.fs_handle {
                     file.seek(SeekFrom::Start(self.entry.total_offset))?;
                 }
             }
             self.cursor = new_cursor;
-        } else if let Some(file) = &mut self.file {
+        } else if let Some(file) = &mut self.fs_handle {
             let seeked = file.seek(SeekFrom::Start(
                 self.entry.total_offset + new_cursor - preload_len,
             ))?;
@@ -617,12 +618,12 @@ mod tests {
             crc: 0x627E_60A3,
             archive_index: IN_DIRECTORY,
             total_offset: 0,
-            entry_length: 0,
+            length: 0,
             preload_bytes: b"preload".to_vec(),
         };
         let mut file = File {
             entry: &entry,
-            file: None,
+            fs_handle: None,
             cursor: 0,
         };
 
@@ -660,14 +661,14 @@ mod tests {
             crc: 0x38CB_F779,
             archive_index: IN_DIRECTORY,
             total_offset: 2,
-            entry_length: 8,
+            length: 8,
             preload_bytes: b"preload".to_vec(),
         };
         let mut opened = fs::File::open(path).unwrap();
         opened.seek(SeekFrom::Start(2)).unwrap();
         let mut file = File {
             entry: &entry,
-            file: Some(opened),
+            fs_handle: Some(opened),
             cursor: 0,
         };
 

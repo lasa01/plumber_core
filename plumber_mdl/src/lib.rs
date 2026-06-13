@@ -132,7 +132,7 @@ impl Model {
     /// # Errors
     ///
     /// Returns `Err` if a signature or header is invalid or a version is unsupported.
-    pub fn verify(&self) -> Result<Verified> {
+    pub fn verify(&self) -> Result<Verified<'_>> {
         self.mdl.check_signature()?;
         self.mdl.check_version()?;
 
@@ -160,6 +160,7 @@ impl Model {
     }
 }
 
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone)]
 pub struct Verified<'a> {
     mdl_header: mdl::HeaderRef<'a>,
@@ -185,7 +186,7 @@ impl<'a> Verified<'a> {
     /// # Errors
     ///
     /// Returns `Err` if reading the meshes fails.
-    pub fn meshes(&self) -> Result<Vec<Mesh>> {
+    pub fn meshes(&self) -> Result<Vec<Mesh<'_>>> {
         let vertices = self.vvd_header.lod_vertices(0)?.ok_or(Error::Corrupted {
             ty: FileType::Vvd,
             error: "lod 0 doesn't exist",
@@ -224,7 +225,7 @@ impl<'a> Verified<'a> {
                             error: "model vertex count is negative",
                         })?;
 
-                if vertex_offset % size_of::<Vertex>() != 0 {
+                if !vertex_offset.is_multiple_of(size_of::<Vertex>()) {
                     return Err(Error::Corrupted {
                         ty: FileType::Mdl,
                         error: "model vertex offset is misaligned",
@@ -290,7 +291,7 @@ impl<'a> Verified<'a> {
     /// # Errors
     ///
     /// Returns `Err` if reading the bones fails due to corrupted mdl.
-    pub fn bones(&self) -> Result<Vec<Bone>> {
+    pub fn bones(&self) -> Result<Vec<Bone<'_>>> {
         self.mdl_header
             .iter_bones()?
             .map(|bone| {
@@ -300,7 +301,7 @@ impl<'a> Verified<'a> {
                     parent_bone_index: bone.parent_bone_index.try_into().ok(),
                     position: bone.position,
                     rotation: bone.rotation,
-                    pose_to_bone: bone.pose_to_bone,
+                    pose_to_bone: bone.pose_to_self,
                 })
             })
             .try_collect()
@@ -309,7 +310,7 @@ impl<'a> Verified<'a> {
     /// # Errors
     ///
     /// Returns `Err` if reading the animations fails due to corrupted mdl.
-    pub fn animations(&self) -> Result<impl Iterator<Item = Result<Animation>>> {
+    pub fn animations(&self) -> Result<impl Iterator<Item = Result<Animation<'_>>>> {
         Ok(self
             .mdl_header
             .iter_animation_descs()?

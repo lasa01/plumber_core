@@ -23,7 +23,7 @@ pub enum TypedEntity<'a> {
 
 impl Entity {
     #[must_use]
-    pub fn typed(&self) -> TypedEntity {
+    pub fn typed(&self) -> TypedEntity<'_> {
         match self.class_name.as_str() {
             "light" => TypedEntity::Light(Light::new(self)),
             "light_spot" => TypedEntity::SpotLight(SpotLight::new(self)),

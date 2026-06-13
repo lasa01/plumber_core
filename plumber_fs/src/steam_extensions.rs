@@ -25,7 +25,7 @@ impl<'a> SourceAppsExt<'a> for SourceApps<'a> {
 #[derive(Debug)]
 pub struct FileSystems<'a>(SourceApps<'a>);
 
-impl<'a> Iterator for FileSystems<'a> {
+impl Iterator for FileSystems<'_> {
     type Item = Result<FileSystem, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -37,16 +37,14 @@ fn solid_building() {
     builder.remove_invalid_faces();
     builder.recenter();
 
-    let expected_vertices = vec![
-        Vec3::new(-64.0, 64.0, 32.0),
+    let expected_vertices = [Vec3::new(-64.0, 64.0, 32.0),
         Vec3::new(-64.0, -64.0, 32.0),
         Vec3::new(64.0, 64.0, 32.0),
         Vec3::new(64.0, -64.0, 32.0),
         Vec3::new(-64.0, 64.0, -32.0),
         Vec3::new(-64.0, -64.0, -32.0),
         Vec3::new(64.0, 64.0, -32.0),
-        Vec3::new(64.0, -64.0, -32.0),
-    ];
+        Vec3::new(64.0, -64.0, -32.0)];
 
     let mut is = vec![0; expected_vertices.len()];
 
@@ -257,7 +255,7 @@ fn displacement_building() {
     }
 }
 
-fn create_test_face(side: &Side, plane: NdPlane) -> FaceBuilder {
+fn create_test_face(side: &'_ Side, plane: NdPlane) -> FaceBuilder<'_> {
     FaceBuilder {
         side,
         plane,

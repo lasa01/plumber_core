@@ -300,7 +300,7 @@ impl Vtx {
         }
     }
 
-    pub fn header(&self) -> Result<HeaderRef> {
+    pub fn header(&self) -> Result<HeaderRef<'_>> {
         let header = parse(&self.bytes, 0).ok_or(Error::Corrupted {
             ty: FileType::Vtx,
             error: "eof reading header",
@@ -332,7 +332,7 @@ impl<'a> HeaderRef<'a> {
 
     pub fn iter_body_parts(
         &self,
-    ) -> Result<impl Iterator<Item = BodyPartRef<'a>> + ExactSizeIterator> {
+    ) -> Result<impl ExactSizeIterator<Item = BodyPartRef<'a>>> {
         let offset = self
             .header
             .body_part_offset
@@ -376,7 +376,7 @@ pub struct BodyPartRef<'a> {
 }
 
 impl<'a> BodyPartRef<'a> {
-    pub fn iter_models(&self) -> Result<impl Iterator<Item = ModelRef<'a>> + ExactSizeIterator> {
+    pub fn iter_models(&self) -> Result<impl ExactSizeIterator<Item = ModelRef<'a>>> {
         let offset = (self.offset as isize + self.body_part.model_offset as isize) as usize;
         let count = self
             .body_part
@@ -459,7 +459,7 @@ pub struct LodRef<'a> {
 }
 
 impl<'a> LodRef<'a> {
-    fn iter_meshes(&self) -> Result<impl Iterator<Item = MeshRef<'a>> + ExactSizeIterator> {
+    fn iter_meshes(&self) -> Result<impl ExactSizeIterator<Item = MeshRef<'a>>> {
         let offset = (self.offset as isize + self.lod.mesh_offset as isize) as usize;
         let count = self
             .lod
@@ -538,7 +538,7 @@ pub struct MeshRef<'a> {
 impl<'a> MeshRef<'a> {
     fn iter_strip_groups<S: StripGroup + Clone + 'a>(
         &self,
-    ) -> Result<impl Iterator<Item = StripGroupRef<'a, S>> + ExactSizeIterator + Clone> {
+    ) -> Result<impl ExactSizeIterator<Item = StripGroupRef<'a, S>> + Clone> {
         let offset = (self.offset as isize + self.mesh.strip_group_offset.get() as isize) as usize;
         let count = self
             .mesh

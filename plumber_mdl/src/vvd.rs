@@ -100,7 +100,7 @@ impl Vvd {
         }
     }
 
-    pub fn header(&self) -> Result<HeaderRef> {
+    pub fn header(&self) -> Result<HeaderRef<'_>> {
         let header = parse(&self.bytes, 0).ok_or(Error::Corrupted {
             ty: FileType::Vvd,
             error: "eof reading header",

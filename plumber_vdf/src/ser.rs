@@ -67,7 +67,7 @@ impl Serializer {
         write_escape_str(str, &mut self.output);
     }
 
-    fn serialize_class(&mut self) -> SerializeClass {
+    fn serialize_class(&mut self) -> SerializeClass<'_> {
         let is_root = self.is_root();
         if !is_root {
             self.output += "\n";
@@ -313,7 +313,7 @@ pub struct SerializeSeq<'a> {
     first: bool,
 }
 
-impl<'a> SerializeSeq<'a> {
+impl SerializeSeq<'_> {
     fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
         if !self.first {
             self.serializer.output += "\n";
@@ -334,7 +334,7 @@ impl<'a> SerializeSeq<'a> {
     }
 }
 
-impl<'a> ser::SerializeSeq for SerializeSeq<'a> {
+impl ser::SerializeSeq for SerializeSeq<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -347,7 +347,7 @@ impl<'a> ser::SerializeSeq for SerializeSeq<'a> {
     }
 }
 
-impl<'a> ser::SerializeTuple for SerializeSeq<'a> {
+impl ser::SerializeTuple for SerializeSeq<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -360,7 +360,7 @@ impl<'a> ser::SerializeTuple for SerializeSeq<'a> {
     }
 }
 
-impl<'a> ser::SerializeTupleStruct for SerializeSeq<'a> {
+impl ser::SerializeTupleStruct for SerializeSeq<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -373,7 +373,7 @@ impl<'a> ser::SerializeTupleStruct for SerializeSeq<'a> {
     }
 }
 
-impl<'a> ser::SerializeTupleVariant for SerializeSeq<'a> {
+impl ser::SerializeTupleVariant for SerializeSeq<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -392,7 +392,7 @@ impl<'a> ser::SerializeTupleVariant for SerializeSeq<'a> {
 
 struct KeySerializer<'a>(&'a mut Serializer);
 
-impl<'a> ser::Serializer for KeySerializer<'a> {
+impl ser::Serializer for KeySerializer<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -561,7 +561,7 @@ pub struct SerializeClass<'a> {
     first: bool,
 }
 
-impl<'a> SerializeClass<'a> {
+impl SerializeClass<'_> {
     fn serialize_field<T: ?Sized + Serialize>(
         &mut self,
         key: &'static str,
@@ -593,7 +593,7 @@ impl<'a> SerializeClass<'a> {
     }
 }
 
-impl<'a> ser::SerializeStruct for SerializeClass<'a> {
+impl ser::SerializeStruct for SerializeClass<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -611,7 +611,7 @@ impl<'a> ser::SerializeStruct for SerializeClass<'a> {
     }
 }
 
-impl<'a> ser::SerializeStructVariant for SerializeClass<'a> {
+impl ser::SerializeStructVariant for SerializeClass<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -638,7 +638,7 @@ impl<'a> ser::SerializeStructVariant for SerializeClass<'a> {
     }
 }
 
-impl<'a> ser::SerializeMap for SerializeClass<'a> {
+impl ser::SerializeMap for SerializeClass<'_> {
     type Ok = ();
     type Error = Error;
 

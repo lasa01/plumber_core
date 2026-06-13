@@ -2,7 +2,7 @@ use std::{
     borrow::Borrow,
     fmt::{self, Display},
     ops::Deref,
-    path::PathBuf as StdPathBuf,
+    path::PathBuf as StdPathBuf, ptr,
 };
 
 #[cfg(feature = "serde")]
@@ -15,7 +15,7 @@ pub struct Path(str);
 
 impl Path {
     fn new<S: AsRef<str> + ?Sized>(s: &S) -> &Self {
-        unsafe { &*(s.as_ref() as *const str as *const Self) }
+        unsafe { &*(ptr::from_ref::<str>(s.as_ref()) as *const Self) }
     }
 
     #[must_use]
@@ -196,7 +196,7 @@ impl PathBuf {
     }
 
     pub fn push(&mut self, path: impl AsRef<Path>) {
-        if self.0.as_bytes().last().map_or(false, |b| *b != b'/') {
+        if self.0.as_bytes().last().is_some_and(|b| *b != b'/') {
             self.0.push('/');
         }
         self.0.push_str(path.as_ref().as_str());
@@ -205,7 +205,7 @@ impl PathBuf {
     pub fn pop(&mut self) -> bool {
         self.parent()
             .map(|p| p.as_str().len())
-            .map_or(false, |len| {
+            .is_some_and(|len| {
                 self.0.truncate(len);
                 true
             })
@@ -221,10 +221,7 @@ impl PathBuf {
     pub fn set_extension(&mut self, extension: impl AsRef<str>) -> bool {
         let extension = extension.as_ref();
 
-        let file_stem = match self.file_stem() {
-            None => return false,
-            Some(s) => s,
-        };
+        let Some(file_stem) = self.file_stem() else { return false };
 
         // truncate until right after the file stem
         let end_file_stem = file_stem[file_stem.len()..].as_ptr() as usize;

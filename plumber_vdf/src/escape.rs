@@ -20,7 +20,7 @@ fn escape(char: char) -> Option<char> {
     }
 }
 
-pub(crate) fn maybe_unescape_str(input: &[u8]) -> Cow<[u8]> {
+pub(crate) fn maybe_unescape_str(input: &[u8]) -> Cow<'_, [u8]> {
     let mut char_iter = input.iter().enumerate();
     while let Some((i, &ch)) = char_iter.next() {
         if ch == b'\\' {
